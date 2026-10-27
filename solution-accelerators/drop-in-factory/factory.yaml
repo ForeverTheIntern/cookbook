@@ -1,0 +1,112 @@
+# Drop-in Software Factory. foreman/bot/lib/config/factory.ts validates every
+# key below; an unknown or missing key stops Foreman at start with the key's name.
+#
+# Pipeline: factory:run label (or a top-level Slack @mention, which opens the
+# issue), then the steps: list below (by default triage, spec with questions
+# on the issue until it is clear, spec gate, plan, plan gate, implement,
+# review, verify), then Foreman watches the pull request until it merges.
+
+# The repository this copy of the factory works on. The run branch is
+# factory/<run-id>, cut from base.
+repo: example-org/example-repo
+base: main
+# For several repositories under one GitHub owner, replace repo and base with
+# a repos list (at most 20). key names the repository in run ids
+# (f-<key>-<issue>) and defaults to its name. intakeLabel, gates (any field
+# of a gate in steps:, by gate name) and slack (channel only) may be set per
+# repository; the rest is shared.
+# description says what a repository holds, so a Slack request in a shared
+# channel that names no repository can still find it.
+#   repos:
+#     - { repo: example-org/api, base: main, description: "The HTTP API and its database" }
+#     - { repo: example-org/web, base: main, key: web, slack: { channel: C0WEB } }
+# limits caps the runs past intake: a labeled issue over a limit waits, says
+# so on the issue and in its status line, and starts oldest first. Optional;
+# the defaults are below.
+#   limits: { runsPerRepo: 3, runsTotal: 6 }
+# dashboard turns the dashboard app (dashboard/) on or off. Optional; on by
+# default, and npm run dev starts it on 127.0.0.1:8787. With enabled: false
+# Foreman pushes nothing and logs nothing about it. url defaults to
+# SA_PORTAL_URL; set it here when Foreman is hosted, so its host is
+# allowed. The ingest secret is SA_PORTAL_INGEST_SECRET, never here.
+#   dashboard: { enabled: false }
+#   dashboard: { enabled: true, url: https://factory.example.com }
+intakeLabel: factory:run
+
+# The pipeline, in order. Each name is a step folder in
+# foreman/bot/subagents/<step>/: its instructions.md is the prompt, and its
+# agent.ts sets the model, deadline and what the step's result means (its
+# kind). Foreman runs each step as a Cursor cloud agent on the run branch.
+# Add, remove or reorder steps here; no code changes. A step's stage is its
+# folder name. docs/customize.md walks through each change.
+#
+# A gate goes right after the step whose work it approves: approve moves on,
+# changes sends the run back to that step. It is approved on GitHub with an
+# `approve` or `changes: <what>` comment on the run's issue or pull request,
+# or its label on either (factory:<gate>-approved, factory:<gate>-changes by
+# default); only a listed login, or a member of a listed team:org/slug,
+# counts. With Slack, it can also be approved in the run's status thread
+# (see slack below). A decision made before the gate opened, or before the
+# branch last changed, is stale. enabled: false skips a gate and keeps its
+# settings.
+steps:
+  - triage
+  - spec
+  - gate: spec
+    approvers: [octocat, team:example-org/factory-approvers]
+  - plan
+  - gate: plan
+    approvers: [octocat, team:example-org/factory-approvers]
+  - implement
+  - review
+  - verify
+
+# Who Foreman's own GitHub comments, reviews and labels come from. app is a
+# GitHub App you create for the factory (SA_GH_APP_ID, SA_GH_APP_PRIVATE_KEY;
+# shows as <app>[bot]); bot-user is a separate GitHub user's token
+# (SA_GH_BOT_TOKEN); personal is SA_GH_TOKEN, the person who set it up.
+# Answers relayed from Slack, and issues opened from Slack, always use
+# SA_GH_TOKEN. Optional; personal by default.
+github:
+  identity: personal
+
+# After the last step passes, Foreman watches the pull request until it is
+# merged or closed. Unresolved findings from these bots (matched with or
+# without [bot]), a "changes requested" review from a person, and a failed
+# check go back to the change step (implement), under the same three-round
+# cap as review and verify. A push reruns review and verify. Optional; Bugbot and
+# Cursor's security reviewer post as cursor[bot].
+review:
+  bots: [cursor]
+
+# Optional. Each run gets a status line in the channel (one top-level message
+# Foreman edits as the run moves) and a thread with the detail; chat with
+# Foreman in that thread, and a top-level @mention opens an issue (or links
+# the open run that already asks for it). When several repositories share a
+# channel, a request can start with a key ("web: add a footer") or say
+# "in web"; without one, Foreman matches it against each repository's
+# description, and asks only if it could be either. Delete the block to run on GitHub
+# only. testerBot admits one Slack bot id (B...) as a person; omit it to
+# ignore every bot.
+#
+# In the status thread, the person who made the request, or a Slack user id
+# in approvers, can approve a gate (`@foreman approve`, or the approve
+# reaction on the approval message), send it back (`@foreman changes: …` or
+# the reject reaction), or abandon the run (`@foreman abandon: <reason>`, or
+# the abandon reaction on the status line). Code checks who it is; anyone
+# else is told who can. reactions are emoji names without colons. Both are
+# optional; the defaults are below.
+slack:
+  channel: C0123456789
+  # approvers: [U0123456789]
+  # reactions: { approve: white_check_mark, reject: x, abandon: wastebasket }
+
+# DORA. deploySource is deployments (GitHub Deployments to environment) or
+# merges (merges to base). A hotfix is a merged PR with one of hotfixLabels;
+# an incident is an issue with incidentLabel.
+dora:
+  deploySource: merges
+  environment: production
+  hotfixLabels: [hotfix]
+  incidentLabel: incident
+  weeks: 8

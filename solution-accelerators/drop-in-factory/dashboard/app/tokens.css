@@ -1,0 +1,68 @@
+/* Cursor product chrome for accelerator UIs.
+   Light is :root. Dark is html.dark (also .dark).
+   Hex values that already clear WCAG 2.2 AA match cursor.com/docs.
+   Text and control-boundary tokens that missed AA are noted inline.
+   Do not add raw colors in any other file. Reference these variables. */
+
+:root {
+  color-scheme: light;
+  --bg: #f7f7f4;
+  --fg: #26251e;
+  --fg-2: #3b3a33;
+  /* Measured docs muted #7a7974 is 4.06:1 on --bg and 3.62:1 on --card-02. */
+  --muted: #686863;
+  --card: #f0efea;
+  --card-02: #ebeae5;
+  --card-03: #e6e5e0;
+  /* Separator only. 1.21:1 on --bg. Not the border of a field. */
+  --border: #e2e2df;
+  /* 3.06:1 on --bg. Use this on inputs and other controls. */
+  --control-border: #8f8e8a;
+  --border-strong: rgba(38, 37, 30, 0.2);
+  /* Non-text signal. 3.34:1 on --bg. Dots only, never 12–13px text. */
+  --accent: #eb5600;
+  /* 5.36:1 on --bg, 4.78:1 on --card-02. Active nav and orange words. */
+  --accent-text: #b24100;
+  --on-accent: #ffffff;
+  /* 4.81:1 on --card-02. Measured product green #1f8a65 is 4.01:1 on --bg. */
+  --green: #1a7354;
+  /* 4.59:1 on --card-02. Measured #cf2d56 is 4.19:1 on --card-02. */
+  --red: #c42a51;
+  /* 4.67:1 on --card-02. Measured #9a6a1e is 4.39:1 on --bg. */
+  --amber: #8a5f1b;
+  --ring: #504f49;
+  --header-h: 49px;
+  --sidebar-w: 200px;
+  --radius: 4px;
+  --radius-control: 8px;
+  --radius-pill: 999px;
+  --font: Inter, system-ui, -apple-system, "Segoe UI", Helvetica, Arial, sans-serif;
+  --mono: "JetBrains Mono", ui-monospace, "Cascadia Mono", SFMono-Regular, Menlo, Consolas, monospace;
+  --ease: cubic-bezier(0.4, 0, 0.2, 1);
+  --fast: 150ms;
+  --shadow: none;
+}
+
+html.dark,
+.dark {
+  color-scheme: dark;
+  --bg: #14120b;
+  --fg: #edecec;
+  --fg-2: #d7d6d6;
+  --muted: #969592;
+  --card: #1b1913;
+  --card-02: #201e18;
+  --card-03: #26241e;
+  --border: #2a2822;
+  /* 3.17:1 on --bg. */
+  --control-border: #666460;
+  --border-strong: rgba(237, 236, 236, 0.2);
+  --accent: #eb5600;
+  /* Measured orange is 5.23:1 on dark paper, so text may use it. */
+  --accent-text: #eb5600;
+  --on-accent: #14120b;
+  --green: #3cb88a;
+  --red: #e15b74;
+  --amber: #d4a24a;
+  --ring: #c2c0bf;
+}

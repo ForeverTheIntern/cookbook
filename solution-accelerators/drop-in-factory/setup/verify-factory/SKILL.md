@@ -49,7 +49,7 @@ Every `FAIL` line exits 1. `info` and `note` are not failures. The lines that an
 | --- | --- |
 | `ports` | Who owns 8787 and 8790 (or `SA_DOCTOR_PORTS`). 8787 may be the dashboard. Anything else listening is a leftover. With `SA_VERIFY_PID_FILE` set, 8787 must be a process this launch started. |
 | `CLI auth` | `agent-sdk whoami`: the email, the credential source (`env`, `login`, `service-account`, …), and the team name. It must be the launch key's account. A different email in `~/.cursor/cli-config.json` fails. `CURSOR_AUTH_TOKEN` is named when set; the Agent SDK CLI does not read it. |
-| `team` | Team name and id from the account call. Set `SA_EXPECTED_TEAM_ID` and `SA_EXPECTED_TEAM_NAME` to require a match. Nothing is hardcoded. |
+| `team` | Team name from `agent-sdk whoami`, and the team id when `SA_EXPECTED_TEAM_ID` is set (an undocumented lookup; see `setup/lib/doctor/team-id.ts`). Set `SA_EXPECTED_TEAM_ID` and `SA_EXPECTED_TEAM_NAME` to require a match. Nothing is hardcoded. |
 | `key <NAME>` | Which account owns each set key: `CURSOR_API_KEY` or `SA_CURSOR_API_KEY`, `GH_TOKEN` or `SA_GH_TOKEN`, and `CURSOR_SERVICE_ACCOUNT_KEY` when it is set. A service-account key on another team fails. |
 | `GitHub App` | The launch account's GitHub App installation reaches every repository in `factory.yaml`. |
 | `hosted release` | Off unless `SA_VERIFY_HOSTED=1`. Then `deployment get` (a read, not a deploy) must report the release in the last `npm run deploy` record, and that record's file digest must match this folder at HEAD. |

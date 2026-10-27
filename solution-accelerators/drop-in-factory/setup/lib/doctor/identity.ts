@@ -8,30 +8,45 @@ import { readFileSync } from "node:fs";
 import { promisify } from "node:util";
 import { SDK_SPEC } from "./sdk.ts";
 import { cliConfigEmail } from "./report.ts";
+import { teamIdOf } from "./team-id.ts";
 
 const exec = promisify(execFile);
 
 export interface Account {
   email: string | null;
   apiKeyName: string | null;
+  /** Only looked up when SA_EXPECTED_TEAM_ID is set; see team-id.ts. */
   teamId: string | null;
   teamName: string | null;
-  /** Set when the dashboard account call failed. /v0/me can still have succeeded. */
+  /** Set when whoami or the team id lookup failed. /v0/me can still have succeeded. */
   teamError: string | null;
 }
 
-export async function accountOf(apiKey: string): Promise<Account> {
+/**
+ * Who owns a key: the email and key name from the documented /v0/me, and the
+ * team name from `agent-sdk whoami --json` run with this key. The team id is
+ * read only when `withTeamId` is set.
+ */
+export async function accountOf(apiKey: string, env: NodeJS.ProcessEnv, withTeamId: boolean): Promise<Account> {
   const me = await fetch("https://api.cursor.com/v0/me", { headers: { authorization: basic(apiKey) } });
   if (!me.ok) throw new Error(`key was rejected (${me.status})`);
   const body = (await me.json()) as { userEmail?: string; apiKeyName?: string };
-  const team = await dashboardAccount(apiKey);
+  const session = await whoami(keyEnv(env, apiKey));
+  const team = withTeamId ? await teamIdOf(apiKey) : { id: null, error: null };
   return {
     email: body.userEmail ?? null,
     apiKeyName: body.apiKeyName ?? null,
     teamId: team.id,
-    teamName: team.name,
-    teamError: team.error,
+    teamName: session.teamName,
+    teamError: session.error ?? team.error,
   };
+}
+
+/** The CLI reads CURSOR_API_KEY before a key file, a service-account key or a stored login. */
+function keyEnv(env: NodeJS.ProcessEnv, apiKey: string): NodeJS.ProcessEnv {
+  const scoped: NodeJS.ProcessEnv = { ...env, CURSOR_API_KEY: apiKey };
+  delete scoped.CURSOR_API_KEY_FILE;
+  return scoped;
 }
 
 export async function visibleRepositories(apiKey: string): Promise<{ owner: string; name: string }[]> {
@@ -116,36 +131,6 @@ export function storedCliEmail(path: string): string | null {
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === "ENOENT") return null;
     throw error;
-  }
-}
-
-/**
- * The same account call `agent-sdk whoami` makes. whoami's JSON omits the team id,
- * and the id is what a deploy targets, so the doctor reads it here.
- */
-async function dashboardAccount(apiKey: string): Promise<{ id: string | null; name: string | null; error: string | null }> {
-  try {
-    const exchange = await fetch("https://api2.cursor.sh/auth/exchange_user_api_key", {
-      method: "POST",
-      headers: { authorization: `Bearer ${apiKey}`, "content-type": "application/json" },
-      body: "{}",
-      signal: AbortSignal.timeout(20_000),
-    });
-    if (!exchange.ok) return { id: null, name: null, error: `account exchange returned ${exchange.status}` };
-    const { accessToken } = (await exchange.json()) as { accessToken?: string };
-    if (typeof accessToken !== "string" || accessToken === "") return { id: null, name: null, error: "account exchange returned no session" };
-    const me = await fetch("https://api2.cursor.sh/aiserver.v1.DashboardService/GetMe", {
-      method: "POST",
-      headers: { authorization: `Bearer ${accessToken}`, "content-type": "application/json" },
-      body: "{}",
-      signal: AbortSignal.timeout(20_000),
-    });
-    if (!me.ok) return { id: null, name: null, error: `GetMe returned ${me.status}` };
-    const body = (await me.json()) as { teamId?: number | string; teamName?: string };
-    const id = body.teamId === undefined || body.teamId === null ? null : String(body.teamId);
-    return { id, name: body.teamName ?? null, error: null };
-  } catch (error) {
-    return { id: null, name: null, error: (error as Error).message };
   }
 }
 

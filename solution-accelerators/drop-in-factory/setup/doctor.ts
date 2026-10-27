@@ -116,7 +116,7 @@ let launchError: string | null = null;
 if (env.cursorApiKey === "") launchError = "skipped, because SA_CURSOR_API_KEY (or CURSOR_API_KEY) is not set";
 else {
   try {
-    launch = await accountOf(env.cursorApiKey);
+    launch = await accountOf(env.cursorApiKey, shellEnv(), verify.expectedTeamId !== "");
   } catch (error) {
     launchError = (error as Error).message;
   }
@@ -166,7 +166,7 @@ report("team", teamLine({
 
 for (const key of verify.launchKeys) {
   await check(`key ${key.name}`, async () => {
-    const account = key.value === env.cursorApiKey && launch !== null ? launch : await accountOf(key.value);
+    const account = key.value === env.cursorApiKey && launch !== null ? launch : await accountOf(key.value, shellEnv(), verify.expectedTeamId !== "");
     const line = keyOwnerLine(account);
     if (launch?.email != null && account.email != null && account.email.toLowerCase() !== launch.email.toLowerCase()) {
       throw new Error(`${line.text}, which is not ${launch.email}, the key Foreman launches with`);
@@ -182,8 +182,8 @@ for (const key of verify.githubKeys) {
 if (verify.serviceAccount.length === 0) console.log("note  CURSOR_SERVICE_ACCOUNT_KEY is not set, so a hosted deploy uses the CLI credential");
 for (const key of verify.serviceAccount) {
   await check(`key ${key.name}`, async () => {
-    const account = await accountOf(key.value);
-    const line = sameTeamLine(launch?.teamId ?? null, { name: key.name, ...account });
+    const account = await accountOf(key.value, shellEnv(), verify.expectedTeamId !== "");
+    const line = sameTeamLine(launch, { name: key.name, ...account });
     if (line.status === "fail") throw new Error(line.text);
     return line.text;
   });

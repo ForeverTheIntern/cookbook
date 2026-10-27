@@ -179,37 +179,57 @@ export interface TeamFacts {
   expectedName: string;
 }
 
-/** Team id and name come from the account call. They are compared with SA_EXPECTED_TEAM_* only when those are set. */
+/**
+ * The team name comes from `agent-sdk whoami`. The id is looked up, and
+ * compared, only when SA_EXPECTED_TEAM_ID is set (see team-id.ts).
+ */
 export function teamLine(facts: TeamFacts): Line {
   if (facts.id === null && facts.name === null) {
-    return { status: "fail", text: facts.error ?? "the account call returned no team id or name" };
+    return { status: "fail", text: facts.error ?? "agent-sdk whoami returned no team name" };
   }
-  const label = `${facts.name ?? "unnamed"} (${facts.id ?? "no id"})`;
+  const label = teamLabel(facts.name, facts.id);
+  if (facts.expectedId !== "" && facts.id === null) {
+    return { status: "fail", text: `team is ${label}, and its id could not be read to compare with SA_EXPECTED_TEAM_ID: ${facts.error ?? "no id returned"}` };
+  }
   if (facts.expectedId !== "" && facts.id !== facts.expectedId) {
     return { status: "fail", text: `team is ${label}; SA_EXPECTED_TEAM_ID is ${facts.expectedId}` };
   }
   if (facts.expectedName !== "" && (facts.name ?? "").toLowerCase() !== facts.expectedName.toLowerCase()) {
     return { status: "fail", text: `team is ${label}; SA_EXPECTED_TEAM_NAME is ${facts.expectedName}` };
   }
-  if (facts.id === null) return { status: "fail", text: `team name is ${facts.name}, and the account call returned no team id` };
-  const expected = facts.expectedId !== "" || facts.expectedName !== "" ? ", matching SA_EXPECTED_TEAM_ID and SA_EXPECTED_TEAM_NAME" : "";
-  return { status: "ok", text: `${label}${expected}` };
+  const matched = [facts.expectedId !== "" && "SA_EXPECTED_TEAM_ID", facts.expectedName !== "" && "SA_EXPECTED_TEAM_NAME"].filter((name) => name !== false);
+  return { status: "ok", text: matched.length > 0 ? `${label}, matching ${matched.join(" and ")}` : label };
+}
+
+function teamLabel(name: string | null, id: string | null): string {
+  return id === null ? (name ?? "unnamed") : `${name ?? "unnamed"} (${id})`;
 }
 
 /** One key's owner. Service accounts often have a key name and no email. */
 export function keyOwnerLine(identity: { email: string | null; apiKeyName: string | null; teamId: string | null; teamName: string | null }): Line {
   const who = identity.email ?? (identity.apiKeyName !== null ? `service account ${identity.apiKeyName}` : "no email");
-  const team = identity.teamName === null && identity.teamId === null ? "" : `, team ${identity.teamName ?? "unnamed"} (${identity.teamId ?? "no id"})`;
+  const team = identity.teamName === null && identity.teamId === null ? "" : `, team ${teamLabel(identity.teamName, identity.teamId)}`;
   return { status: "ok", text: `belongs to ${who}${team}` };
 }
 
-/** The launch key and a service-account key have to be on the same team, or a hosted deploy lands on the wrong one. */
-export function sameTeamLine(launchTeamId: string | null, service: { name: string; teamId: string | null; teamName: string | null; email: string | null; apiKeyName: string | null }): Line {
+/**
+ * The launch key and a service-account key have to be on the same team, or a
+ * hosted deploy lands on the wrong one. Ids are compared when both were looked
+ * up, and team names otherwise.
+ */
+export function sameTeamLine(
+  launch: { teamId: string | null; teamName: string | null } | null,
+  service: { name: string; teamId: string | null; teamName: string | null; email: string | null; apiKeyName: string | null },
+): Line {
   const owner = keyOwnerLine(service);
-  if (launchTeamId !== null && service.teamId !== null && launchTeamId !== service.teamId) {
-    return { status: "fail", text: `${service.name} ${owner.text}, which is not the launch key's team (${launchTeamId})` };
+  if (service.teamId === null && service.teamName === null) return { status: "fail", text: `${service.name} authenticated, and agent-sdk whoami returned no team for it` };
+  const other = `${service.name} ${owner.text}, which is not the launch key's team`;
+  if (launch?.teamId != null && service.teamId !== null) {
+    return launch.teamId === service.teamId ? owner : { status: "fail", text: `${other} (${teamLabel(launch.teamName, launch.teamId)})` };
   }
-  if (service.teamId === null) return { status: "fail", text: `${service.name} authenticated, and the account call returned no team id` };
+  if (launch?.teamName != null && service.teamName !== null && launch.teamName.toLowerCase() !== service.teamName.toLowerCase()) {
+    return { status: "fail", text: `${other} (${launch.teamName})` };
+  }
   return owner;
 }
 

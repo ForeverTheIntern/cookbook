@@ -23,7 +23,7 @@ What has to be true before setup. The [README](README.md) links here, and [the t
 - The Agent SDK, `@grok/agent-sdk` 0.3.0 from the public npm registry. `npm run install:all` installs it into `foreman/`. Its CLI is installed as both `agent-sdk` and `bdk`, the same program under two names. Commands on this page use `npx --yes @grok/agent-sdk@0.3.0 <command>`, which runs `agent-sdk`.
 - `gh`, the GitHub CLI, on Foreman's `PATH`. It is used only for the issue timeline (who added a gate label) and the Deployments GraphQL query.
 - `lsof`, so `npm run doctor` can say which process owns ports 8787 and 8790. On Linux, lsof 4.95 misses Next's `next-server`; the doctor then reads `/proc/net/tcp`.
-- Optional, for metrics: Docker with Compose, or the `otelcol-contrib` binary. Without Docker: `curl -fsSL https://github.com/open-telemetry/opentelemetry-collector-releases/releases/download/v0.163.2/otelcol-contrib_0.163.2_linux_amd64.tar.gz | tar xz otelcol-contrib` (tested 0.163.2; other platforms are on the [releases page](https://github.com/open-telemetry/opentelemetry-collector-releases/releases)).
+- Optional, for metrics: the OpenTelemetry collector 0.163.2, either through Docker with Compose (`setup/compose.yaml` pins that image) or as the `otelcol-contrib` binary. Without Docker: `curl -fsSL https://github.com/open-telemetry/opentelemetry-collector-releases/releases/download/v0.163.2/otelcol-contrib_0.163.2_linux_amd64.tar.gz | tar xz otelcol-contrib` (tested 0.163.2; other platforms are on the [releases page](https://github.com/open-telemetry/opentelemetry-collector-releases/releases)).
 - A Cursor team admin, only to create `CURSOR_ADMIN_API_KEY` for invoice cost.
 
 ## Environment
@@ -69,11 +69,11 @@ Cause: lsof 4.95 does not list the `next-server` process Next.js 15 uses for the
 
 Fix: trust `npm run doctor`. On Linux it reads `/proc/net/tcp` when lsof reports the port free.
 
-Symptom: `FAIL  CLI auth:` names two different emails, or `FAIL  team:` names an unexpected team id.
+Symptom: `FAIL  CLI auth:` names two different emails, or `FAIL  team:` names an unexpected team.
 
 Cause: the CLI credential, a stored login in `~/.cursor/cli-config.json`, or `CURSOR_SERVICE_ACCOUNT_KEY` is a different account or team from the key Foreman launches with. A hosted deploy then goes to the wrong team.
 
-Fix: unset the extra credential, or set `CURSOR_API_KEY` to the account whose team you mean. Re-run the doctor. The `team` line prints the id and name it found. Set `SA_EXPECTED_TEAM_ID` and `SA_EXPECTED_TEAM_NAME` when a proof has to pin them.
+Fix: unset the extra credential, or set `CURSOR_API_KEY` to the account whose team you mean. Re-run the doctor. The `team` line prints the team name it found, and its id when `SA_EXPECTED_TEAM_ID` is set. Set `SA_EXPECTED_TEAM_NAME`, or `SA_EXPECTED_TEAM_ID`, when a proof has to pin them. The id lookup uses undocumented Cursor account endpoints; see "The team id" in [Verify a running factory](docs/reference.md#verify-a-running-factory) in the reference.
 
 On Windows the extra credential can be `authInfo` in `%USERPROFILE%\.cursor\cli-config.json` (the Cursor CLI), while `agent-sdk whoami` already uses a different stored login that matches the launch key. Copy the file aside, remove the `authInfo` object, and run the doctor again. Leave the rest of the file. The Agent SDK does not read that file; the doctor does, so a second plus-alias on the same team still fails the check.
 

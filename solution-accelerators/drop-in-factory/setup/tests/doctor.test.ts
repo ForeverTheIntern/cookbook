@@ -103,17 +103,29 @@ test("cli-config email is read and tokens are not", () => {
 });
 
 test("team id and name are checked only against the expected values that are set", () => {
-  assert.equal(teamLine({ id: "42", name: "Example", error: null, expectedId: "", expectedName: "" }).status, "ok");
+  assert.equal(teamLine({ id: null, name: "Example", error: null, expectedId: "", expectedName: "" }).text, "Example");
   assert.equal(teamLine({ id: "42", name: "Example", error: null, expectedId: "7", expectedName: "" }).status, "fail");
-  assert.equal(teamLine({ id: "42", name: "Example", error: null, expectedId: "42", expectedName: "example" }).status, "ok");
-  assert.match(teamLine({ id: null, name: null, error: "GetMe returned 500", expectedId: "", expectedName: "" }).text, /500/);
+  assert.equal(teamLine({ id: "42", name: "Example", error: null, expectedId: "42", expectedName: "example" }).text, "Example (42), matching SA_EXPECTED_TEAM_ID and SA_EXPECTED_TEAM_NAME");
+  assert.equal(teamLine({ id: null, name: "Example", error: null, expectedId: "", expectedName: "Other" }).status, "fail");
+  assert.match(teamLine({ id: null, name: null, error: "Not signed in to Cursor", expectedId: "", expectedName: "" }).text, /Not signed in/);
 });
 
-test("a service-account key on another team fails", () => {
-  const line = sameTeamLine(42..toString(), { name: "CURSOR_SERVICE_ACCOUNT_KEY", email: null, apiKeyName: "bot", teamId: "7", teamName: "Other" });
+test("with SA_EXPECTED_TEAM_ID set, a team id that can't be read fails the team line", () => {
+  const line = teamLine({ id: null, name: "Example", error: "team id lookup returned 500", expectedId: "42", expectedName: "" });
   assert.equal(line.status, "fail");
-  assert.match(line.text, /not the launch key's team/);
-  assert.equal(keyOwnerLine({ email: "factory@example.com", apiKeyName: "factory", teamId: "42", teamName: "Example" }).text.includes("factory@example.com"), true);
+  assert.match(line.text, /SA_EXPECTED_TEAM_ID: team id lookup returned 500/);
+});
+
+test("a service-account key on another team fails, by id when both were read and by name otherwise", () => {
+  const service = { name: "CURSOR_SERVICE_ACCOUNT_KEY", email: null, apiKeyName: "bot" };
+  const byId = sameTeamLine({ teamId: "42", teamName: "Example" }, { ...service, teamId: "7", teamName: "Example" });
+  assert.equal(byId.status, "fail");
+  assert.match(byId.text, /not the launch key's team \(Example \(42\)\)/);
+  const byName = sameTeamLine({ teamId: null, teamName: "Example" }, { ...service, teamId: null, teamName: "Other" });
+  assert.equal(byName.status, "fail");
+  assert.equal(sameTeamLine({ teamId: null, teamName: "Example" }, { ...service, teamId: null, teamName: "example" }).status, "ok");
+  assert.equal(sameTeamLine({ teamId: null, teamName: "Example" }, { ...service, teamId: null, teamName: null }).status, "fail");
+  assert.equal(keyOwnerLine({ email: "factory@example.com", apiKeyName: "factory", teamId: null, teamName: "Example" }).text, "belongs to factory@example.com, team Example");
 });
 
 test("the GitHub App line names every configured repository the installation misses", () => {

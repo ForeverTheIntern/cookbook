@@ -47,12 +47,13 @@ node --version        # v22.14.0 or later
 npm --version
 git --version
 gh --version
+lsof -v               # the doctor's ports check; built into macOS, a package on Linux
 docker --version      # optional, for the metrics collector
 ```
 
-**Check.** Node prints `v22.14.0` or later (any newer version works). `gh` is present. Docker is optional; without it, step 9 uses the collector binary.
+**Check.** Node prints `v22.14.0` or later (any newer version works). `gh` and `lsof` are present. Docker is optional; without it, step 9 uses the collector binary.
 
-**Fixes.** An older Node: install 22.14 or later with `nvm install 22.14` (or `fnm`, `volta`, or the installer from nodejs.org). Don't use Bun. No `gh`: install it from <https://cli.github.com>; Foreman uses it only for the issue timeline.
+**Fixes.** An older Node: install 22.14 or later with `nvm install 22.14` (or `fnm`, `volta`, or the installer from nodejs.org). Don't use Bun. If you can't install anything globally, unpack the official Node build outside the repository and put its `bin` folder first on `PATH` for this shell. On Linux or macOS: `mkdir -p ~/.local/node && curl -fsSL https://nodejs.org/dist/v22.14.0/node-v22.14.0-linux-x64.tar.xz | tar xJ -C ~/.local/node`, then add `~/.local/node/node-v22.14.0-linux-x64/bin` to the front of `PATH` (use `linux-arm64`, `darwin-arm64` or `darwin-x64` to match the machine). On Windows, unpack `node-v22.14.0-win-x64.zip` from the same folder on nodejs.org and add it to the front of `Path`. No `lsof`: install it with the system package manager (`sudo apt-get install lsof`, `sudo dnf install lsof`). No `gh`: install it from <https://cli.github.com>; Foreman uses it only for the issue timeline.
 
 ## Step 2: Give the factory its own repository
 
@@ -201,9 +202,17 @@ Ask for the approvers' GitHub logins (or a `team:org/slug`). Then edit [`factory
 repo: your-org/your-repo            # or a repos: list; see the comment in the file
 base: main
 intakeLabel: factory:run
-gates:
-  spec: { approvers: [their-login], ... }
-  plan: { approvers: [their-login], ... }
+steps:                              # as shipped; set approvers on the two gate entries
+  - triage
+  - spec
+  - gate: spec
+    approvers: [their-login]        # GitHub logins, or team:org/slug
+  - plan
+  - gate: plan
+    approvers: [their-login]
+  - implement
+  - review
+  - verify
 github:
   identity: app                     # app, bot-user or personal, from step 5
 review:
@@ -215,7 +224,7 @@ slack:
 
 Keep the other keys as shipped. For several repositories, use a `repos:` list with a one-sentence `description` each, so Slack requests find the right one.
 
-**Check.** The doctor's first line in step 10 is `ok    environment and factory.yaml`.
+**Check.** In step 10, the doctor prints a line `ok    environment and factory.yaml`.
 
 ## Step 9: Metrics collector
 
@@ -250,6 +259,7 @@ npm run doctor
 | `factory identity: the app's installation … lacks …` | The app isn't installed on that repository, or is missing a permission. Install it, or accept the new permissions on the installation. |
 | `Slack …: the bot token lacks files:write, reactions:read` | The app predates those scopes. Re-paste the manifest under **App Manifest**, reinstall, and update `FOREMAN_SLACK_BOT_TOKEN`. |
 | `review bots: no GitHub bot account …` | A name in `review.bots` is wrong. Use the login without `[bot]`. |
+| `ports: lsof is not installed` | Install `lsof` (step 1). The doctor uses it to name the process holding 8787 or 8790. |
 | `dashboard: on, but …` | Start `npm run dev` (step 11) first, then run the doctor again. |
 
 The dashboard line passes only while `npm run dev` runs; it's fine to come back to it after step 11.

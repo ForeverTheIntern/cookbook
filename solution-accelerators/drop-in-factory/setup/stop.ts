@@ -35,11 +35,15 @@ const signal = (p: number, s: NodeJS.Signals) => {
 };
 
 if (force && process.platform === "win32") for (const p of [pid, ...children]) spawnSync("taskkill", ["/T", "/F", "/PID", String(p)]);
-else if (force) for (const p of expandPids([pid, ...children], await processRows())) signal(p, "SIGKILL");
-else signal(pid, process.platform === "win32" ? "SIGTERM" : "SIGINT");
+else if (force) {
+  for (const p of expandPids([pid, ...children], await processRows())) signal(p, "SIGKILL");
+  // npm run dev starts each child as a process group leader; this reaches a member whose parent already exited.
+  for (const c of children) signal(-c, "SIGKILL");
+} else signal(pid, process.platform === "win32" ? "SIGTERM" : "SIGINT");
+const running = () => [pid, ...children].filter((p) => alive(p) || (process.platform !== "win32" && p !== pid && alive(-p)));
 const deadline = Date.now() + (force ? 5_000 : 35_000);
-while (Date.now() < deadline && [pid, ...children].some(alive)) await new Promise((r) => setTimeout(r, 250));
-const left = [pid, ...children].filter(alive);
+while (Date.now() < deadline && running().length > 0) await new Promise((r) => setTimeout(r, 250));
+const left = running();
 if (left.length > 0) {
   console.log(`stop: pids ${left.join(", ")} are still running. Run npm run stop -- --force`);
   process.exit(1);

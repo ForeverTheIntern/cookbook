@@ -24,11 +24,15 @@ const root = fileURLToPath(new URL("..", import.meta.url));
 const factory = loadFactory(resolve(root, pathsEnv().factoryConfig));
 const env: NodeJS.ProcessEnv = { ...process.env };
 const children: ChildProcess[] = [];
+const names = new Map<ChildProcess, string>();
 // npm and npx are .cmd files on Windows, which spawn finds only through a shell.
 const onWindows = process.platform === "win32";
 
+// Each child leads its own process group, so stopping it reaches what it started
+// (npm run dev's sh, node and next-server), not just the npm process.
 function run(name: string, command: string, args: string[], cwd: string, childEnv: NodeJS.ProcessEnv): void {
-  const child = spawn(command, args, { cwd, env: childEnv, stdio: ["ignore", "pipe", "pipe"], shell: onWindows });
+  const child = spawn(command, args, { cwd, env: childEnv, stdio: ["ignore", "pipe", "pipe"], shell: onWindows, detached: !onWindows });
+  names.set(child, name);
   const prefix = (chunk: Buffer, out: NodeJS.WriteStream) => {
     for (const line of chunk.toString().split("\n")) if (line !== "") out.write(`[${name}] ${line}\n`);
   };
@@ -48,19 +52,52 @@ function writePids(): void {
   writeFileSync(pidFile, JSON.stringify({ pid: process.pid, children: children.map((c) => c.pid).filter((p) => p !== undefined) }));
 }
 
+function signalGroup(child: ChildProcess, signal: NodeJS.Signals): void {
+  if (child.pid === undefined) return;
+  if (onWindows) {
+    if (signal === "SIGKILL") spawnSync("taskkill", ["/T", "/F", "/PID", String(child.pid)]);
+    else child.kill(signal);
+    return;
+  }
+  try {
+    process.kill(-child.pid, signal);
+  } catch {
+    // the group has already exited
+  }
+}
+
+function groupAlive(child: ChildProcess): boolean {
+  if (child.pid === undefined) return false;
+  if (onWindows) return child.exitCode === null && child.signalCode === null;
+  try {
+    process.kill(-child.pid, 0);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** The pid file goes only once every group is gone, so `npm run stop` can still find a straggler. */
 let stopping = false;
 function stop(code: number): void {
   if (stopping) return;
   stopping = true;
-  for (const c of children) if (c.exitCode === null) c.kill("SIGINT");
-  const exit = () => {
+  for (const c of children) signalGroup(c, "SIGINT");
+  const deadline = Date.now() + 30_000;
+  const poll = setInterval(() => {
+    const left = children.filter(groupAlive);
+    if (left.length > 0 && Date.now() < deadline) return;
+    clearInterval(poll);
+    for (const c of left) {
+      console.log(`[dev] ${names.get(c)} did not stop within 30 seconds; killing it`);
+      signalGroup(c, "SIGKILL");
+    }
     rmSync(pidFile, { force: true });
     process.exit(code);
-  };
-  setTimeout(exit, 30_000).unref();
-  Promise.all(children.map((c) => (c.exitCode !== null ? null : new Promise((r) => c.once("exit", r))))).then(exit);
+  }, 250);
 }
 process.on("SIGINT", () => stop(0));
+process.on("SIGHUP", () => stop(0));
 process.on("SIGTERM", () => stop(0));
 
 if (process.argv.includes("--foreman-only")) {

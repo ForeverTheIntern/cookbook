@@ -45,9 +45,16 @@ export const step = cloudStep({
 
 ```yaml
 steps:
+  - triage
   - spec
   - gate: spec
     approvers: [octocat, team:example-org/factory-approvers]   # GitHub logins, or team:org/slug
+  - plan
+  - gate: plan
+    approvers: [octocat, team:example-org/factory-approvers]
+  - implement
+  - review
+  - verify
 ```
 
 Other gate settings are optional:

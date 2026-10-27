@@ -6,7 +6,7 @@ The doctor says whether this factory is worth driving: the right accounts, the r
 
 - `ports` names the process on 8787 and on 8790.
 - `cli-auth` names the CLI account and fails when it is not the launch key's account.
-- `team` names the team id and team name.
+- `team` names the team name, and the team id when `SA_EXPECTED_TEAM_ID` is set.
 - `keys` names the account that owns each set key.
 - `github-app` fails when a configured repository is missing from the installation.
 - `hosted` compares the hosted release with the last deploy record (see [hosted.md](hosted.md)).

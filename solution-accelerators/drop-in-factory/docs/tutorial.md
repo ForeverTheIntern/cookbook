@@ -89,7 +89,7 @@ The full checklist, with how to tell each item is done, is in [PREREQUISITES.md]
 
 - [ ] A GitHub repository you can push to, with Issues turned on
 - [ ] A Cursor plan with cloud agents, and the Cursor GitHub app installed on the repository
-- [ ] Node.js 22.14 or later, and `gh`
+- [ ] Node.js 22.14 or later, `gh` and `lsof`
 - [ ] Docker (or `otelcol-contrib`) for the metrics collector
 - [ ] Optional: a Slack workspace where you can create apps, and a Cursor team admin for the Admin API key
 
@@ -103,6 +103,7 @@ Each line below has a check that proves it's in place.
 | A **cloud agent environment** for the repository (recommended) | Verify installs dependencies and runs your tests in it | Without one, Verify can only read the code |
 | Node.js **22.14 or later** | Foreman and the dashboard (not Bun) | `node --version` prints `v22.14.0` or later |
 | `gh`, the GitHub CLI | Issue timeline and Deployments queries | `gh --version` |
+| `lsof` (built into macOS; a package on Linux) | The doctor's check of who holds ports 8787 and 8790 | `lsof -v` |
 | A Slack workspace where you can create apps (optional) | Run threads, chat, and requests from Slack | You can open [api.slack.com/apps](https://api.slack.com/apps) |
 | Someone who is a Cursor **team admin** (optional) | Creates the Admin API key for invoice cost | Ask them now; it's the one thing you may wait on |
 | Docker with Compose, **or** the `otelcol-contrib` binary | Runs the collector the factory sends its metrics to (Step 6) | `docker compose version` or `otelcol-contrib --version` |
@@ -287,11 +288,17 @@ repo: your-org/your-repo          # the repository the factory works on
 base: main                        # the branch runs are cut from and merge into
 intakeLabel: factory:run          # adding this label starts a run
 
-gates:
-  spec:
+steps:                            # the pipeline as shipped; set approvers on the two gates
+  - triage
+  - spec
+  - gate: spec
     approvers: [your-github-login]        # logins, or team:your-org/slug
-  plan:
+  - plan
+  - gate: plan
     approvers: [your-github-login]
+  - implement
+  - review
+  - verify
 
 slack:
   channel: C0123456789            # the Channel ID from Step 4, or delete this block
@@ -344,7 +351,7 @@ slack:
 
 **You should see.** The file saves with no editor warnings. YAML is sensitive to indentation, so use spaces, not tabs.
 
-**It worked if.** The doctor's first line is `ok    environment and factory.yaml`.
+**It worked if.** The doctor prints a line `ok    environment and factory.yaml`.
 
 **If it goes wrong.**
 
@@ -440,7 +447,7 @@ With one repository you get one set of `<key>:` lines and no `shared by` note. T
 
 **It worked if.** Every check line starts with `ok` and the command exits 0 (`echo $?` prints `0`). `info` and `note` lines (for something you chose to leave off) are not failures. The labels line always starts `labels: 5 of 5 present`. The first run on a repository adds `(created factory:run, …)`, because the doctor just made them. Later runs, or a repository an earlier factory already used, add `(already on the repository)`. Both are fine.
 
-The doctor also prints who owns ports 8787 and 8790, the CLI account, the team name and id, the account behind each key, and whether the GitHub App installation reaches every repository. The `hosted release` and `hosted secrets` lines stay `info` until `SA_VERIFY_HOSTED=1` (Step 13). Those lines are how you tell a leftover process, a stale CLI login, or the wrong team before a run starts. The verification skill in [`setup/verify-factory/`](../setup/verify-factory/SKILL.md) runs this doctor after it starts the factory.
+The doctor also prints who owns ports 8787 and 8790, the CLI account, the team name (and its id, when `SA_EXPECTED_TEAM_ID` is set), the account behind each key, and whether the GitHub App installation reaches every repository. The `hosted release` and `hosted secrets` lines stay `info` until `SA_VERIFY_HOSTED=1` (Step 13). Those lines are how you tell a leftover process, a stale CLI login, or the wrong team before a run starts. The verification skill in [`setup/verify-factory/`](../setup/verify-factory/SKILL.md) runs this doctor after it starts the factory.
 
 If the doctor finds a problem, fix it, then stop `npm run dev` with Ctrl-C and start it again so Foreman picks up the change.
 
@@ -814,7 +821,7 @@ ps aux | grep -E "agent-sdk(@[0-9.]+)? serve" | grep -v grep
 - finishes any Slack reply it's writing, posts it, and saves the chat session. That's the "draining running turns" line, and the only part that takes seconds.
 - flushes the Agent SDK's own traces and metrics. With no collector it prints one `[bdk:otel] error: … ECONNREFUSED` line and goes on. That's harmless.
 
-`npm run dev` waits up to 30 seconds for both processes, then exits anyway. **If `npm run stop` says something is still running after that,** force it:
+`npm run dev` waits up to 30 seconds for Foreman and the dashboard, including the processes they started such as `next-server`. Then it kills whatever is left and exits. **If `npm run stop` still says something is running,** for example because the `npm run dev` process itself was killed, force it:
 
 ```bash
 npm run stop -- --force

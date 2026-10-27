@@ -44,3 +44,5 @@ The dashboard (`dashboard/`) is optional (`dashboard.enabled`). It holds a copy 
 ## Data leaving the machine
 
 Issue text and the repository go to Cursor cloud agents, which is the point of the factory. Metrics stay in the local collector unless you add an exporter.
+
+`npm run doctor` checks each Cursor key against the documented `api.cursor.com/v0` API and with `agent-sdk whoami`. Only when `SA_EXPECTED_TEAM_ID` is set does it also send each key to two undocumented Cursor account endpoints on `api2.cursor.sh` to read its team id, which no documented API returns. The agent-sdk CLI uses the same endpoints to resolve a team. That call is isolated in `setup/lib/doctor/team-id.ts`.

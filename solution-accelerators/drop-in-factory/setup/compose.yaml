@@ -1,0 +1,14 @@
+# An OTel collector for Foreman's metrics (optional). Foreman pushes to
+# OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318; the Prometheus exporter
+# on :8889 is there for your own scraper or backend.
+#
+# The dashboard is not here: npm run dev starts it, or build dashboard/Dockerfile
+# to host it (docs/reference.md, "Host the dashboard anywhere").
+services:
+  collector:
+    image: otel/opentelemetry-collector-contrib:0.163.2
+    ports:
+      - "127.0.0.1:4318:4318"
+      - "127.0.0.1:8889:8889"
+    volumes:
+      - ./collector.yaml:/etc/otelcol-contrib/config.yaml:ro

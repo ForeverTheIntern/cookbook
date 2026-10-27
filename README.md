@@ -16,6 +16,14 @@ A guided project hook setup for audit logging, sensitive prompt guards, and foll
 
 Run Cursor Cloud Agent workers on customer-managed AWS infrastructure with examples for EC2 + Docker and ECS/Fargate.
 
+## Solution Accelerators
+
+Solution accelerators are complete, working starting points you copy into your own repository and configure. See the [index](solution-accelerators).
+
+### [Drop-in Software Factory](solution-accelerators/drop-in-factory)
+
+Label a GitHub issue, or ask in Slack, and a pipeline of Cursor cloud agents takes it from triage and spec through plan, implementation, review and verification to a pull request ready to merge, with approval gates on GitHub or in Slack and an optional run dashboard.
+
 ## Cursor SDK
 
 The Cursor SDK is the TypeScript API for running Cursor's coding agent from your own apps, scripts, and workflows. It supports the same agent across local workspaces and cloud runtimes, streams agent events as runs progress, and lets you manage prompts, models, cancellation, artifacts, and conversation state from code.

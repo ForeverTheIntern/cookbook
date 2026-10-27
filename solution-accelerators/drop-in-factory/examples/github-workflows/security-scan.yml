@@ -1,0 +1,99 @@
+# Security scan for Drop-in software factory. Copy this file to .github/workflows/security-scan.yml
+# and set SA_ACCEL_DIR to this folder's path relative to the repository root.
+# A high or critical finding fails the job. Do not set continue-on-error.
+name: security-scan
+
+on:
+  workflow_call:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  SA_ACCEL_DIR: solution-accelerators/drop-in-factory
+
+jobs:
+  security-scan:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: "3.12"
+
+      - name: Install scanners
+        run: |
+          set -euo pipefail
+          python3 -m pip install --disable-pip-version-check \
+            "semgrep==1.181.0" \
+            "bandit==1.9.4" \
+            "pip-audit==2.10.1" \
+            "checkov==3.3.29"
+          sudo apt-get update
+          sudo apt-get install -y shellcheck
+          curl -fsSL -o /tmp/gitleaks.tar.gz \
+            https://github.com/gitleaks/gitleaks/releases/download/v8.24.3/gitleaks_8.24.3_linux_x64.tar.gz
+          echo "9991e0b2903da4c8f6122b5c3186448b927a5da4deef1fe45271c3793f4ee29c  /tmp/gitleaks.tar.gz" | sha256sum -c -
+          tar -xzf /tmp/gitleaks.tar.gz -C /tmp gitleaks
+          sudo install -m 0755 /tmp/gitleaks /usr/local/bin/gitleaks
+          curl -fsSL -o /tmp/osv-scanner \
+            https://github.com/google/osv-scanner/releases/download/v2.7.0/osv-scanner_linux_amd64
+          echo "160c6253e2922e9e0a6a9771c5c4c40a4b3c6090b34a3cdd5e80c96cc2e4218b  /tmp/osv-scanner" | sha256sum -c -
+          sudo install -m 0755 /tmp/osv-scanner /usr/local/bin/osv-scanner
+
+      - name: Secret scan
+        working-directory: ${{ env.SA_ACCEL_DIR }}
+        run: |
+          set -euo pipefail
+          args=(detect --source . --redact --no-banner --exit-code 1)
+          if [ -f ci/gitleaks.toml ]; then
+            args+=(--config ci/gitleaks.toml)
+          fi
+          gitleaks "${args[@]}"
+
+      - name: SAST
+        working-directory: ${{ env.SA_ACCEL_DIR }}
+        run: |
+          set -euo pipefail
+          semgrep scan --metrics off --error --severity ERROR \
+            --exclude tests --exclude skill/vendor --exclude evals \
+            --config p/default .
+          bandit -r . -lll -q -x ./tests,./skill/vendor,./evals
+
+      - name: Dependency CVEs
+        working-directory: ${{ env.SA_ACCEL_DIR }}
+        run: |
+          set -euo pipefail
+          if compgen -G "requirements*.txt" >/dev/null || [ -f pyproject.toml ] || [ -f Pipfile.lock ]; then
+            pip-audit --progress-spinner off --vulnerability-service osv
+          fi
+          if [ -f package-lock.json ]; then
+            npm audit --audit-level=high --package-lock-only
+          fi
+          if find . -type f \( -name package-lock.json -o -name pnpm-lock.yaml -o -name yarn.lock -o -name requirements.txt -o -name poetry.lock -o -name Pipfile.lock -o -name uv.lock -o -name go.sum -o -name cargo.lock \) -not -path '*/tests/*' -print -quit | grep -q .; then
+            osv-scanner scan source --recursive .
+          fi
+
+      - name: Infrastructure and shell
+        working-directory: ${{ env.SA_ACCEL_DIR }}
+        run: |
+          set -euo pipefail
+          if find . \( -name '*.bicep' -o -name '*.tf' \) -print -quit | grep -q .; then
+            args=(-d . --framework bicep,terraform --compact --quiet)
+            if [ -f ci/security-accepted.txt ]; then
+              while IFS= read -r line || [ -n "$line" ]; do
+                id="${line%%#*}"
+                id="${id//[[:space:]]/}"
+                if [ -n "$id" ]; then
+                  args+=(--skip-check "$id")
+                fi
+              done < ci/security-accepted.txt
+            fi
+            checkov "${args[@]}"
+          fi
+          find . -name '*.sh' -not -path '*/tests/*' -not -path './skill/vendor/*' -print0 \
+            | xargs -0 -r shellcheck

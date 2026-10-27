@@ -1,0 +1,34 @@
+# Example CI for Drop-in Software Factory. Copy this file into .github/workflows/ in your
+# repository and set SA_ACCEL_DIR to the folder's path relative to the repo root.
+name: drop-in-factory-static-checks
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  SA_ACCEL_DIR: solution-accelerators/drop-in-factory
+
+jobs:
+  check:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, macos-15, windows-2025]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version-file: ${{ env.SA_ACCEL_DIR }}/.nvmrc
+      - name: Isolated copy, typecheck and tests
+        working-directory: ${{ env.SA_ACCEL_DIR }}
+        run: npm run check
+
+  # Copy security-scan.yml into .github/workflows/ next to this file.
+  security-scan:
+    uses: ./.github/workflows/security-scan.yml

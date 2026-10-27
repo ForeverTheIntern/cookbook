@@ -1,0 +1,29 @@
+{
+  "name": "drop-in-factory",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=22.14.0"
+  },
+  "scripts": {
+    "dev": "node --experimental-strip-types --no-warnings setup/dev.ts",
+    "typecheck": "tsc -p .",
+    "test": "node --experimental-strip-types --no-warnings --test foreman/tests/*.test.ts setup/tests/*.test.ts",
+    "doctor": "node --experimental-strip-types --no-warnings setup/doctor.ts",
+    "repos": "node --experimental-strip-types --no-warnings setup/repos.ts",
+    "deploy": "node --experimental-strip-types --no-warnings setup/deploy.ts",
+    "verify": "node --experimental-strip-types --no-warnings setup/verify.ts",
+    "verdict": "node --experimental-strip-types --no-warnings setup/verdict.ts",
+    "check": "node --experimental-strip-types --no-warnings setup/check.ts",
+    "stop": "node --experimental-strip-types --no-warnings setup/stop.ts",
+    "github-app": "node --experimental-strip-types --no-warnings setup/github-app.ts",
+    "install:all": "npm --prefix foreman install --no-audit --no-fund && npm --prefix dashboard install --no-audit --no-fund"
+  },
+  "dependencies": {
+    "yaml": "2.9.1"
+  },
+  "devDependencies": {
+    "@types/node": "22.13.0",
+    "typescript": "5.9.3"
+  }
+}

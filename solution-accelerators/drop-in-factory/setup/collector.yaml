@@ -1,0 +1,23 @@
+# Foreman's worker pushes factory.* metrics here over OTLP/HTTP
+# (OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318). Add your own backend
+# as another exporter on the metrics pipeline.
+receivers:
+  otlp:
+    protocols:
+      http:
+        endpoint: 0.0.0.0:4318
+exporters:
+  prometheus:
+    endpoint: 0.0.0.0:8889
+    # Keep the OTel names as is (factory.kpi.x becomes factory_kpi_x) with no
+    # unit or _total suffix.
+    add_metric_suffixes: false
+    # The worker pushes a full snapshot at least every minute.
+    metric_expiration: 10m
+  debug:
+    verbosity: basic
+service:
+  pipelines:
+    metrics:
+      receivers: [otlp]
+      exporters: [prometheus, debug]

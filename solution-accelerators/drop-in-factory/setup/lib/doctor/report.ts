@@ -156,7 +156,7 @@ export function cliLine(facts: CliFacts): Line {
       text: `stored CLI login in ~/.cursor/cli-config.json is ${facts.storedEmail}, but the launch key belongs to ${facts.keyEmail}. That stored login is what the CLI uses when CURSOR_API_KEY is unset`,
     };
   }
-  const token = facts.authTokenSet ? " CURSOR_AUTH_TOKEN is also set; the BDK CLI does not read it, and a Cursor agent session might." : "";
+  const token = facts.authTokenSet ? " CURSOR_AUTH_TOKEN is also set; the agent-sdk CLI does not read it, and a Cursor agent session might." : "";
   const team = facts.whoamiTeam === null || facts.whoamiTeam === "" ? "" : `, team ${facts.whoamiTeam}`;
   return { status: "ok", text: `${email} via ${facts.source ?? "unknown"}${team}.${token}` };
 }
@@ -263,7 +263,7 @@ export function hostedSecretsLine(input: { enabled: boolean; slug: string; secre
   if (input.error !== null || input.secretNames === null) return { status: "fail", text: input.error ?? "the deployment listed no secrets" };
   const missing = input.required.filter((name) => !input.secretNames!.includes(name));
   if (missing.length > 0) {
-    return { status: "fail", text: `${input.slug} lacks ${missing.join(", ")}; set each with npx --yes @cursor/bdk@0.2.28 secret set ${input.slug} <NAME>` };
+    return { status: "fail", text: `${input.slug} lacks ${missing.join(", ")}; set each with npx --yes @grok/agent-sdk@0.3.0 secret set ${input.slug} <NAME>` };
   }
   return { status: "ok", text: `${input.slug} has ${input.required.join(", ")}` };
 }

@@ -10,7 +10,7 @@ The factory lives in its own repository and works on the repositories `factory.y
 
 | Path | What it is |
 | --- | --- |
-| [`foreman/bot/`](foreman/bot/) | Foreman, the one BDK agent. |
+| [`foreman/bot/`](foreman/bot/) | Foreman, the one Agent SDK agent. |
 | &nbsp;&nbsp;[`agent.ts`](foreman/bot/agent.ts) | Its chat model and hosting (egress and secret names). |
 | &nbsp;&nbsp;[`instructions.md`](foreman/bot/instructions.md) | Its chat rules. |
 | &nbsp;&nbsp;[`subagents/<step>/`](foreman/bot/subagents/) | One folder per pipeline step: `instructions.md` is its prompt, `agent.ts` its model, deadline and kind. |
@@ -73,7 +73,7 @@ A small issue with no waits on people takes about 10 to 15 minutes from label to
 
 ![Foreman between Slack and GitHub, launching one cloud agent per step](docs/images/architecture.png)
 
-Each run is one document in the BDK host's durable key-value store. Every input names a run, and Foreman reconciles that run under a per-run lock: it re-reads the issue, the pull request, the branch and the step's cloud agent, then moves the run as far as it can. The 60-second tick reconciles every open run, so a lost delivery or a restart costs at most a minute. The route is the `steps:` list in `factory.yaml`. The diagrams with the path for each part, and why each piece is shaped this way, are in [ARCHITECTURE.md](ARCHITECTURE.md).
+Each run is one document in the Agent SDK host's durable key-value store. Every input names a run, and Foreman reconciles that run under a per-run lock: it re-reads the issue, the pull request, the branch and the step's cloud agent, then moves the run as far as it can. The 60-second tick reconciles every open run, so a lost delivery or a restart costs at most a minute. The route is the `steps:` list in `factory.yaml`. The diagrams with the path for each part, and why each piece is shaped this way, are in [ARCHITECTURE.md](ARCHITECTURE.md).
 
 ### Cost
 
@@ -89,6 +89,7 @@ Three long-lived keys authenticate, plus the GitHub App key or bot user token wh
 - **The Cursor GitHub app** installed on the repositories with write access, and a cloud agent environment so Verify can run your tests.
 - **A GitHub token** (`GH_TOKEN`) that can read and write contents, issues and pull requests, and **`gh`** on Foreman's `PATH`.
 - **Node.js 22.14 or later** (the tested minimum is in [`.nvmrc`](.nvmrc)).
+- **The Agent SDK**, the public npm package `@grok/agent-sdk` (0.3.0, pinned in [`foreman/package.json`](foreman/package.json)), which `npm run install:all` installs. Its CLI has two names, `agent-sdk` and `bdk`, that run the same program; the docs use `npx --yes @grok/agent-sdk@0.3.0 <command>`, which runs `agent-sdk`.
 - **Optional**: Slack (an app made from [`foreman/.slack/manifest.prod.json`](foreman/.slack/manifest.prod.json)), Foreman's own GitHub identity (a GitHub App or bot user), and an OTel collector (`docker compose -f setup/compose.yaml up -d`).
 
 The checklist, how to tell each item is done, and the setup snags seen so far are in [PREREQUISITES.md](PREREQUISITES.md).
@@ -103,7 +104,7 @@ Copy the folder out, fill in `.env` and `factory.yaml`, and run `npm run doctor`
 npm run dev
 ```
 
-`npm run dev` starts Foreman under `bdk serve`, plus the dashboard on <http://127.0.0.1:8787> while `dashboard.enabled` is true. GitHub deliveries arrive through your Cursor account, so no public URL is needed. Foreman starts in about 30 seconds, and its first tick runs within a minute. To run Foreman as a Cursor-hosted deployment instead, `npm run deploy`: see [Go hosted](docs/reference.md#go-hosted). A run from start to merge, gates and abandoning are in [Day-to-day use](docs/reference.md#day-to-day-use-a-run-from-start-to-merge).
+`npm run dev` starts Foreman under `agent-sdk serve`, plus the dashboard on <http://127.0.0.1:8787> while `dashboard.enabled` is true. GitHub deliveries arrive through your Cursor account, so no public URL is needed. Foreman starts in about 30 seconds, and its first tick runs within a minute. To run Foreman as a Cursor-hosted deployment instead, `npm run deploy`: see [Go hosted](docs/reference.md#go-hosted). A run from start to merge, gates and abandoning are in [Day-to-day use](docs/reference.md#day-to-day-use-a-run-from-start-to-merge).
 
 ### Verify
 
@@ -119,10 +120,10 @@ Expected: `npm test` ends with `# fail 0`. The tests run the full route, replays
 ```bash
 npm run stop                                               # or Ctrl-C where npm run dev runs
 docker compose -f setup/compose.yaml down                  # if you started the collector
-npx --yes @cursor/bdk@0.2.28 deployment delete foreman     # if you deployed it hosted
+npx --yes @grok/agent-sdk@0.3.0 deployment delete foreman     # if you deployed it hosted
 ```
 
-A slow stop is expected, not a hang: Foreman finishes any Slack reply it's writing and flushes telemetry (typically under a second idle, and several seconds mid-reply). If `npm run stop` still finds it after 30 seconds, `npm run stop -- --force`; runs and costs are already in BDK's store ([tutorial Clean up](docs/tutorial.md#clean-up)). The folder creates no cloud resources besides the cloud agents each run launches, which stop on their own. Delete `foreman/.agent-serve/` and `dashboard/.data/` to forget past runs.
+A slow stop is expected, not a hang: Foreman finishes any Slack reply it's writing and flushes telemetry (typically under a second idle, and several seconds mid-reply). If `npm run stop` still finds it after 30 seconds, `npm run stop -- --force`; runs and costs are already in the Agent SDK's store ([tutorial Clean up](docs/tutorial.md#clean-up)). The folder creates no cloud resources besides the cloud agents each run launches, which stop on their own. Delete `foreman/.agent-serve/` and `dashboard/.data/` to forget past runs.
 
 ## Limitations
 
@@ -148,4 +149,4 @@ A slow stop is expected, not a hang: Foreman finishes any Slack reply it's writi
 
 ## Related
 
-Cursor docs: <https://cursor.com/docs>. Cloud Agents API: <https://cursor.com/docs/background-agent/api/overview>. BDK: <https://cursor.com/docs/bdk>.
+Cursor docs: <https://cursor.com/docs>. Cloud Agents API: <https://cursor.com/docs/background-agent/api/overview>. Agent SDK (`@grok/agent-sdk`): <https://cursor.com/docs/bdk>.

@@ -2,7 +2,7 @@
  * The settings a step declares next to its prompt, in
  * `foreman/bot/subagents/<step>/agent.ts`:
  *
- *   export default defineAgent({ description, model });   // what BDK sees
+ *   export default defineAgent({ description, model });   // what the Agent SDK sees
  *   export const step = cloudStep({ kind, model, ... });  // how Foreman runs it
  *
  * `kind` says what the step's result means to the pipeline. The order of the

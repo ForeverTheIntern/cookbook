@@ -1,4 +1,4 @@
-import { githubChannel } from "@cursor/bdk/channels/github";
+import { githubChannel } from "@grok/agent-sdk/channels/github";
 import { dispatch } from "../lib/pipeline/dispatch.ts";
 import { fromGitHub } from "../lib/pipeline/ingress.ts";
 import { factory, runtime, storeOf, type Host } from "../lib/runtime.ts";

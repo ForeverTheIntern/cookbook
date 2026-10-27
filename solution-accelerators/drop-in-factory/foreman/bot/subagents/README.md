@@ -5,7 +5,7 @@ Each folder here is one pipeline step. Foreman runs it as a Cursor cloud agent o
 | File | What it controls |
 | --- | --- |
 | `<step>/instructions.md` | The step's prompt: what it reads, what it writes and the shape of its result file. |
-| `<step>/agent.ts` | `cloudStep({...})`: the model, the deadline, the Slack status line, the skills it gets, and its `kind`, which says what its result means (triage, spec, document, change or verdict). `defineAgent` gives BDK the description and model. |
+| `<step>/agent.ts` | `cloudStep({...})`: the model, the deadline, the Slack status line, the skills it gets, and its `kind`, which says what its result means (triage, spec, document, change or verdict). `defineAgent` gives the Agent SDK the description and model. |
 | `common.md` | Rules added to every step's prompt, after its own instructions. |
 
 The folder name is the step's id. It is the stage name in Slack and on the issue, the entry in `steps:`, and the result file `.factory/<run-id>/<step>.json`.

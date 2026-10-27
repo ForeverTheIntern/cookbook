@@ -1,6 +1,6 @@
 /**
  * `npm run -s repos`: one `--repo owner/name` per repository in factory.yaml,
- * for `bdk serve --cursor-events $(npm run -s repos)`.
+ * for `agent-sdk serve --cursor-events $(npm run -s repos)`.
  */
 
 import "../foreman/bot/lib/config/dotenv.ts";

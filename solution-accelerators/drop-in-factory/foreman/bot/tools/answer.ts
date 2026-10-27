@@ -1,4 +1,4 @@
-import { defineTool } from "@cursor/bdk/tools";
+import { defineTool } from "@grok/agent-sdk/tools";
 import { z } from "zod";
 import { dispatch } from "../lib/pipeline/dispatch.ts";
 import { runtime, storeOf, type Host } from "../lib/runtime.ts";

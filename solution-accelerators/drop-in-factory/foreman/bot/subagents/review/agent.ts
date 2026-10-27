@@ -1,4 +1,4 @@
-import { defineAgent } from "@cursor/bdk";
+import { defineAgent } from "@grok/agent-sdk";
 import { cloudStep } from "../../lib/steps/define.ts";
 
 // What this step does and the model it runs on. The prompt is instructions.md

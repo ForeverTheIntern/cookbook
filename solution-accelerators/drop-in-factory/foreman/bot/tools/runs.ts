@@ -1,4 +1,4 @@
-import { defineTool } from "@cursor/bdk/tools";
+import { defineTool } from "@grok/agent-sdk/tools";
 import { z } from "zod";
 import { roleLabels, runCost } from "../lib/store/runs.ts";
 import { storeOf, type Host } from "../lib/runtime.ts";

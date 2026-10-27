@@ -102,9 +102,9 @@ npm run doctor
 npm run dev
 ```
 
-`npm run dev` starts Foreman under `bdk serve` with one `--repo` per repository in `factory.yaml`, and, while `dashboard.enabled` is true, the dashboard on <http://127.0.0.1:8787>. With no `SA_PORTAL_INGEST_SECRET` set, it makes a random one and gives it to both. `--cursor-events` receives GitHub deliveries through your Cursor account, so no public URL is needed. Foreman starts in about 30 seconds, and its first tick runs within a minute. Ctrl-C stops both. A small issue with no waits on people takes about 10 to 15 minutes from label to a pull request ready to merge.
+`npm run dev` starts Foreman under `agent-sdk serve` with one `--repo` per repository in `factory.yaml`, and, while `dashboard.enabled` is true, the dashboard on <http://127.0.0.1:8787>. With no `SA_PORTAL_INGEST_SECRET` set, it makes a random one and gives it to both. `--cursor-events` receives GitHub deliveries through your Cursor account, so no public URL is needed. Foreman starts in about 30 seconds, and its first tick runs within a minute. Ctrl-C stops both. A small issue with no waits on people takes about 10 to 15 minutes from label to a pull request ready to merge.
 
-Run state lives in BDK's durable store under `foreman/.agent-serve/`, so stopping and starting loses nothing. The dashboard keeps its own copy in `dashboard/.data/` and rebuilds it from Foreman within a minute if you delete it. For metrics, `docker compose -f setup/compose.yaml up -d` starts a collector on `:4318`; set `OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318`.
+Run state lives in the Agent SDK's durable store under `foreman/.agent-serve/`, so stopping and starting loses nothing. The dashboard keeps its own copy in `dashboard/.data/` and rebuilds it from Foreman within a minute if you delete it. For metrics, `docker compose -f setup/compose.yaml up -d` starts a collector on `:4318`; set `OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318`.
 
 To start Foreman without the dashboard: `npm run dev -- --foreman-only`. To stop it from another terminal: `npm run stop`.
 
@@ -112,24 +112,26 @@ To start Foreman without the dashboard: `npm run dev -- --foreman-only`. To stop
 
 Foreman can run as a Cursor-hosted deployment instead of on your machine. Nothing in the folder changes; the store moves to the deployment's durable `host.kv`, and the 60-second tick becomes a schedule.
 
-The deployment is named `foreman`, after the agent folder. BDK builds it from a pushed branch of a GitHub repository that your team's Cursor GitHub App can read, so commit this folder in its repository and push it first. Then, from the factory folder:
+The deployment is named `foreman`, after the agent folder. The Agent SDK builds it from a pushed branch of a GitHub repository that your team's Cursor GitHub App can read, so commit this folder in its repository and push it first. The `npx --yes @grok/agent-sdk@0.3.0 …` commands below run the Agent SDK's CLI, `agent-sdk`. The package also installs it as `bdk`, so from `foreman/` after `npm run install:all`, `npx agent-sdk …` and `npx bdk …` do the same.
+
+Then, from the factory folder:
 
 ```bash
 npm run deploy                                   # from origin at the current branch; add --repo <https url> --ref <branch> to pick another
 cd foreman
-npx --yes @cursor/bdk@0.2.28 secret set foreman SA_GH_TOKEN
-npx --yes @cursor/bdk@0.2.28 secret set foreman SA_CURSOR_API_KEY
-npx --yes @cursor/bdk@0.2.28 secret set foreman SA_CURSOR_ADMIN_API_KEY
-npx --yes @cursor/bdk@0.2.28 secret set foreman SA_GH_APP_ID            # github.identity: app
-npx --yes @cursor/bdk@0.2.28 secret set foreman SA_GH_APP_PRIVATE_KEY   # github.identity: app
-npx --yes @cursor/bdk@0.2.28 slack create --dir . --env prod   # only with a slack block in factory.yaml
+npx --yes @grok/agent-sdk@0.3.0 secret set foreman SA_GH_TOKEN
+npx --yes @grok/agent-sdk@0.3.0 secret set foreman SA_CURSOR_API_KEY
+npx --yes @grok/agent-sdk@0.3.0 secret set foreman SA_CURSOR_ADMIN_API_KEY
+npx --yes @grok/agent-sdk@0.3.0 secret set foreman SA_GH_APP_ID            # github.identity: app
+npx --yes @grok/agent-sdk@0.3.0 secret set foreman SA_GH_APP_PRIVATE_KEY   # github.identity: app
+npx --yes @grok/agent-sdk@0.3.0 slack create --dir . --env prod   # only with a slack block in factory.yaml
 cd ..
 npm run doctor -- --hosted
 ```
 
-`secret set` prompts for each value; in a shell that can't answer a prompt, pipe it in (`printf %s "$GH_TOKEN" | npx --yes @cursor/bdk@0.2.28 secret set foreman SA_GH_TOKEN`). With `github.identity: bot-user`, set `SA_GH_BOT_TOKEN` instead of the two app secrets. `slack create` is needed once per deployment: it waits until you finish its `slack-setup` link in a browser, signed in to Cursor as the account behind `CURSOR_API_KEY`, and later deploys keep the Slack app. The doctor's local checks still run, so keep a collector up for its OTel line. Follow the hosted Foreman with `npx --yes @cursor/bdk@0.2.28 logs --prod --slug foreman`; the tutorial's Step 13 lists the lines to expect there.
+`secret set` prompts for each value; in a shell that can't answer a prompt, pipe it in (`printf %s "$GH_TOKEN" | npx --yes @grok/agent-sdk@0.3.0 secret set foreman SA_GH_TOKEN`). With `github.identity: bot-user`, set `SA_GH_BOT_TOKEN` instead of the two app secrets. `slack create` is needed once per deployment: it waits until you finish its `slack-setup` link in a browser, signed in to Cursor as the account behind `CURSOR_API_KEY`, and later deploys keep the Slack app. The doctor's local checks still run, so keep a collector up for its OTel line. Follow the hosted Foreman with `npx --yes @grok/agent-sdk@0.3.0 logs --prod --slug foreman`; the tutorial's Step 13 lists the lines to expect there.
 
-`npm run deploy` refuses to run with uncommitted changes in the folder or when the remote branch isn't HEAD. It runs `bdk deploy` with `--repo`, `--ref`, `--path` and one `--cursor-events-repo` per repository in `factory.yaml`, and records the release id, `repo@sha` and a digest of the folder's files in `setup/verdicts/deploys.jsonl`. Commit that file. With `SA_VERIFY_HOSTED=1` the doctor checks that `foreman` runs the recorded release, built from the same files as your HEAD, and has its secrets. `npm run deploy -- --dry-run` prints the request and changes nothing.
+`npm run deploy` refuses to run with uncommitted changes in the folder or when the remote branch isn't HEAD. It runs `agent-sdk deploy` with `--repo`, `--ref`, `--path` and one `--cursor-events-repo` per repository in `factory.yaml`, and records the release id, `repo@sha` and a digest of the folder's files in `setup/verdicts/deploys.jsonl`. Commit that file. With `SA_VERIFY_HOSTED=1` the doctor checks that `foreman` runs the recorded release, built from the same files as your HEAD, and has its secrets. `npm run deploy -- --dry-run` prints the request and changes nothing.
 
 On hosting, `CURSOR_API_KEY` is the deployment's own credential and `GH_TOKEN` is the Cursor account's GitHub credential, so the factory's keys get their own names: `SA_CURSOR_API_KEY` holds the key that launches step agents, `SA_GH_TOKEN` your GitHub token, and `SA_CURSOR_ADMIN_API_KEY` the optional Admin API key (hosting reserves `CURSOR_*` names). Hosted Slack is a separate bot that `slack create` makes after the first deploy; it stores the bot's tokens on the deployment as `FOREMAN_SLACK_BOT_TOKEN` and `FOREMAN_SLACK_APP_TOKEN`. When you rename or add a secret, set it on `foreman` before you deploy code that reads it, or every tick fails until you do.
 
@@ -237,17 +239,17 @@ npm run verify -- evidence
 npm run verify -- cleanup
 ```
 
-`npm run doctor` also reports who owns ports 8787 and 8790, which account the CLI and each key belong to, the team name and id, and whether the GitHub App installation reaches every repository in `factory.yaml`. The hosted lines (the running release against the last `npm run deploy` record, and the deployment's secrets) stay off until `SA_VERIFY_HOSTED=1`; `SA_DEPLOYMENT_SLUG` overrides `foreman`. Verdicts go in `setup/verdicts/ledger.jsonl`, with `setup/verdicts/ledger.md` beside it, and are committed (`npm run verdict -- append --pr <n> --verdict <name> --verifier "<agent, model>" --evidence <paths>`). A verdict is keyed by the newest commit outside `setup/verdicts/`, and a new one voids the older row for that pull request. Cleanup stops the pids launch recorded, not every `bdk serve` on the machine.
+`npm run doctor` also reports who owns ports 8787 and 8790, which account the CLI and each key belong to, the team name and id, and whether the GitHub App installation reaches every repository in `factory.yaml`. The hosted lines (the running release against the last `npm run deploy` record, and the deployment's secrets) stay off until `SA_VERIFY_HOSTED=1`; `SA_DEPLOYMENT_SLUG` overrides `foreman`. Verdicts go in `setup/verdicts/ledger.jsonl`, with `setup/verdicts/ledger.md` beside it, and are committed (`npm run verdict -- append --pr <n> --verdict <name> --verifier "<agent, model>" --evidence <paths>`). A verdict is keyed by the newest commit outside `setup/verdicts/`, and a new one voids the older row for that pull request. Cleanup stops the pids launch recorded, not every `agent-sdk serve` on the machine.
 
 ## Known issues
 
 This is the one list; [ARCHITECTURE.md](../ARCHITECTURE.md) links here and explains the first item in depth.
 
-- **Overlapping sessions can, rarely, double a tick, a step launch or a post.** On Cursor hosting each scheduled tick runs in a runtime of its own, beside Slack and GitHub deliveries. Leases and once-keys live in `host.kv`, which in `@cursor/bdk` 0.2.28 has no compare-and-set, so two sessions that claim the same lease within about 150 ms can both proceed. Intake is human-driven, so this should be rare. Run saves check the run's `rev`, and posts, launches and Slack intake are keyed so a repeat finds its key and does nothing. The fix is `putIfAbsent` and `putIfVersion` on `host.kv`. Details: [the race in ARCHITECTURE.md](../ARCHITECTURE.md#the-hostkv-race).
+- **Overlapping sessions can, rarely, double a tick, a step launch or a post.** On Cursor hosting each scheduled tick runs in a runtime of its own, beside Slack and GitHub deliveries. Leases and once-keys live in `host.kv`, which in `@grok/agent-sdk` 0.3.0 has no compare-and-set, so two sessions that claim the same lease within about 150 ms can both proceed. Intake is human-driven, so this should be rare. Run saves check the run's `rev`, and posts, launches and Slack intake are keyed so a repeat finds its key and does nothing. The fix is `putIfAbsent` and `putIfVersion` on `host.kv`. Details: [the race in ARCHITECTURE.md](../ARCHITECTURE.md#the-hostkv-race).
 - **Hosted Slack ignores mentions posted by bots and apps.** A request a person types in Slack works. One posted through an app (another bot, a workflow, or a script with an app's token) never reaches a hosted Foreman, even when `slack.testerBot` and the channel allowlist would let it through on a local one. So scripted Slack tests need a local Foreman.
-- **Hosted `host.files` can't recreate a deleted path.** In `@cursor/bdk` 0.2.28 a write to a path that was deleted earlier fails, so Foreman keeps all its state in `host.kv`. Keep that in mind before adding anything that stores documents in `host.files`.
+- **Hosted `host.files` can't recreate a deleted path.** On Cursor hosting a write to a `host.files` path that was deleted earlier can fail, so Foreman keeps all its state in `host.kv`. Keep that in mind before adding anything that stores documents in `host.files`.
 - **The dashboard isn't tested with a hosted Foreman.** The dashboard is checked against a local Foreman only. Follow hosted runs in Slack and on GitHub.
 - **A hosted Foreman exports no metrics by default.** It can only reach hosts in its egress list, which doesn't include a collector. Metrics work on a local Foreman with the collector from `docker compose -f setup/compose.yaml up -d`.
-- **`deployment get` doesn't say which commit is running.** `npm run deploy` records it, and `npm run doctor -- --hosted` checks the running release against that record. A deploy made with `bdk deploy` directly is reported as unrecorded.
-- **The deploy source must be readable by your team's Cursor GitHub App.** BDK builds from a pushed branch, so deploying from a repository the App can't read fails with "not accessible through this team's installation". See [PREREQUISITES.md](../PREREQUISITES.md).
+- **`deployment get` doesn't say which commit is running.** `npm run deploy` records it, and `npm run doctor -- --hosted` checks the running release against that record. A deploy made with `agent-sdk deploy` directly is reported as unrecorded.
+- **The deploy source must be readable by your team's Cursor GitHub App.** The Agent SDK builds from a pushed branch, so deploying from a repository the App can't read fails with "not accessible through this team's installation". See [PREREQUISITES.md](../PREREQUISITES.md).
 - **The verify walkthrough video depends on the verify agent.** It is recorded in the agent's VM and embedded in the pull request description, and Foreman uploads it into Slack from the agent's artifacts. When the agent records none, or the upload fails, the run still moves on, and the Slack post links the video or says none was recorded.

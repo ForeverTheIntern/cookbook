@@ -5,19 +5,19 @@ import { fileURLToPath } from "node:url";
 const FOREMAN = fileURLToPath(new URL("../", import.meta.url));
 
 /**
- * Warnings BDK raises on this project that are known and harmless. Anything
- * else (a step folder BDK can't read, a tool or skill it can't load) fails.
+ * Warnings the Agent SDK raises on this project that are known and harmless. Anything
+ * else (a step folder the Agent SDK can't read, a tool or skill it can't load) fails.
  */
 const KNOWN = [
   // Every GitHub handler returns a host task, never a chat session, so a fresh session per delivery is what it wants.
   /omitted continuation stamped github\.none\/v2/,
-  // Message wording, read by lib/templates.ts. BDK has no slot for it and loads nothing from it.
+  // Message wording, read by lib/templates.ts. The Agent SDK has no slot for it and loads nothing from it.
   /Unrecognized directory "templates" under bot\//,
 ];
 
-test("BDK discovers the bot: each step folder as a subagent, and the skills, tools, channels, schedule and hook", async () => {
+test("the Agent SDK discovers the bot: each step folder as a subagent, and the skills, tools, channels, schedule and hook", async () => {
   process.env.FOREMAN_SLACK_BOT_TOKEN = "";
-  const { loadProject, ProjectLoadError } = await import(new URL("../node_modules/@cursor/bdk/dist/index.js", import.meta.url).href);
+  const { loadProject, ProjectLoadError } = await import(new URL("../node_modules/@grok/agent-sdk/dist/index.js", import.meta.url).href);
   let project;
   try {
     project = await loadProject(FOREMAN, { strict: true });

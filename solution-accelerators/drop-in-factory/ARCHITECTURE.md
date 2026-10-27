@@ -13,7 +13,7 @@ flowchart LR
     slackOut["Writes: status message and its thread,<br/>asks with reply hints, walkthrough video,<br/>agent session links, post-mortem"]
   end
   config["factory.yaml<br/>steps: (order and gates), repos, slack"]
-  subgraph foreman["Foreman, one BDK agent · foreman/bot/"]
+  subgraph foreman["Foreman, one Agent SDK agent · foreman/bot/"]
     channels["Channels<br/>channels/github.ts · channels/slack.ts"]
     chat["Chat model and its tools<br/>agent.ts · instructions.md · tools/"]
     intake["Slack intake and routing<br/>lib/slack/request.ts · lib/pipeline/dispatch.ts"]
@@ -57,7 +57,7 @@ It runs the same code two ways:
 ```mermaid
 flowchart LR
   subgraph local["Local: npm run dev"]
-    lf["Foreman under bdk serve<br/>store in foreman/.agent-serve/"]
+    lf["Foreman under agent-sdk serve<br/>store in foreman/.agent-serve/"]
     dash["Dashboard on :8787 (dashboard/)"]
     otel["OTel collector (setup/compose.yaml)"]
     lf -- "signed pushes" --> dash
@@ -186,7 +186,7 @@ The first two are pure and tested on real event text, so the common case never w
 
 **The walkthrough video** is uploaded into the status thread with `files.getUploadURLExternal` and `files.completeUploadExternal`, so Slack plays it inline; on any failure Foreman posts the link ([decision](docs/decisions/verify-video-in-the-pull-request.md)).
 
-Slack stamps a `bot_id` on a message a person posts through an app (a test harness, a workflow, a client using an app's user token), and BDK drops such mentions unless the author is on `engagement.botMentions.allowFrom`. So Foreman reads the channel's members when it starts and allowlists the people (not bots, not deactivated accounts) by user id. `slack.testerBot` adds one bot id on top, for automated tests that post as a bot. Someone who joins the channel later is admitted after Foreman's next restart.
+Slack stamps a `bot_id` on a message a person posts through an app (a test harness, a workflow, a client using an app's user token), and the Agent SDK drops such mentions unless the author is on `engagement.botMentions.allowFrom`. So Foreman reads the channel's members when it starts and allowlists the people (not bots, not deactivated accounts) by user id. `slack.testerBot` adds one bot id on top, for automated tests that post as a bot. Someone who joins the channel later is admitted after Foreman's next restart.
 
 ## Invoice cost
 
@@ -206,14 +206,14 @@ With the dashboard off, or on without a URL or secret, Foreman sends nothing; th
 
 The full list of known issues is [in the reference](docs/reference.md#known-issues). This is the one that comes from the design.
 
-**Overlapping sessions can, rarely, double a tick, a step launch or a post.** On Cursor hosting every scheduled tick starts a runtime of its own, and Slack and GitHub deliveries run beside it, so two sessions can work on one run at once. The run's lease and the once-keys are stored in `host.kv`, which in `@cursor/bdk` 0.2.28 has only get, put and delete: no compare-and-set, no list, no expiry. So a lease or once-key is claimed by writing a fresh token, waiting 150 ms, and reading it back. Two sessions that claim within that window can both read their own token, and then both run the tick, both launch the stage's step agent, or both make the same post. The open-runs list (`idx/open`) is a read-modify-write value too: a racing write can drop an id, which comes back the next time that run is saved.
+**Overlapping sessions can, rarely, double a tick, a step launch or a post.** On Cursor hosting every scheduled tick starts a runtime of its own, and Slack and GitHub deliveries run beside it, so two sessions can work on one run at once. The run's lease and the once-keys are stored in `host.kv`, which in `@grok/agent-sdk` 0.3.0 has only get, put and delete: no compare-and-set, no list, no expiry. So a lease or once-key is claimed by writing a fresh token, waiting 150 ms, and reading it back. Two sessions that claim within that window can both read their own token, and then both run the tick, both launch the stage's step agent, or both make the same post. The open-runs list (`idx/open`) is a read-modify-write value too: a racing write can drop an id, which comes back the next time that run is saved.
 
 Intake is human-driven (a label or a Slack message), so collisions should be rare. What limits the damage:
 
 - every run save carries the run's `rev`, and a save from a stale read fails instead of overwriting;
 - side effects are keyed: posts by (run, target, key), step runs by (run, visit), Slack intake and relayed answers by once-keys, so a repeated delivery or a later tick finds the key and does nothing.
 
-The fix is for `host.kv` to expose the `putIfAbsent` and `putIfVersion` that BDK's storage layer already has (`HostKvCasApi`). Then a lease and a once-key become a single conditional write, and the window closes. See the [decision record](docs/decisions/state-on-host-kv.md).
+The fix is for `host.kv` to expose the `putIfAbsent` and `putIfVersion` that the Agent SDK's storage layer already has (`HostKvCasApi`). Then a lease and a once-key become a single conditional write, and the window closes. See the [decision record](docs/decisions/state-on-host-kv.md).
 
 ## Decisions
 

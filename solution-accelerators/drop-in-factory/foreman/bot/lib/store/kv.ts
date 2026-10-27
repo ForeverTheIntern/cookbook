@@ -1,6 +1,6 @@
 /**
  * The one durable service the store needs, shaped like the Agent SDK's
- * `host.kv`, plus an in-memory version for tests. In @cursor/bdk 0.2.28 the
+ * `host.kv`, plus an in-memory version for tests. In @grok/agent-sdk 0.3.0 the
  * agent-facing `host.kv` has get, put and delete only: no list, no
  * compare-and-set and no expiry, so the store keeps its own index keys and
  * puts expiry timestamps inside values.

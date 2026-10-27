@@ -299,4 +299,4 @@ If they say yes, follow [Go hosted](reference.md#go-hosted) in the reference, ex
 
 ## When you're done
 
-Summarize for the person: what is running where, the channel and label to use, who can approve, and how to stop it (`npm run stop`, `docker compose -f setup/compose.yaml down`, and for hosted `npx --yes @cursor/bdk@0.2.28 deployment delete foreman`). Offer the log of anything that didn't match this guide.
+Summarize for the person: what is running where, the channel and label to use, who can approve, and how to stop it (`npm run stop`, `docker compose -f setup/compose.yaml down`, and for hosted `npx --yes @grok/agent-sdk@0.3.0 deployment delete foreman`, which runs the Agent SDK's `agent-sdk` CLI, also installed as `bdk`). Offer the log of anything that didn't match this guide.

@@ -20,6 +20,7 @@ What has to be true before setup. The [README](README.md) links here, and [the t
 ## Tools
 
 - Node.js 22.14 or later ([`.nvmrc`](.nvmrc) names the tested minimum). Not Bun.
+- The Agent SDK, `@grok/agent-sdk` 0.3.0 from the public npm registry. `npm run install:all` installs it into `foreman/`. Its CLI is installed as both `agent-sdk` and `bdk`, the same program under two names. Commands on this page use `npx --yes @grok/agent-sdk@0.3.0 <command>`, which runs `agent-sdk`.
 - `gh`, the GitHub CLI, on Foreman's `PATH`. It is used only for the issue timeline (who added a gate label) and the Deployments GraphQL query.
 - `lsof`, so `npm run doctor` can say which process owns ports 8787 and 8790. On Linux, lsof 4.95 misses Next's `next-server`; the doctor then reads `/proc/net/tcp`.
 - Optional, for metrics: Docker with Compose, or the `otelcol-contrib` binary. Without Docker: `curl -fsSL https://github.com/open-telemetry/opentelemetry-collector-releases/releases/download/v0.163.2/otelcol-contrib_0.163.2_linux_amd64.tar.gz | tar xz otelcol-contrib` (tested 0.163.2; other platforms are on the [releases page](https://github.com/open-telemetry/opentelemetry-collector-releases/releases)).
@@ -27,7 +28,7 @@ What has to be true before setup. The [README](README.md) links here, and [the t
 
 ## Environment
 
-Variables this accelerator defines start with `SA_`. Copy them from [`.env.example`](.env.example). Platform variables keep the name the platform reads: `GH_TOKEN` is the GitHub CLI's, `CURSOR_*` are Cursor's, `OTEL_*` are OpenTelemetry's, and `FOREMAN_SLACK_BOT_TOKEN` / `FOREMAN_SLACK_APP_TOKEN` are the names the BDK's Slack channel reads for the `foreman` agent.
+Variables this accelerator defines start with `SA_`. Copy them from [`.env.example`](.env.example). Platform variables keep the name the platform reads: `GH_TOKEN` is the GitHub CLI's, `CURSOR_*` are Cursor's, `OTEL_*` are OpenTelemetry's, and `FOREMAN_SLACK_BOT_TOKEN` / `FOREMAN_SLACK_APP_TOKEN` are the names the Agent SDK's Slack channel reads for the `foreman` agent.
 
 | Variable | Who sets it | Notes |
 | --- | --- | --- |
@@ -41,7 +42,7 @@ Variables this accelerator defines start with `SA_`. Copy them from [`.env.examp
 | `SA_GH_APP_ID`, `SA_GH_APP_PRIVATE_KEY` | `npm run github-app` | Only with `github.identity: app`. |
 | `SA_GH_BOT_TOKEN` | You (the bot account's token) | Only with `github.identity: bot-user`. |
 
-On Cursor hosting the platform owns `CURSOR_API_KEY` and `GH_TOKEN`, so the deployment `foreman` reads the factory's keys as `SA_CURSOR_API_KEY`, `SA_GH_TOKEN` and `SA_CURSOR_ADMIN_API_KEY` instead. Locally either name works, and the `SA_` one wins. Set them with `npx --yes @cursor/bdk@0.2.28 secret set foreman <NAME>` before you deploy code that reads them.
+On Cursor hosting the platform owns `CURSOR_API_KEY` and `GH_TOKEN`, so the deployment `foreman` reads the factory's keys as `SA_CURSOR_API_KEY`, `SA_GH_TOKEN` and `SA_CURSOR_ADMIN_API_KEY` instead. Locally either name works, and the `SA_` one wins. Set them with `npx --yes @grok/agent-sdk@0.3.0 secret set foreman <NAME>` before you deploy code that reads them.
 
 ## Snags
 
@@ -74,31 +75,31 @@ Cause: the CLI credential, a stored login in `~/.cursor/cli-config.json`, or `CU
 
 Fix: unset the extra credential, or set `CURSOR_API_KEY` to the account whose team you mean. Re-run the doctor. The `team` line prints the id and name it found. Set `SA_EXPECTED_TEAM_ID` and `SA_EXPECTED_TEAM_NAME` when a proof has to pin them.
 
-On Windows the extra credential can be `authInfo` in `%USERPROFILE%\.cursor\cli-config.json` (the Cursor CLI), while `bdk whoami` already uses a different stored login that matches the launch key. Copy the file aside, remove the `authInfo` object, and run the doctor again. Leave the rest of the file. BDK does not read that file; the doctor does, so a second plus-alias on the same team still fails the check.
+On Windows the extra credential can be `authInfo` in `%USERPROFILE%\.cursor\cli-config.json` (the Cursor CLI), while `agent-sdk whoami` already uses a different stored login that matches the launch key. Copy the file aside, remove the `authInfo` object, and run the doctor again. Leave the rest of the file. The Agent SDK does not read that file; the doctor does, so a second plus-alias on the same team still fails the check.
 
 Symptom: a hosted deploy fails with "not accessible through this team's installation".
 
-Cause: BDK builds from a pushed ref, and the team's Cursor GitHub App installation can't read the repository it was asked to build from. The deploy pointed at a repository in a different GitHub organization from the one the team's App is installed on.
+Cause: The Agent SDK builds from a pushed ref, and the team's Cursor GitHub App installation can't read the repository it was asked to build from. The deploy pointed at a repository in a different GitHub organization from the one the team's App is installed on.
 
 Fix: deploy from a repository the team's App can read, normally your own copy of this folder. Push it, then `npm run deploy` (it uses `origin` and the current branch), or pass `--repo https://github.com/your-org/your-repo --ref <branch>`. Don't deploy again to see the same error.
 
 Symptom: `npm run deploy` stops with "commit or stash these first" or "Push HEAD to <branch> first".
 
-Cause: BDK builds the pushed branch, not your working tree, so a deploy with local changes would run different code from what you have.
+Cause: The Agent SDK builds the pushed branch, not your working tree, so a deploy with local changes would run different code from what you have.
 
 Fix: commit, `git push origin <branch>`, and run it again.
 
-Symptom: `npx --yes @cursor/bdk@0.2.28 secret set foreman SA_GH_TOKEN` hangs or fails in a script or a cloud agent shell.
+Symptom: `npx --yes @grok/agent-sdk@0.3.0 secret set foreman SA_GH_TOKEN` hangs or fails in a script or a cloud agent shell.
 
 Cause: `secret set` reads the value from a hidden prompt, and nothing can answer it there.
 
-Fix: pipe the value in with the `.env` loaded: `printf %s "$GH_TOKEN" | npx --yes @cursor/bdk@0.2.28 secret set foreman SA_GH_TOKEN`. Don't use `--from-argv`, which puts the value on the command line.
+Fix: pipe the value in with the `.env` loaded: `printf %s "$GH_TOKEN" | npx --yes @grok/agent-sdk@0.3.0 secret set foreman SA_GH_TOKEN`. Don't use `--from-argv`, which puts the value on the command line.
 
-Symptom: `npx --yes @cursor/bdk@0.2.28 slack create --dir . --env prod` prints `Finish Slack setup in the browser: https://cursor.com/dashboard/deployed-agents/slack-setup?wizardId=…` and waits.
+Symptom: `npx --yes @grok/agent-sdk@0.3.0 slack create --dir . --env prod` prints `Finish Slack setup in the browser: https://cursor.com/dashboard/deployed-agents/slack-setup?wizardId=…` and waits.
 
 Cause: the hosted Slack app is made in a browser wizard, signed in to Cursor as the account that ran the command (the account behind `CURSOR_API_KEY`).
 
-Fix: open the link as that account and finish it. Do it once per deployment: a redeploy keeps the Slack app, so when `npx --yes @cursor/bdk@0.2.28 secret list foreman` already shows `FOREMAN_SLACK_BOT_TOKEN`, skip `slack create`.
+Fix: open the link as that account and finish it. Do it once per deployment: a redeploy keeps the Slack app, so when `npx --yes @grok/agent-sdk@0.3.0 secret list foreman` already shows `FOREMAN_SLACK_BOT_TOKEN`, skip `slack create`.
 
 Symptom: going hosted only, `npm run doctor -- --hosted` fails `OTel collector: fetch failed`.
 
@@ -120,6 +121,6 @@ Fix: give your local config a label with your name in it, such as `intakeLabel: 
 
 Symptom: `npm run doctor -- --hosted` prints `FAIL  hosted release: foreman runs release …, and no deploy of it is recorded`.
 
-Cause: the release was made with `bdk deploy` directly, so nothing recorded its source; `deployment get` doesn't report one.
+Cause: the release was made with `agent-sdk deploy` directly, so nothing recorded its source; `deployment get` doesn't report one.
 
 Fix: deploy with `npm run deploy` and commit `setup/verdicts/deploys.jsonl`.

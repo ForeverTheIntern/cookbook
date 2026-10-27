@@ -13,7 +13,7 @@
  *   once/<key>                a side effect already started
  *   meta/<name>               factory id, status-line budget, facts
  *
- * host.kv in @cursor/bdk 0.2.28 has no list and no compare-and-set. The
+ * host.kv in @grok/agent-sdk 0.3.0 has no list and no compare-and-set. The
  * indexes are read-modify-write lists that every save of a run repairs, and
  * leases and once-keys are claimed by writing a token, waiting, and reading it
  * back. Two runtimes that overlap closely can both win: see "Known issues" in

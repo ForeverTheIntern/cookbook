@@ -4,9 +4,9 @@
  *
  *   npm run deploy                      # origin, current branch
  *   npm run deploy -- --repo https://github.com/your-org/your-repo --ref main
- *   npm run deploy -- --dry-run         # print the bdk request, change nothing
+ *   npm run deploy -- --dry-run         # print the agent-sdk deploy request, change nothing
  *
- * BDK builds from a pushed ref of a repository the team's Cursor GitHub App
+ * The Agent SDK builds from a pushed ref of a repository the team's Cursor GitHub App
  * can read, and `deployment get` does not say which commit it built. So this
  * refuses to deploy unless the folder is committed and the remote branch is
  * HEAD, then appends the release id, `repo@sha` and a digest of the folder's
@@ -19,7 +19,7 @@ import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { pathsEnv, shellEnv, verifyEnv } from "../foreman/bot/lib/config/env.ts";
 import { loadFactory } from "../foreman/bot/lib/config/load.ts";
-import { appendDeploy, bdk, deployment, deploymentFrom, jsonFrom } from "./lib/doctor/deployed.ts";
+import { appendDeploy, agentSdk, deployment, deploymentFrom, jsonFrom } from "./lib/doctor/deployed.ts";
 import { currentBranch, deployTarget, dirtyFiles, folderPrefix, headSha, originUrl, remoteSha, sourceDigest } from "./lib/doctor/source.ts";
 
 const factoryDir = fileURLToPath(new URL("..", import.meta.url));
@@ -40,11 +40,11 @@ const { repo, agentPath, eventRepos } = deployTarget(
 const ref = flag("ref") ?? (await currentBranch(factoryDir));
 
 const dirty = await dirtyFiles(factoryDir);
-if (dirty.length > 0) fail(`commit or stash these first, since BDK builds from the pushed branch:\n${dirty.join("\n")}`);
+if (dirty.length > 0) fail(`commit or stash these first, since the Agent SDK builds from the pushed branch:\n${dirty.join("\n")}`);
 const head = await headSha(factoryDir);
 const pushed = await remoteSha(factoryDir, remote, ref);
 if (pushed === null) fail(`${repo} has no branch ${ref}. Push it first: git push origin ${ref}`);
-if (pushed !== head) fail(`${repo} ${ref} is ${pushed}, and HEAD is ${head}. Push HEAD to ${ref} first, so BDK builds what you have here`);
+if (pushed !== head) fail(`${repo} ${ref} is ${pushed}, and HEAD is ${head}. Push HEAD to ${ref} first, so the Agent SDK builds what you have here`);
 
 const args = [
   "deploy", "--dir", ".", "--repo", repo, "--ref", ref, "--path", agentPath,
@@ -52,14 +52,14 @@ const args = [
   "--json", ...(dryRun ? ["--dry-run"] : []),
 ];
 console.log(`deploying ${verify.deploymentSlug} from ${repo}@${head.slice(0, 7)} (${ref}, ${agentPath})`);
-const result = await bdk(args, resolve(factoryDir, "foreman"), shellEnv());
+const result = await agentSdk(args, resolve(factoryDir, "foreman"), shellEnv());
 process.stdout.write(result.stdout);
-if (result.code !== 0) fail(`bdk deploy exited ${result.code}: ${result.stderr.trim().split("\n").slice(-4).join(" ")}`);
+if (result.code !== 0) fail(`agent-sdk deploy exited ${result.code}: ${result.stderr.trim().split("\n").slice(-4).join(" ")}`);
 if (dryRun) process.exit(0);
 
-let deployed = deploymentFrom(jsonFrom(result.stdout), "bdk deploy printed no JSON");
+let deployed = deploymentFrom(jsonFrom(result.stdout), "agent-sdk deploy printed no JSON");
 if (deployed.releaseId === null) deployed = await deployment(verify.deploymentSlug, resolve(factoryDir, "foreman"), shellEnv());
-if (deployed.releaseId === null) fail(`bdk deploy finished but reported no release id: ${deployed.error ?? result.stdout.slice(0, 300)}`);
+if (deployed.releaseId === null) fail(`agent-sdk deploy finished but reported no release id: ${deployed.error ?? result.stdout.slice(0, 300)}`);
 const record = {
   at: new Date().toISOString(),
   slug: verify.deploymentSlug,

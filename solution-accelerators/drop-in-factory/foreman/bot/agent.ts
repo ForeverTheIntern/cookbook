@@ -1,4 +1,4 @@
-import { defineAgent } from "@cursor/bdk";
+import { defineAgent } from "@grok/agent-sdk";
 import { dashboardHost } from "./lib/hosting.ts";
 
 // Foreman only chats. Built-in file and shell tools stay off: it has no
@@ -13,7 +13,7 @@ export default defineAgent({
   },
   tools: [],
   hosting: {
-    // `bdk deploy` evaluates this once, so a hosted dashboard's host
+    // `agent-sdk deploy` evaluates this once, so a hosted dashboard's host
     // comes from dashboard.url in factory.yaml, not SA_PORTAL_URL.
     // files.slack.com takes the verify video upload; the agent-stores bucket serves the video from the Cloud Agents API.
     egressDomains: ["api.github.com", "api.cursor.com", "slack.com", "files.slack.com", "agent-stores.s3.us-east-1.amazonaws.com", ...dashboardHost()],

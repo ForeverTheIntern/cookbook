@@ -1,5 +1,5 @@
 /**
- * `npm run dev`: Foreman under `bdk serve` for every repository in
+ * `npm run dev`: Foreman under `agent-sdk serve` for every repository in
  * factory.yaml, plus the dashboard (dashboard/) on 127.0.0.1:8787 when
  * `dashboard.enabled` is true and its URL is on this machine. With no
  * SA_PORTAL_INGEST_SECRET set, both get a fresh random one. Ctrl-C stops
@@ -17,10 +17,9 @@ import { existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { pathsEnv } from "../foreman/bot/lib/config/env.ts";
-import { BDK_SPEC } from "./lib/doctor/bdk.ts";
+import { SDK_SPEC } from "./lib/doctor/sdk.ts";
 import { loadFactory } from "../foreman/bot/lib/config/load.ts";
 
-const SDK = BDK_SPEC;
 const root = fileURLToPath(new URL("..", import.meta.url));
 const factory = loadFactory(resolve(root, pathsEnv().factoryConfig));
 const env: NodeJS.ProcessEnv = { ...process.env };
@@ -85,4 +84,4 @@ if (process.argv.includes("--foreman-only")) {
 }
 
 const repoFlags = factory.repos.flatMap((r) => ["--repo", r.repo]);
-run("foreman", "npx", ["--yes", SDK, "serve", "--dir", ".", "--cursor-events", ...repoFlags], resolve(root, "foreman"), env);
+run("foreman", "npx", ["--yes", SDK_SPEC, "serve", "--dir", ".", "--cursor-events", ...repoFlags], resolve(root, "foreman"), env);

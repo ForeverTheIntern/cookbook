@@ -6,7 +6,7 @@
 import { execFile } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { promisify } from "node:util";
-import { BDK_SPEC } from "./bdk.ts";
+import { SDK_SPEC } from "./sdk.ts";
 import { cliConfigEmail } from "./report.ts";
 
 const exec = promisify(execFile);
@@ -66,14 +66,14 @@ export interface Whoami {
   error: string | null;
 }
 
-/** `bdk whoami --json`. The CLI uses CURSOR_API_KEY before a stored login, and it does not read CURSOR_AUTH_TOKEN. */
+/** `agent-sdk whoami --json`. The CLI uses CURSOR_API_KEY before a stored login, and it does not read CURSOR_AUTH_TOKEN. */
 export async function whoami(env: NodeJS.ProcessEnv): Promise<Whoami> {
   let stdout = "";
   let stderr = "";
   try {
     // npx is npx.cmd on Windows. execFile does not run a .cmd unless shell is set,
     // and the ENOENT comes back with an empty stderr, which hid the real failure.
-    const result = await exec("npx", ["--yes", BDK_SPEC, "whoami", "--json"], {
+    const result = await exec("npx", ["--yes", SDK_SPEC, "whoami", "--json"], {
       env,
       timeout: 120_000,
       maxBuffer: 1_000_000,
@@ -90,7 +90,7 @@ export async function whoami(env: NodeJS.ProcessEnv): Promise<Whoami> {
   const parsed = parseWhoami(stdout);
   if (parsed !== null) return parsed;
   const detail = stderr.trim().split("\n").filter((line) => !line.startsWith("npm warn")).slice(-3).join(" ").slice(0, 300);
-  return { email: null, teamName: null, source: null, error: detail === "" ? "bdk whoami returned no JSON" : detail };
+  return { email: null, teamName: null, source: null, error: detail === "" ? "agent-sdk whoami returned no JSON" : detail };
 }
 
 export function parseWhoami(stdout: string): Whoami | null {
@@ -120,7 +120,7 @@ export function storedCliEmail(path: string): string | null {
 }
 
 /**
- * The same account call `bdk whoami` makes. whoami's JSON omits the team id,
+ * The same account call `agent-sdk whoami` makes. whoami's JSON omits the team id,
  * and the id is what a deploy targets, so the doctor reads it here.
  */
 async function dashboardAccount(apiKey: string): Promise<{ id: string | null; name: string | null; error: string | null }> {

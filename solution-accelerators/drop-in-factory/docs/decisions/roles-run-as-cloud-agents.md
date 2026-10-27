@@ -1,6 +1,6 @@
 # Steps run as cloud agents
 
-Each step in `factory.yaml`'s `steps:` list (six by default) is a Cursor cloud agent launched on the run branch `factory/<run>` with `foreman/bot/subagents/<step>/instructions.md` plus the run's context. Foreman is the only BDK agent.
+Each step in `factory.yaml`'s `steps:` list (six by default) is a Cursor cloud agent launched on the run branch `factory/<run>` with `foreman/bot/subagents/<step>/instructions.md` plus the run's context. Foreman is the only Agent SDK agent.
 
 A cloud agent has a full VM, so the factory needs no sandbox, clone, commit or push code of its own: the agent pushes through the Cursor GitHub app, and can use the repository's cloud environment to run tests.
 

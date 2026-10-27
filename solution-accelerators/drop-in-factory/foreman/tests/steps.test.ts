@@ -92,7 +92,7 @@ test("the default steps: list gives the route the factory has always run", () =>
  * own files, so the copy loads like the original.
  */
 const IMPORTS: [string, string][] = [
-  ['"@cursor/bdk"', JSON.stringify(new URL("../node_modules/@cursor/bdk/dist/index.js", import.meta.url).href)],
+  ['"@grok/agent-sdk"', JSON.stringify(new URL("../node_modules/@grok/agent-sdk/dist/index.js", import.meta.url).href)],
   ['"../../lib/steps/define.ts"', JSON.stringify(new URL("../bot/lib/steps/define.ts", import.meta.url).href)],
 ];
 const copies: string[] = [];
@@ -127,7 +127,7 @@ async function customSteps(extra: Record<string, { agent: string; instructions: 
   return loadCatalog(dir);
 }
 
-const agentTs = (kind: string, more = "") => `import { defineAgent } from "@cursor/bdk";
+const agentTs = (kind: string, more = "") => `import { defineAgent } from "@grok/agent-sdk";
 import { cloudStep } from "../../lib/steps/define.ts";
 
 export const step = cloudStep({ kind: "${kind}", ${more}model: "cursor-grok-4.5-high", deadlineMinutes: 15, runsAs: "cloud-agent", status: "A new step is working" });

@@ -1,7 +1,7 @@
 /**
  * Every trigger ends in reconcile(runId): a GitHub delivery, a Slack message,
  * or the tick. There is no queue and no long-lived loop, so this runs the
- * same in a local `bdk serve` and in a hosted runtime that the platform may
+ * same in a local `agent-sdk serve` and in a hosted runtime that the platform may
  * replace at any time. Each reconcile holds its run's lock, and each side
  * effect has a dedupe key, so a repeated or overlapping trigger converges.
  *

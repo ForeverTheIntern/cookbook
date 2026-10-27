@@ -121,7 +121,7 @@ export async function stopRecorded(record: PidRecord): Promise<string> {
     await new Promise((resolvePromise) => setTimeout(resolvePromise, 300));
   }
   // A child can ignore SIGTERM and keep the group after the recorded pid exits.
-  // Foreman's `bdk serve` did that and left port 3000 open. SIGKILL the group
+  // Foreman's `agent-sdk serve` did that and left port 3000 open. SIGKILL the group
   // in this same call, while the start time above still proves it is ours.
   signalGroup("SIGKILL");
   return gone ? `stopped pid ${record.pid}` : `killed pid ${record.pid}`;

@@ -12,4 +12,4 @@ To change one:
 
 A step that lists a missing skill stops Foreman at start, with the step's and the skill's names. [docs/customize.md](../../../docs/customize.md#add-a-skill) has an example.
 
-BDK also offers every skill here to Foreman's own Slack chat model, and it reads any `.md` file in this folder as a skill. That is why this file is `README.markdown`.
+The Agent SDK also offers every skill here to Foreman's own Slack chat model, and it reads any `.md` file in this folder as a skill. That is why this file is `README.markdown`.

@@ -145,7 +145,7 @@ test("hosted secrets name every missing one", () => {
   assert.equal(hostedSecretsLine({ enabled: false, slug: "foreman", secretNames: null, required: [], error: null }).status, "info");
 });
 
-test("deployment get output yields the release and secrets around BDK's notes", () => {
+test("deployment get output yields the release and secrets around the CLI's notes", () => {
   const out = 'Using team 42 (Example)\n{"releaseId":"rel-1","teamId":42,"status":"running","secretNames":["SA_GH_TOKEN"]}\n';
   assert.deepEqual(deploymentFrom(jsonFrom(out), "x"), { releaseId: "rel-1", teamId: "42", status: "running", secretNames: ["SA_GH_TOKEN"], error: null });
   assert.equal(deploymentFrom(jsonFrom('{"error":{"message":"not found"}}'), "x").error, "not found");

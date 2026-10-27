@@ -5,7 +5,7 @@
 
 import { homedir } from "node:os";
 
-// While cursor-events runs, BDK replaces process.env.GH_TOKEN with the
+// While cursor-events runs, the Agent SDK replaces process.env.GH_TOKEN with the
 // Cursor account's GitHub credential, which cannot create branches. Keep the
 // operator's token as it was when the process started.
 const STARTUP_GH_TOKEN = process.env.GH_TOKEN ?? "";

@@ -28,6 +28,6 @@ Preconditions:
 ## Gotchas
 
 - With the flag unset both lines are `info`, and a verdict for the hosted path is `blocked`, not `live-verified`.
-- `deployment get` reports no commit; only the deploy record ties a release to its source. A release made with `bdk deploy` directly fails as unrecorded.
+- `deployment get` reports no commit; only the deploy record ties a release to its source. A release made with `agent-sdk deploy` directly fails as unrecorded.
 - The digest covers file contents and skips `setup/verdicts/`, so a copy of the folder in another repository verifies the same, and committing the record changes nothing.
 - A deploy failing with "not accessible through this team's installation" is a failed GitHub App check for the team. Do not deploy again to see it a second time.

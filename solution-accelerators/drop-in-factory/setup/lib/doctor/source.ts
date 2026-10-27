@@ -47,7 +47,7 @@ export async function folderPrefix(folder: string): Promise<string> {
 }
 
 /**
- * What `bdk deploy` builds: the factory folder's own repository and its path
+ * What `agent-sdk deploy` builds: the factory folder's own repository and its path
  * there, never the repositories it works on. The factory may be its own
  * repository (prefix "") or a folder inside one it serves.
  */
@@ -68,7 +68,7 @@ export async function originUrl(folder: string): Promise<string> {
 }
 
 /**
- * The repository URL BDK builds from and the deploy record names: https, no
+ * The repository URL the Agent SDK builds from and the deploy record names: https, no
  * `.git`, and never the credentials a CI or cloud-agent clone keeps in its
  * remote URL (`https://x-access-token:…@github.com/…`).
  */

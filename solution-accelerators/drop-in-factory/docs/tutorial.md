@@ -50,7 +50,7 @@ flowchart LR
     thread["#factory run thread"]
   end
   subgraph host["Your machine: npm run dev"]
-    foreman["Foreman<br/>bdk serve<br/>(reconcile + chat)"]
+    foreman["Foreman<br/>agent-sdk serve<br/>(reconcile + chat)"]
     kv[("run documents<br/>foreman/.agent-serve")]
     portal["Dashboard (optional)<br/>:8787"]
   end
@@ -364,7 +364,7 @@ cd factory
 npm run dev
 ```
 
-`npm run dev` starts Foreman under `bdk serve`, with one `--repo` for each repository in `factory.yaml`, and the dashboard on <http://127.0.0.1:8787>. Each line of output is tagged `[foreman]` or `[dashboard]`.
+`npm run dev` starts Foreman under `agent-sdk serve`, with one `--repo` for each repository in `factory.yaml`, and the dashboard on <http://127.0.0.1:8787>. `agent-sdk` is the CLI of the Agent SDK (`@grok/agent-sdk`), also installed as `bdk`; its own log lines start with `[bdk]`, `[bdk/slack]` or `[bdk:otel]`. Each line of output is tagged `[foreman]` or `[dashboard]`.
 
 **You should see.** Within about 30 seconds:
 
@@ -373,7 +373,7 @@ npm run dev
 [dashboard]  ✓ Ready in 1355ms
 [foreman] [factory] Slack: answering mentions from 2 people in C0123456789, including ones posted through an app
 [foreman] [bdk/slack] Socket Mode connected
-[foreman] foreman listening (@cursor/bdk 0.2.28)
+[foreman] foreman listening (@grok/agent-sdk 0.3.0)
 [foreman] [bdk] cursor-events: subscribed to your-org/agents, your-org/garden for events: pull_request, issue_comment, …
 ```
 
@@ -383,16 +383,16 @@ Some other lines look alarming but are expected:
 
 | Line | What it means |
 | --- | --- |
-| `cursor-events: no v1 github/origin targets; v2 ingest is control-plane only` | How BDK reports its event subscription. GitHub events still arrive. |
-| `ExperimentalWarning: SQLite is an experimental feature` | Node 22's built-in SQLite, which BDK's local store uses. |
-| `warning: bdk 0.2.28 is outdated` | The folder pins BDK 0.2.28 on purpose. Don't run `bdk update`. |
-| `metrics temporality is delta…` | BDK's own metrics setting. Ignore it unless you run a collector. |
+| `cursor-events: no v1 github/origin targets; v2 ingest is control-plane only` | How the Agent SDK reports its event subscription. GitHub events still arrive. |
+| `ExperimentalWarning: SQLite is an experimental feature` | Node 22's built-in SQLite, which the Agent SDK's local store uses. |
+| `warning: agent-sdk 0.3.0 is outdated (latest is …)` | The folder pins `@grok/agent-sdk` 0.3.0 on purpose. Don't run `agent-sdk update`. |
+| `metrics temporality is delta…` | The Agent SDK's own metrics setting. Ignore it unless you run a collector. |
 | `[bdk/slack] debug inbound ignored (unhandled event shape) event_type=message` | Ordinary channel messages that don't mention the bot, including Foreman's own posts. Foreman ignores them on purpose. |
-| `[bdk] GitHub auth: Cursor account credential` | Expected. BDK reads GitHub events with your Cursor account's GitHub connection (Step 1), not with `GH_TOKEN`. |
+| `[bdk] GitHub auth: Cursor account credential` | Expected. The Agent SDK reads GitHub events with your Cursor account's GitHub connection (Step 1), not with `GH_TOKEN`. |
 | `[factory] f-…: … ignored stale approve by <login> … (gate opened …)` | Expected. An `approve` posted before the current gate opened, such as the spec approval when the plan gate opens, never counts for the new gate. |
 | `[WARN] web-api:WebClient … missing_agent_session_stopped_event_subscription …` | Harmless. Printed after a Slack reply. Foreman's replies are too short to need Slack's stop button. |
-| `[bdk/slack] inbound skipped (handler returned null) kind=app_mention` | Harmless. A mention Foreman answers in its own code, such as a new request or an `approve` (Step 11), skips BDK's chat model. The reply still goes out. |
-| `[bdk:otel] error: …` (`OTLPExporterError: Not Found`, `ECONNREFUSED`, or `You can only call end() on a span once.`) | Harmless. BDK's own tracing, with no collector or a metrics-only one. The factory's runs are not affected. |
+| `[bdk/slack] inbound skipped (handler returned null) kind=app_mention` | Harmless. A mention Foreman answers in its own code, such as a new request or an `approve` (Step 11), skips the Agent SDK's chat model. The reply still goes out. |
+| `[bdk:otel] error: …` (`OTLPExporterError: Not Found`, `ECONNREFUSED`, or `You can only call end() on a span once.`) | Harmless. The Agent SDK's own tracing, with no collector or a metrics-only one. The factory's runs are not affected. |
 
 **Start the metrics collector.** The factory sends its KPIs and DORA metrics over OpenTelemetry, and the doctor fails without a collector. The dashboard doesn't read from it. Start the collector from the folder's compose file; `.env.example` already sets `OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318`. If `npm run dev` is running, restart it:
 
@@ -610,7 +610,7 @@ Foreman answers questions from the factory's store. Commands (`approve`, `change
 | Symptom | Fix |
 | --- | --- |
 | No reply | Mention the bot (`@Foreman`, not just its name). Check that `npm run dev` is running and that the app token has `connections:write`. |
-| No reply, and Foreman's log shows `[bdk/slack] debug inbound ignored (unhandled event shape) event_type=app_mention` | The mention was posted through an app (a test harness, a workflow, a client using an app's user token), so Slack marked it with a `bot_id`, and BDK ignores such mentions from authors who aren't allowlisted. Foreman allowlists the people in the factory channel when it starts. If you joined the channel after that, restart Foreman. For a bot that posts as itself, put its bot id (`B…`) in `slack.testerBot`. |
+| No reply, and Foreman's log shows `[bdk/slack] debug inbound ignored (unhandled event shape) event_type=app_mention` | The mention was posted through an app (a test harness, a workflow, a client using an app's user token), so Slack marked it with a `bot_id`, and the Agent SDK ignores such mentions from authors who aren't allowlisted. Foreman allowlists the people in the factory channel when it starts. If you joined the channel after that, restart Foreman. For a bot that posts as itself, put its bot id (`B…`) in `slack.testerBot`. |
 | Foreman says a cost is settling | It's the real `chargedCents` the Admin API returned so far, and may still grow. It turns final within 30 minutes of the agent's last usage, and at most 2 hours after it finished (Step 12). |
 | A top-level mention opens a new issue you didn't mean to | Top-level mentions are requests. Ask about a run inside its thread. |
 
@@ -666,18 +666,18 @@ Nothing is estimated or projected. Every figure is one the API returned. Foreman
 **Command or click.**
 
 1. Stop `npm run dev` (Ctrl-C), so two Foremen don't claim the same issues. To keep a local one for trying things, give it its own label first (the note on a local Foreman next to a hosted one, under [Go hosted](reference.md#go-hosted) in the reference).
-2. Commit the folder and push it to a branch of your repository. BDK builds from that pushed branch, and your team's Cursor GitHub App must be able to read the repository.
-3. From the factory folder, deploy, set the secrets, and attach Slack:
+2. Commit the folder and push it to a branch of your repository. The Agent SDK builds from that pushed branch, and your team's Cursor GitHub App must be able to read the repository.
+3. From the factory folder, deploy, set the secrets, and attach Slack. The `npx --yes @grok/agent-sdk@0.3.0 …` commands run the Agent SDK's CLI, `agent-sdk`; the package also installs it as `bdk`, the same program under another name.
 
 ```bash
 npm run deploy
 cd foreman
-npx --yes @cursor/bdk@0.2.28 secret set foreman SA_GH_TOKEN
-npx --yes @cursor/bdk@0.2.28 secret set foreman SA_CURSOR_API_KEY
-npx --yes @cursor/bdk@0.2.28 secret set foreman SA_CURSOR_ADMIN_API_KEY
-npx --yes @cursor/bdk@0.2.28 secret set foreman SA_GH_APP_ID            # github.identity: app
-npx --yes @cursor/bdk@0.2.28 secret set foreman SA_GH_APP_PRIVATE_KEY   # github.identity: app
-npx --yes @cursor/bdk@0.2.28 slack create --dir . --env prod
+npx --yes @grok/agent-sdk@0.3.0 secret set foreman SA_GH_TOKEN
+npx --yes @grok/agent-sdk@0.3.0 secret set foreman SA_CURSOR_API_KEY
+npx --yes @grok/agent-sdk@0.3.0 secret set foreman SA_CURSOR_ADMIN_API_KEY
+npx --yes @grok/agent-sdk@0.3.0 secret set foreman SA_GH_APP_ID            # github.identity: app
+npx --yes @grok/agent-sdk@0.3.0 secret set foreman SA_GH_APP_PRIVATE_KEY   # github.identity: app
+npx --yes @grok/agent-sdk@0.3.0 slack create --dir . --env prod
 cd ../..
 git add setup/verdicts/deploys.jsonl && git commit -m "Record the foreman deploy" && git push
 npm run doctor -- --hosted
@@ -686,36 +686,36 @@ npm run doctor -- --hosted
 `secret set` asks for each value. Use the same values as `GH_TOKEN`, `CURSOR_API_KEY` and `CURSOR_ADMIN_API_KEY` in `.env`; hosting reserves the plain names. Set the identity's secrets under their own names: `SA_GH_APP_ID` and `SA_GH_APP_PRIVATE_KEY` for an app, `SA_GH_BOT_TOKEN` for a bot user, nothing for personal. In a shell that can't answer a prompt (a script, a cloud agent), pipe each value in with the `.env` loaded, so it never appears on the command line:
 
 ```bash
-printf %s "$GH_TOKEN" | npx --yes @cursor/bdk@0.2.28 secret set foreman SA_GH_TOKEN
-printf %s "$CURSOR_API_KEY" | npx --yes @cursor/bdk@0.2.28 secret set foreman SA_CURSOR_API_KEY
-printf %s "$CURSOR_ADMIN_API_KEY" | npx --yes @cursor/bdk@0.2.28 secret set foreman SA_CURSOR_ADMIN_API_KEY
+printf %s "$GH_TOKEN" | npx --yes @grok/agent-sdk@0.3.0 secret set foreman SA_GH_TOKEN
+printf %s "$CURSOR_API_KEY" | npx --yes @grok/agent-sdk@0.3.0 secret set foreman SA_CURSOR_API_KEY
+printf %s "$CURSOR_ADMIN_API_KEY" | npx --yes @grok/agent-sdk@0.3.0 secret set foreman SA_CURSOR_ADMIN_API_KEY
 ```
 
-`slack create` is needed once per deployment. It prints a `cursor.com/dashboard/deployed-agents/slack-setup` link and waits until you finish it in a browser, signed in to Cursor as the account behind `CURSOR_API_KEY`. A later `npm run deploy` keeps the Slack app, so skip `slack create` when `npx --yes @cursor/bdk@0.2.28 secret list foreman` already shows `FOREMAN_SLACK_BOT_TOKEN`.
+`slack create` is needed once per deployment. It prints a `cursor.com/dashboard/deployed-agents/slack-setup` link and waits until you finish it in a browser, signed in to Cursor as the account behind `CURSOR_API_KEY`. A later `npm run deploy` keeps the Slack app, so skip `slack create` when `npx --yes @grok/agent-sdk@0.3.0 secret list foreman` already shows `FOREMAN_SLACK_BOT_TOKEN`.
 
 The doctor still runs its local checks, including the OTel collector line, so keep the collector from Step 6 running while you run it, even though a hosted Foreman sends it nothing.
 
-**You should see.** `npm run deploy` prints `deploying foreman from https://github.com/your-org/your-repo@abc1234 (main, factory/foreman)`, BDK's JSON with a `releaseId`, and `recorded release … in setup/verdicts/deploys.jsonl`.
+**You should see.** `npm run deploy` prints `deploying foreman from https://github.com/your-org/your-repo@abc1234 (main, factory/foreman)`, the Agent SDK's JSON with a `releaseId`, and `recorded release … in setup/verdicts/deploys.jsonl`.
 
 **It worked if.** The doctor prints `ok    hosted release: release … was built from …, with the same files as this folder at HEAD` and `ok    hosted secrets: foreman has SA_GH_TOKEN, SA_CURSOR_API_KEY, FOREMAN_SLACK_BOT_TOKEN`. Then label an issue `factory:run`, or type a request in the Slack channel, and Foreman answers within a minute.
 
-To follow the hosted Foreman, run `npx --yes @cursor/bdk@0.2.28 logs --prod --slug foreman` from `foreman`. Each session prints its own startup lines, and every scheduled tick is a session, so they repeat every minute. These are expected there:
+To follow the hosted Foreman, run `npx --yes @grok/agent-sdk@0.3.0 logs --prod --slug foreman` from `foreman`. Each session prints its own startup lines, and every scheduled tick is a session, so they repeat every minute. These are expected there:
 
 | Line | What it means |
 | --- | --- |
 | `[factory] Slack: answering people's mentions in C…; no bot token at start (Cursor hosting binds it per task)` | Hosting gives the bot token to each task, not at start. People's mentions are answered. |
-| `storage evals.list() failed: cursorHostedStorage requires CURSOR_API_KEY` and `reminders: control-plane list failed` | BDK's playground evals and reminders, which the factory doesn't use. |
+| `storage evals.list() failed: cursorHostedStorage requires CURSOR_API_KEY` and `reminders: control-plane list failed` | The Agent SDK's playground evals and reminders, which the factory doesn't use. |
 | `hosted managedAutomation not recorded … admission envelope carried no managedAutomation slice` | Printed for each scheduled tick. Harmless. |
-| `warning: --allow-anonymous …` | How hosting starts `bdk serve` inside the deployment. Not something you set. |
+| `warning: --allow-anonymous …` | How hosting starts `agent-sdk serve` inside the deployment. Not something you set. |
 
 **If it goes wrong.**
 
 | Symptom | Fix |
 | --- | --- |
-| `commit or stash these first` or `Push HEAD to <branch> first` | BDK builds the pushed branch. Commit and push, then deploy again. |
+| `commit or stash these first` or `Push HEAD to <branch> first` | The Agent SDK builds the pushed branch. Commit and push, then deploy again. |
 | `not accessible through this team's installation` | The team's Cursor GitHub App can't read the repository. Deploy from one it can read ([PREREQUISITES.md](../PREREQUISITES.md)). |
 | `hosted secrets: foreman lacks …` | Set each one the line names with `secret set foreman <NAME>`. |
-| `hosted release: … no deploy of it is recorded` | Someone ran `bdk deploy` directly. Deploy with `npm run deploy` and commit `setup/verdicts/deploys.jsonl`. |
+| `hosted release: … no deploy of it is recorded` | Someone ran `agent-sdk deploy` directly. Deploy with `npm run deploy` and commit `setup/verdicts/deploys.jsonl`. |
 | A Slack message posted by a bot or script gets no answer | Hosted Foreman only hears people. Type the request yourself. |
 | `slack create` waits and nothing happens | It waits for you to finish the printed `slack-setup` link in a browser, signed in to Cursor as the account behind `CURSOR_API_KEY`. On a redeploy, skip it (see above). |
 | `OTel collector: fetch failed` from the hosted doctor | Start the collector from Step 6; the doctor checks it even when Foreman is hosted. |
@@ -786,7 +786,7 @@ npm run doctor
 - **Fix:** check that `npm run dev` printed `cursor-events: subscribed to your-org/your-repo`, then remove the label and add it again. If Foreman's log says `skipped intake … another Foreman … runs it`, that factory holds the run.
 
 ```bash
-ps aux | grep "bdk serve" | grep -v grep
+ps aux | grep -E "agent-sdk(@[0-9.]+)? serve" | grep -v grep
 ```
 
 ## Clean up
@@ -812,7 +812,7 @@ ps aux | grep "bdk serve" | grep -v grep
 - stops taking GitHub events and stops the tick. A step agent that's already running keeps running in Cursor, and the next start picks it up.
 - disconnects from Slack, so no new mentions come in.
 - finishes any Slack reply it's writing, posts it, and saves the chat session. That's the "draining running turns" line, and the only part that takes seconds.
-- flushes BDK's own traces and metrics. With no collector it prints one `[bdk:otel] error: … ECONNREFUSED` line and goes on. That's harmless.
+- flushes the Agent SDK's own traces and metrics. With no collector it prints one `[bdk:otel] error: … ECONNREFUSED` line and goes on. That's harmless.
 
 `npm run dev` waits up to 30 seconds for both processes, then exits anyway. **If `npm run stop` says something is still running after that,** force it:
 

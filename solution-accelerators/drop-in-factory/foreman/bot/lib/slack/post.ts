@@ -94,7 +94,7 @@ export async function uploadFile(slack: Slack, channel: string, threadTs: string
  * The people (not bots, not deactivated) in a channel, as user ids. Foreman
  * admits app-attributed mentions from these ids: Slack stamps a `bot_id` on
  * anything a person posts through an app's user token (a test harness, a
- * workflow, another client), and BDK drops bot-stamped mentions unless their
+ * workflow, another client), and the Agent SDK drops bot-stamped mentions unless their
  * author is on `engagement.botMentions.allowFrom`.
  */
 export async function channelPeople(slack: Slack, channel: string): Promise<string[]> {

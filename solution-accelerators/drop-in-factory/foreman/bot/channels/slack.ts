@@ -1,4 +1,4 @@
-import { slackChannel } from "@cursor/bdk/channels/slack";
+import { slackChannel } from "@grok/agent-sdk/channels/slack";
 import { slackBotToken } from "../lib/config/env.ts";
 import { dispatch, slackMention } from "../lib/pipeline/dispatch.ts";
 import { channelPeople, mentionAllowlist } from "../lib/slack/post.ts";
@@ -22,7 +22,7 @@ import { t } from "../lib/templates.ts";
  * A reaction only triggers a reconcile, which reads the reactions itself.
  *
  * A person who posts through an app (a test harness, a workflow) gets a
- * bot_id on the message, and BDK drops such mentions before onAppMention
+ * bot_id on the message, and the Agent SDK drops such mentions before onAppMention
  * unless the author is allowlisted. So the people in the factory channel at
  * start are allowlisted by user id, plus slack.testerBot if set.
  */

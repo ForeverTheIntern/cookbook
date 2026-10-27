@@ -1,6 +1,6 @@
 # tools
 
-The tools Foreman's Slack chat model can call. Each file is one BDK `defineTool`: its `description` tells the model when to use it, `inputSchema` is what the model passes, and `execute` runs it.
+The tools Foreman's Slack chat model can call. Each file is one Agent SDK `defineTool`: its `description` tells the model when to use it, `inputSchema` is what the model passes, and `execute` runs it.
 
 | Tool | What it does | Needs a person's OK in Slack |
 | --- | --- | --- |
@@ -15,7 +15,7 @@ The tools Foreman's Slack chat model can call. Each file is one BDK `defineTool`
 To change one:
 
 - **Change when the model uses a tool:** edit its `description`, or `bot/instructions.md`, which is the chat model's standing instructions.
-- **Add a tool:** add `<name>.ts` exporting `defineTool({...})` as default. BDK finds it by file name. Set `effect: "write"` and `needsApproval: true` on anything that changes a run.
+- **Add a tool:** add `<name>.ts` exporting `defineTool({...})` as default. The Agent SDK finds it by file name. Set `effect: "write"` and `needsApproval: true` on anything that changes a run.
 - **Remove a tool:** delete the file and any mention of it in `bot/instructions.md`.
 
-`foreman/tests/bdk-layout.test.ts` lists the tools BDK must find; update it when you add or remove one.
+`foreman/tests/agent-sdk-layout.test.ts` lists the tools the Agent SDK must find; update it when you add or remove one.

@@ -1,5 +1,5 @@
 /**
- * The hosted deployment as BDK reports it, and the deploy records
+ * The hosted deployment as the Agent SDK reports it, and the deploy records
  * `npm run deploy` writes. `deployment get` is a read. It does not deploy, and
  * it reports no commit, so the record is what ties a release to its source.
  */
@@ -8,7 +8,7 @@ import { execFile } from "node:child_process";
 import { mkdirSync, readFileSync, appendFileSync } from "node:fs";
 import { dirname } from "node:path";
 import { promisify } from "node:util";
-import { BDK_SPEC } from "./bdk.ts";
+import { SDK_SPEC } from "./sdk.ts";
 
 const exec = promisify(execFile);
 
@@ -20,7 +20,7 @@ export interface Deployment {
   error: string | null;
 }
 
-/** One `npm run deploy`: the release BDK built, and the source it built from. */
+/** One `npm run deploy`: the release the Agent SDK built, and the source it built from. */
 export interface DeployRecord {
   at: string;
   slug: string;
@@ -33,7 +33,7 @@ export interface DeployRecord {
   digest: string;
 }
 
-/** The first JSON object in a BDK command's stdout; BDK prints notes like "Using team …" around it. */
+/** The first JSON object in an agent-sdk command's stdout; the CLI prints notes like "Using team …" around it. */
 export function jsonFrom(stdout: string): Record<string, unknown> | null {
   const start = stdout.indexOf("{");
   const end = stdout.lastIndexOf("}");
@@ -60,14 +60,14 @@ export function deploymentFrom(body: Record<string, unknown> | null, fallbackErr
 }
 
 export async function deployment(slug: string, cwd: string, env: NodeJS.ProcessEnv): Promise<Deployment> {
-  const { stdout, stderr, code } = await bdk(["deployment", "get", slug, "--json"], cwd, env);
+  const { stdout, stderr, code } = await agentSdk(["deployment", "get", slug, "--json"], cwd, env);
   const detail = lastLines(stderr, stdout);
   return deploymentFrom(jsonFrom(stdout), detail === "" ? `deployment get ${slug} exited ${code}` : detail);
 }
 
-export async function bdk(args: string[], cwd: string, env: NodeJS.ProcessEnv): Promise<{ stdout: string; stderr: string; code: number }> {
+export async function agentSdk(args: string[], cwd: string, env: NodeJS.ProcessEnv): Promise<{ stdout: string; stderr: string; code: number }> {
   try {
-    const result = await exec("npx", ["--yes", BDK_SPEC, ...args], {
+    const result = await exec("npx", ["--yes", SDK_SPEC, ...args], {
       cwd,
       env,
       timeout: 900_000,

@@ -1,4 +1,4 @@
-import { defineHook } from "@cursor/bdk/hooks";
+import { defineHook } from "@grok/agent-sdk/hooks";
 
 // Observe-only: one log line per Foreman chat turn. Hooks never move a run;
 // the pipeline's KPI and DORA metrics are pushed by lib/metrics after each

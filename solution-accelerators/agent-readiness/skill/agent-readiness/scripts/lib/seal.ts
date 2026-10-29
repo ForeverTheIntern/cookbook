@@ -29,7 +29,7 @@ export function auditDigest(audit: Audit): string {
 export function sealStatusFor(scriptsDigest: string): string {
   const m = releaseManifest();
   if (!m) return "Seal not verified: no release manifest ships with this copy";
-  if (m.scriptsDigest === scriptsDigest) return `Seal verified against release ${m.tag}`;
+  if (m.scriptsDigest === scriptsDigest) return `Scripts match the ${m.tag} manifest bundled with this copy; the published release isn't checked here`;
   return `Seal not verified: the scripts differ from release ${m.tag}`;
 }
 

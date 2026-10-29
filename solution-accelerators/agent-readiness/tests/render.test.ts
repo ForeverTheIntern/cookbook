@@ -3,6 +3,8 @@ import { describe, test } from "node:test";
 import { computeOutcomes, describeRate, rate } from "../skill/agent-readiness/scripts/lib/outcomes.ts";
 import { allowedNumbers, danglingEvidence, renderMarkdown, validatePart1 } from "../skill/agent-readiness/scripts/lib/render.ts";
 import { loadRubric } from "../skill/agent-readiness/scripts/lib/rubric.ts";
+import { sealStatusFor } from "../skill/agent-readiness/scripts/lib/seal.ts";
+import { skillDigest } from "../skill/agent-readiness/scripts/lib/workspace.ts";
 import { validateAgainst } from "../skill/agent-readiness/scripts/lib/schema.ts";
 import type { HistoryLine, PrRecord, ReportJson } from "../skill/agent-readiness/scripts/lib/types.ts";
 import type { AuditSpec } from "./helpers.ts";
@@ -168,6 +170,30 @@ describe("part 1 rules", () => {
     assert.equal(reportFor(audit).executive.ask, "Approve adding a Postgres service to the agent setup for api. Also name an owner for agent readiness.");
     audit.narration = { ask: "Approve the Postgres setup for api and name an owner for agent readiness." };
     assert.equal(reportFor(audit).executive.ask, "Approve the Postgres setup for api and name an owner for agent readiness.");
+  });
+
+  test("part 1 and the checks claim only what the audit ran", () => {
+    const r = reportFor(makeAudit({ ...mixed, components: mixed.components.map((c) => (c.id === "infra" ? c : { ...c, lint: "pass" as const })) }));
+    assert.doesNotMatch(r.executive.nextLine, /builds in a clean container|type-check/);
+    const commands = r.details.checks.find((c) => c.id === "verify.canonical_interface")!;
+    assert.equal(commands.ok, false);
+    assert.ok(commands.counts.failed >= 1, JSON.stringify(commands.counts));
+    assert.ok(commands.evidence.length >= commands.counts.passed + commands.counts.failed);
+    assert.match(r.details.checks.find((c) => c.id === "context.instructions_verified")!.result, /instruction items check out/);
+    assert.match(sealStatusFor(skillDigest()), /bundled with this copy; the published release isn't checked here/);
+  });
+
+  test("an unproven level isn't reported as nothing blocking, and repo-wide conditions name no component", () => {
+    const audit = makeAudit({ components: [{ id: "app", share: 1, where: "fresh_copy", faults: "pass" }] });
+    audit.environment.containerRuntime = null;
+    const ex = reportFor(audit).executive;
+    assert.equal(ex.noBlocker, false);
+    assert.equal(ex.headline, "Level 1 couldn't be proved for app because this machine has no container runtime. A rerun where Docker or Podman is available, such as CI, can prove it.");
+    assert.match(ex.ask, /^Decision needed: where to rerun this audit/);
+    const unpinned = reportFor(makeAudit({ goal: "repo_wide", toolchainPinned: false, components: [{ id: "app", share: 1, faults: "pass" }] })).executive.nextLine;
+    assert.match(unpinned, /Not yet: toolchain versions are pinned/);
+    const repoWide = reportFor(makeAudit({ goal: "repo_wide", toolchainPinned: false, components: [{ id: "app", share: 1, faults: "pass" }] })).executive.numbers[0];
+    assert.equal(repoWide.value, "0 of 1");
   });
 
   test("activity labels keep their acronyms", () => {

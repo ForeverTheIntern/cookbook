@@ -45,6 +45,17 @@ function condLabel(rubric: Rubric, c: CondId): string {
   return rubric.conditions[c].label;
 }
 
+// The rubric's labels name every command kind; say only what these components' contracts run.
+function condPhrase(input: RenderInput, c: CondId, comps: string[]): string | null {
+  const has = (kind: string) => input.audit.contract.some((k) => k.kind === kind && comps.includes(k.component));
+  if (c === "clean.build" && !has("build")) return null;
+  if (c === "commands") {
+    const kinds = ["build", "lint", "typecheck", "test"].filter(has);
+    if (kinds.length > 0 && kinds.length < 4) return `${list(kinds.map((k) => (k === "typecheck" ? "type-check" : k)))} commands pass`;
+  }
+  return condLabel(input.rubric, c);
+}
+
 function statusText(item: RoadmapItem, roadmap: Roadmap): string {
   if (item.status === "done") return item.closedAt ? `done ${fmtShortDate(item.closedAt)}` : "done";
   if (item.status === "waiting") {
@@ -113,6 +124,12 @@ function headlineFor(input: RenderInput, ready: string[], setByShare: number): s
   const top = input.top;
   const label = goalLabel(rubric, goal);
   const active = [...input.active];
+  if (unproven(input)) {
+    const where = active.length <= 3 ? list(active) : `all ${active.length} active components`;
+    const readOnly = input.audit.tier === "read-only";
+    const why = readOnly ? "the read-only tier runs no repo code" : !input.audit.environment.containerRuntime ? "this machine has no container runtime" : "a check that decides it couldn't run here";
+    return `Level ${goalLevel.level + 1} couldn't be proved for ${where} because ${why}. ${readOnly ? "A local-exec audit" : "A rerun where Docker or Podman is available, such as CI,"} can prove it.`;
+  }
   if (top.length === 0 || top.every((t) => t.kind !== "fix")) {
     if (goalLevel.level >= 3) return `Agent PRs meet your Level 3 targets for ${label}. Keep the weekly recheck running and widen the work agents take.`;
     const one = active.length === 1;
@@ -154,6 +171,11 @@ function headlineFor(input: RenderInput, ready: string[], setByShare: number): s
   return `Agents can build and test ${names}, but ${failing.length ? list(failing) : `${their} checks can't yet catch wrong ${label}`}${share}.${readyLine}`;
 }
 
+// Below Level 2 with no fix to offer means a deciding check couldn't run, not that nothing blocks.
+function unproven(input: RenderInput): boolean {
+  return input.goalLevel.level < 2 && input.top.every((t) => t.kind !== "fix");
+}
+
 function because(input: RenderInput, cond: CondId, their: string): string {
   const fails = input.audit.evidence.filter((e) => e.condition === cond && e.result === "fail" && e.diagnosis);
   const d = (fails.filter((e) => input.goalLevel.setBy.includes(e.component ?? "")).at(-1) ?? fails.at(-1))?.diagnosis;
@@ -181,7 +203,8 @@ function stats3(input: RenderInput): ReportJson["executive"]["numbers"] {
   const label = goalLabel(rubric, goal);
   const act: ActivityId = goal === "repo_wide" ? "bug_fixes" : goal;
   const activeIds = [...input.active];
-  const ready = activeIds.filter((id) => (compLevel(input, id, act)?.level ?? 0) >= 2).length;
+  // Repo-wide changes are judged for the whole repo, so no component is ready while the repo isn't.
+  const ready = goal === "repo_wide" ? (input.goalLevel.level >= 2 ? activeIds.length : 0) : activeIds.filter((id) => (compLevel(input, id, act)?.level ?? 0) >= 2).length;
   const nextLevel = Math.min(4, input.goalLevel.level + 1);
   const below = input.components.filter((c) => c.assessed && input.active.has(c.id) && (goal === "repo_wide" ? input.goalLevel.level : compLevel(input, c.id, goal)?.level ?? 0) < nextLevel).reduce((s, c) => s + c.changeShare, 0);
   const prev = [...input.history].reverse().find((h) => h.kind === "audit" && h.goal === goal);
@@ -214,8 +237,10 @@ function nextLine(input: RenderInput): string {
   const unmet: string[] = [];
   for (const c of conds) {
     const failing = [...input.active].filter((id) => input.states.get(id)?.[c].state !== "met");
-    if (failing.length === 0) met.push(condLabel(rubric, c));
-    else unmet.push(`${list(failing)} ${condLabel(rubric, c)}`);
+    const phrase = condPhrase(input, c, failing.length ? failing : [...input.active]);
+    if (phrase === null) continue;
+    if (failing.length === 0) met.push(phrase);
+    else unmet.push(rubric.conditions[c].scope === "repo" ? phrase : `${list(failing)} ${phrase}`);
   }
   return `Next: Level ${L + 1}, ${next.plain}. ${met.length ? `Met: ${list(met)}. ` : ""}Not yet: ${list(unmet)}.`;
 }
@@ -288,7 +313,8 @@ function checkResult(input: RenderInput, checkId: string): { result: string; ok:
   }
   if (checkId === "context.instructions_verified") {
     const k = checkCounts(audit, checkId);
-    return { result: `${k.passed} passed, ${k.failed} failed, ${k.notRun} not run`, ok: k.failed ? false : audit.instructions.some((i) => i.result === "not_run" && i.category === "replay") ? null : true };
+    const total = k.passed + k.failed + k.notRun;
+    return { result: `${k.passed} of ${total} instruction items check out${k.failed ? `, ${k.failed} wrong` : ""}${k.notRun ? `, ${k.notRun} not run` : ""}`, ok: k.failed ? false : audit.instructions.some((i) => i.result === "not_run" && i.category === "replay") ? null : true };
   }
   if (checkId === "safety.execution_boundary") {
     const blocking = audit.safety.filter((s) => s.blocking);
@@ -304,12 +330,19 @@ export function buildReport(input: RenderInput): ReportJson {
   const L = input.goalLevel.level;
   const ready = [...input.active].filter((id) => goal !== "repo_wide" && (compLevel(input, id, goal)?.level ?? 0) >= 2 && !input.goalLevel.setBy.includes(id));
   const setByShare = input.components.filter((c) => input.goalLevel.setBy.includes(c.id)).reduce((s, c) => s + c.changeShare, 0);
-  const noBlocker = top.every((t) => t.kind !== "fix");
+  const noBlocker = !unproven(input) && top.every((t) => t.kind !== "fix");
   const narr = audit.narration ?? {};
   const gaps = top.map((t, i) => ({ rank: i + 1, text: (narr.gaps?.[t.id] ?? gapText(t)).trim().replace(/\.+$/, ""), blocks: blocksText(t), itemId: t.id }));
   const first = top[0];
   const lower = (s: string) => s.charAt(0).toLowerCase() + s.slice(1);
-  let ask = narr.ask ?? (first?.decision ? `Decision needed: ${lower(first.decision)}.` : noBlocker ? `Decision needed: which ${label} go to agents first.` : `Approve the agent's fix for "${gapText(first)}".`);
+  const defaultAsk = unproven(input)
+    ? `Decision needed: where to rerun this audit so it can prove Level ${L + 1}, for example a CI job.`
+    : first?.decision
+      ? `Decision needed: ${lower(first.decision)}.`
+      : noBlocker
+        ? `Decision needed: which ${label} go to agents first.`
+        : `Approve the agent's fix for "${gapText(first)}".`;
+  let ask = narr.ask ?? defaultAsk;
   if (!roadmap.owner && !/\bowner\b/i.test(ask)) ask += " Also name an owner for agent readiness.";
   const actions: ReportAction[] = top.map((t, i) => action(t, i + 1, rubric, roadmap, false, audit.outcomes));
   if (startNow) actions.push(action(startNow, actions.length + 1, rubric, roadmap, true, audit.outcomes));
@@ -400,6 +433,12 @@ export function buildReport(input: RenderInput): ReportJson {
       steps: actions.map((a) => ({ itemId: a.itemId, title: a.title, steps: roadmap.items.find((i) => i.id === a.itemId)!.steps })),
       checks: rubric.checks.map((c) => {
         const r = checkResult(input, c.id);
+        if (c.id === "verify.canonical_interface") {
+          const ids = new Set([...input.states.values()].flatMap((s) => s.commands.evidence));
+          const evs = audit.evidence.filter((e) => ids.has(e.id));
+          const counts = { passed: evs.filter((e) => e.result === "pass").length, failed: evs.filter((e) => e.result === "fail").length, notRun: evs.filter((e) => e.result === "not_run").length };
+          return { id: c.id, name: c.title, why: c.why, sources: c.sources, result: r.result, ok: r.ok, counts, evidence: evs.map((e) => e.id) };
+        }
         return { id: c.id, name: c.title, why: c.why, sources: c.sources, result: r.result, ok: r.ok, counts: checkCounts(audit, c.id), evidence: audit.evidence.filter((e) => e.checkId === c.id).map((e) => e.id) };
       }),
       notAssessed: rubric.notAssessed,
@@ -561,9 +600,9 @@ export function renderMarkdown(r: ReportJson, rubric: Rubric): string {
     out.push("", "A failed recheck lowers a level and a later passing recheck restores it. Only an audit can raise a level above the last audit.", "");
     if (r.progress.rubricChanges.length) out.push(`Rubric changes: ${r.progress.rubricChanges.map((c) => `${fmtShortDate(c.date)} ${c.from} to ${c.to}`).join("; ")}. A level change at a rubric change can come from the rubric, not the repo.`, "");
     if (r.progress.closed.length) {
-      out.push("### What the closed steps delivered", "", "| Step | Closed | Expected | Observed |", "|---|---|---|---|");
+      out.push("### What each closed step was expected to move, and what moved after it", "", "| Step | Closed | Expected | Observed after |", "|---|---|---|---|");
       for (const c of r.progress.closed) out.push(`| ${c.title} | ${fmtShortDate(c.closed)} | ${c.expected} | ${c.observed} |`);
-      out.push("");
+      out.push("", "Movement after a step closed, not proof that the step caused it. Steps closed in the same window share one value.", "");
     }
     if (r.progress.weakening) out.push(r.progress.weakening, "");
   }

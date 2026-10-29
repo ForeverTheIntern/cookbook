@@ -266,7 +266,7 @@ export function buildReport(input: RenderInput): ReportJson {
   const setByShare = input.components.filter((c) => input.goalLevel.setBy.includes(c.id)).reduce((s, c) => s + c.changeShare, 0);
   const noBlocker = top.every((t) => t.kind !== "fix");
   const narr = audit.narration ?? {};
-  const gaps = top.map((t, i) => ({ rank: i + 1, text: narr.gaps?.[t.id] ?? gapText(t), blocks: blocksText(t), itemId: t.id }));
+  const gaps = top.map((t, i) => ({ rank: i + 1, text: (narr.gaps?.[t.id] ?? gapText(t)).trim().replace(/\.+$/, ""), blocks: blocksText(t), itemId: t.id }));
   const first = top[0];
   const lower = (s: string) => s.charAt(0).toLowerCase() + s.slice(1);
   let ask = first?.decision ? `Decision needed: ${lower(first.decision)}.` : noBlocker ? `Decision needed: which ${label} go to agents first.` : `Approve the agent's fix for "${gapText(first)}".`;

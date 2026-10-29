@@ -135,6 +135,15 @@ describe("part 1 rules", () => {
     assert.deepEqual(validatePart1(r, rubric, allowedNumbers(r)), []);
   });
 
+  test("a narrated gap that ends in a period renders with one period", () => {
+    const audit = makeAudit(mixed);
+    const id = reportFor(audit).executive.gaps[0].itemId;
+    audit.narration = { gaps: { [id]: "Agents can't reach the api database from a clean checkout." } };
+    const r = reportFor(audit);
+    assert.equal(r.executive.gaps[0].text, "Agents can't reach the api database from a clean checkout");
+    assert.ok(!renderMarkdown(r, rubric).includes(".."));
+  });
+
   test("a dangling evidence ID is rejected", () => {
     const audit = makeAudit(mixed);
     const r = reportFor(audit);

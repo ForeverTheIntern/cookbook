@@ -27,12 +27,15 @@ export function historyLines(ws: Workspace): { id: string; kind: string; repoLev
   return existsSync(f) ? readFileSync(f, "utf8").split("\n").filter(Boolean).map((l) => JSON.parse(l)) : [];
 }
 
+// Oldest first. Audit IDs embed the commit hash, so directory order isn't chronological.
 export function sealedAudits(ws: Workspace): Record<string, any>[] {
   const dir = join(ws.dir, ".agent-readiness/history/audits");
   if (!existsSync(dir)) return [];
+  const order = historyLines(ws).map((h) => h.id);
+  const rank = (id: string) => (order.includes(id) ? order.indexOf(id) : order.length);
   return readdirSync(dir)
-    .sort()
-    .map((id) => JSON.parse(readFileSync(join(dir, id, "audit.json"), "utf8")));
+    .map((id) => JSON.parse(readFileSync(join(dir, id, "audit.json"), "utf8")) as Record<string, any>)
+    .sort((a, b) => rank(a.id) - rank(b.id) || String(a.createdAt).localeCompare(String(b.createdAt)));
 }
 
 export function readiness(ws: Workspace, args: string[]): { code: number; out: string } {

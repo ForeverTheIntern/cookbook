@@ -1,11 +1,12 @@
 import assert from "node:assert/strict";
-import { appendFileSync, writeFileSync } from "node:fs";
+import { appendFileSync, mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, test } from "node:test";
 import { cases as fixtureCases } from "../evals/cases/fixtures.ts";
 import { cases as resilienceCases } from "../evals/cases/resilience.ts";
 import { compare, summarize } from "../evals/lib/baseline.ts";
-import { gradeCase } from "../evals/lib/grade.ts";
+import { gradeCase, sealedAudits } from "../evals/lib/grade.ts";
 import type { CaseRun, Trajectory } from "../evals/lib/types.ts";
 import { applyTurnHook, caseEnv, prepare } from "../evals/lib/workspace.ts";
 import { detectRuntime } from "../skill/agent-readiness/scripts/lib/container.ts";
@@ -80,6 +81,18 @@ describe("eval grader", { skip: detectRuntime("auto") ? false : "no container ru
 });
 
 describe("eval cases and baseline", () => {
+  test("sealed audits are read in history order, not by ID", () => {
+    const dir = join(mkdtempSync(join(tmpdir(), "audits-")), "repo");
+    const hist = join(dir, ".agent-readiness/history");
+    for (const [id, createdAt] of [["aud-2026-10-29-6638f8f-200c", "2026-10-29T05:50:00Z"], ["aud-2026-10-29-3f53c69-9705", "2026-10-29T05:52:00Z"]]) {
+      mkdirSync(join(hist, "audits", id), { recursive: true });
+      writeFileSync(join(hist, "audits", id, "audit.json"), JSON.stringify({ id, createdAt }));
+    }
+    writeFileSync(join(hist, "history.jsonl"), ['{"id":"aud-2026-10-29-6638f8f-200c","kind":"audit"}', '{"id":"aud-2026-10-29-3f53c69-9705","kind":"audit"}'].join("\n") + "\n");
+    const ws = { dir, fixture: "x", now: "", skillDigestBefore: "", headBefore: "" };
+    assert.deepEqual(sealedAudits(ws).map((a) => a.id), ["aud-2026-10-29-6638f8f-200c", "aud-2026-10-29-3f53c69-9705"]);
+  });
+
   test("every case has at most five hard gates, a description and a tag", () => {
     for (const c of [...fixtureCases, ...resilienceCases]) {
       assert.ok((c.gates?.length ?? 5) <= 5, c.id);

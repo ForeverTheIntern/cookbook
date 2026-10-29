@@ -1,0 +1,30 @@
+{
+  "goal": "repo_wide",
+  "purpose": "No pinned Python version and unpinned requirements, so upgrades and migrations can't be reproduced.",
+  "runs": [
+    {
+      "name": "default",
+      "level": 1,
+      "levels": {
+        "python-unpinned": {
+          "first_pr": 2,
+          "bug_fixes": 2,
+          "features": 2
+        }
+      },
+      "repoLevels": {
+        "first_pr": 2,
+        "bug_fixes": 2,
+        "features": 2,
+        "repo_wide": 1
+      },
+      "top": [
+        "lockfile:repo",
+        "toolchain:repo"
+      ],
+      "startNow": null,
+      "noBlocker": false,
+      "safety": "pass"
+    }
+  ]
+}

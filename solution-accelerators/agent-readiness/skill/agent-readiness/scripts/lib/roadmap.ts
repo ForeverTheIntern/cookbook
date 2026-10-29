@@ -305,7 +305,8 @@ export function updateRoadmap(prev: Roadmap | null, ctx: RoadmapContext): Roadma
     const rose = [...after.entries()].filter(([id, l]) => l > (levels.get(id) ?? 0) && (goal === "repo_wide" || ctx.active.has(id)));
     item.impact = goal === "repo_wide" ? (rose.length ? Math.min(1, [...ctx.active].reduce((s, id) => s + (shares.get(id) ?? 0), 0)) : 0) : Math.min(1, Math.round(rose.reduce((s, [id]) => s + (shares.get(id) ?? 0), 0) * 1000) / 1000);
     const text = unlocksText(rubric, goal, levels, after);
-    const deps = new Set<string>();
+    const prerequisites = new Set<string>();
+    const coRequired = new Set<string>();
     const goalConds = new Set<CondId>([...rubric.level1, ...rubric.activities.find((a) => a.id === goal)!.level2]);
     const flippedAll = flipFor(item, open, maps);
     for (const f of item.fixes) {
@@ -313,17 +314,26 @@ export function updateRoadmap(prev: Roadmap | null, ctx: RoadmapContext): Roadma
       const targetsComps = f.component === "*" ? [...maps.keys()] : [f.component];
       for (const compId of targetsComps) {
         const needed = neededConds(rubric, goal, levels.get(compId) ?? 0);
+        const bucket = needed.includes(f.condition) ? coRequired : prerequisites;
         const flipped = flippedAll.get(compId) ?? {};
         for (const cond of needed) {
           if (flipped[cond] === "met") continue;
           for (const other of open) {
-            if (other.id !== item.id && other.fixes.some((x) => x.condition === cond && (x.component === compId || x.component === "*"))) deps.add(other.id);
+            if (other.id !== item.id && other.fixes.some((x) => x.condition === cond && (x.component === compId || x.component === "*"))) bucket.add(other.id);
           }
         }
       }
     }
-    item.dependsOn = item.impact > 0 ? [] : [...deps];
-    item.unlocks = text || (item.dependsOn.length ? `nothing on its own; also needs ${item.dependsOn.map((d) => byId.get(d)?.title ?? d).join(" and ")}` : `no level change for ${label} yet`);
+    item.dependsOn = item.impact > 0 ? [] : [...prerequisites];
+    if (text) item.unlocks = text;
+    else if (item.dependsOn.length) item.unlocks = `nothing on its own; first needs ${item.dependsOn.map((d) => byId.get(d)?.title ?? d).join(" and ")}`;
+    else if (coRequired.size) {
+      const together = [item, ...[...coRequired].map((d) => byId.get(d)!)];
+      let joint = maps;
+      for (const t of together) joint = flipFor(t, open.filter((o) => !together.includes(o) || o === t), joint);
+      const jointText = unlocksText(rubric, goal, levels, goalLevels(rubric, joint, goal));
+      item.unlocks = `${jointText || "the next level"} together with ${[...coRequired].map((d) => byId.get(d)?.title ?? d).join(" and ")}`;
+    } else item.unlocks = `no level change for ${label} yet`;
   }
   for (const item of roadmap.items.filter((i) => i.kind !== "fix")) {
     if (item.template === "owner") item.unlocks = "a named owner for approvals, targets and the weekly recheck";

@@ -8,7 +8,7 @@ import { appendHistory, loadSealedAudit, readHistory, readRoadmap, storeAudit, s
 import type { LevelResult } from "./levels.ts";
 import { activeComponents, capAt, componentLevel, outcomeLevel, partialCoverage, recheckStates, repoLevel, repoWideLevel, statesOf } from "./levels.ts";
 import { makeExecutor, newBudget, runContract } from "./replay.ts";
-import { allowedNumbers, buildReport, renderMarkdown, validatePart1 } from "./render.ts";
+import { allowedNumbers, buildReport, danglingEvidence, renderMarkdown, validatePart1 } from "./render.ts";
 import { updateRoadmap } from "./roadmap.ts";
 import type { Rubric } from "./rubric.ts";
 import { loadRubric } from "./rubric.ts";
@@ -59,7 +59,7 @@ export function compute(audit: Audit, rubric: Rubric, history: HistoryLine[]): C
     } else {
       const maps = new Map([...states.entries()].filter(([id]) => active.has(id)).map(([id, s]) => [id, statesOf(s)]));
       const r = repoWideLevel(rubric, maps);
-      const setBy = [...maps.entries()].filter(([, m]) => componentLevel(rubric, m, "bug_fixes").level <= r.level).map(([id]) => id);
+      const setBy = [...maps.entries()].filter(([, m]) => (r.level === 0 ? componentLevel(rubric, m, "bug_fixes").level === 0 : r.level === 1 && componentLevel(rubric, m, "bug_fixes").level < 2)).map(([id]) => id);
       repoLevels.set(a.id, { level: r.level, couldBe: r.couldBe, setBy });
     }
   }
@@ -138,6 +138,7 @@ export function seal(audit: Audit, local: LocalInfo, p: Paths, log: (s: string) 
     partial: partialCoverage(rubric, audit.profile.components),
   });
   const errors = [
+    ...danglingEvidence(report, audit).map((id) => `the report cites ${id}, which isn't in the audit`),
     ...validatePart1(report, rubric, audit.narration ? allowedNumbers(report) : null),
     ...validateAgainst("report", report).map((e) => `report.json ${e}`),
     ...validateAgainst("roadmap", rm.roadmap).map((e) => `roadmap.json ${e}`),
@@ -203,7 +204,10 @@ export function verifySeal(p: Paths, ref: string, opts: { releaseRepo?: string; 
     }
   } else if (m) {
     if (m.scriptsDigest === audit.skill.scriptsDigest) lines.push(`OK: scripts match the bundled release manifest ${m.tag} (pass --release-repo in the external-systems tier to check the published one).`);
-    else lines.push(`WARN: scripts don't match the bundled release manifest ${m.tag}.`);
+    else {
+      ok = false;
+      lines.push(`FAIL: the scripts that ran this audit don't match the release manifest ${m.tag}; they were edited.`);
+    }
   }
   const production = !audit.seed.pinned;
   if (!production) lines.push("NOTE: this audit pinned its planted-fault seed (eval run), so it isn't a production result.");

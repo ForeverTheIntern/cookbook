@@ -1,0 +1,29 @@
+{
+  "goal": "features",
+  "purpose": "AGENTS.md names a missing script and a missing path, and a skill calls a missing script.",
+  "runs": [
+    {
+      "name": "default",
+      "level": 1,
+      "levels": {
+        "agents-md-drift": {
+          "first_pr": 1,
+          "bug_fixes": 2,
+          "features": 1
+        }
+      },
+      "repoLevels": {
+        "first_pr": 1,
+        "bug_fixes": 2,
+        "features": 1,
+        "repo_wide": 2
+      },
+      "top": [
+        "instructions:repo"
+      ],
+      "startNow": null,
+      "noBlocker": false,
+      "safety": "pass"
+    }
+  ]
+}

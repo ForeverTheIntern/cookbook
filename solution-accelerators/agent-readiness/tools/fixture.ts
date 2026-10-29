@@ -107,6 +107,57 @@ export function materializePrs(fixture: string, now: string, file = "prs.templat
   return out;
 }
 
+export interface ExpectedRun {
+  name: string;
+  registryEnv?: Record<string, string>;
+  level: number;
+  levels: Record<string, Record<string, number>>;
+  repoLevels: Record<string, number>;
+  top: string[];
+  startNow: string | null;
+  noBlocker: boolean;
+  safety: "pass" | "fail";
+  notAssessed?: string[];
+  waiting?: string[];
+  diagnosis?: string;
+}
+
+export interface Expected {
+  goal: string;
+  purpose: string;
+  outcomes?: string;
+  runs: ExpectedRun[];
+}
+
+export function expected(fixture: string): Expected {
+  return JSON.parse(readFileSync(join(FIXTURES, fixture, "expected.json"), "utf8")) as Expected;
+}
+
+export interface FixtureAudit {
+  repo: string;
+  code: number;
+  out: string;
+  report: Record<string, any>;
+  roadmap: Record<string, any>;
+}
+
+export function auditFixture(fixture: string, run: ExpectedRun, opts: { seed?: string; image?: string; now?: string } = {}): FixtureAudit {
+  const exp = expected(fixture);
+  const now = opts.now ?? new Date().toISOString();
+  const repo = materialize(fixture, { now });
+  const args = ["audit", "--goal", exp.goal, "--tier", "local-exec"];
+  const env: Record<string, string> = { READINESS_EVAL_SEED: opts.seed ?? "fixture-seed" };
+  if (run.registryEnv) {
+    args.push("--registry-env", Object.keys(run.registryEnv).join(","));
+    Object.assign(env, run.registryEnv);
+  }
+  if (exp.outcomes) args.push("--outcomes-input", materializePrs(fixture, now, exp.outcomes));
+  if (opts.image) args.push("--image", opts.image);
+  const r = readiness(repo, args, env);
+  const read = (p: string) => (existsSync(join(repo, p)) ? JSON.parse(readFileSync(join(repo, p), "utf8")) : {});
+  return { repo, code: r.code, out: r.out, report: read(".agent-readiness/latest/report.json"), roadmap: read(".agent-readiness/roadmap.json") };
+}
+
 export function fixtureNames(): string[] {
   return readdirSync(FIXTURES).filter((n) => existsSync(join(FIXTURES, n, "repo"))).sort();
 }

@@ -103,6 +103,11 @@ function headlineFor(input: RenderInput, ready: string[], setByShare: number): s
     if (goalLevel.level >= 3) return `Agent PRs meet your Level 3 targets for ${label}. Keep the weekly recheck running and widen the work agents take.`;
     return `Nothing in the repo blocks agents from ${label}. Start delegating: give agents a few real ${label} this week.`;
   }
+  if (goalLevel.setBy.length === 0) {
+    const repoConds = (["toolchain", "lockfile", "instructions", "safety"] as CondId[]).filter((c) => [...input.states.values()][0]?.[c].state === "not_met");
+    const what = repoConds.length ? list(repoConds.map((c) => condLabel(rubric, c).replace(/^a /, "").replace(/versions are pinned/, "versions aren't pinned").replace(/reproduces the lockfile/, "doesn't reproduce the lockfile"))) : "a repo-wide check fails";
+    return goalLevel.level === 0 ? `Agents can't pass the tests from a clean checkout, so ${label} can't start yet.` : `Every component builds and passes its tests, but ${label} aren't reproducible yet: ${what}.`;
+  }
   const names = list(goalLevel.setBy);
   const share = `${pct(setByShare, 1)}% of recent changes land there`;
   const readyLine = ready.length ? ` ${list(ready)} ${ready.length > 1 ? "are" : "is"} already ready for ${label}.` : "";
@@ -204,7 +209,14 @@ function checkResult(input: RenderInput, checkId: string): { result: string; ok:
     const authors = new Set(audit.assets.flatMap((a) => a.authors.map((x) => x.name)));
     return { result: `${plural(audit.assets.length, "asset")}, ${plural(authors.size, "author")}`, ok: null };
   }
-  if (checkId === "bootstrap.cold_replay") return byComp(rubric.level1);
+  if (checkId === "bootstrap.cold_replay") {
+    const r = byComp(rubric.level1);
+    const repoState = [...input.states.values()][0];
+    const extra: string[] = [];
+    if (repoState?.toolchain.state === "not_met") extra.push(`toolchain: ${repoState.toolchain.reason}`);
+    if (repoState?.lockfile.state === "not_met") extra.push(`lockfile: ${repoState.lockfile.reason}`);
+    return { result: [r.result, ...extra].filter(Boolean).join("; "), ok: extra.length ? false : r.ok };
+  }
   if (checkId === "verify.canonical_interface") return byComp(["commands"]);
   if (checkId === "verify.behavioral_oracle") {
     const parts = assessed.map((c) => {
@@ -426,6 +438,12 @@ export function validatePart1(report: ReportJson, rubric: Rubric, narratedAllowe
     for (const t of narrated) for (const m of t.matchAll(/\d+(?:\.\d+)?%?/g)) if (!narratedAllowedNumbers.has(m[0])) errors.push(`"${m[0]}" in the narrated text isn't a number the audit computed`);
   }
   return errors;
+}
+
+export function danglingEvidence(report: ReportJson, audit: Audit): string[] {
+  const known = new Set(audit.evidence.map((e) => e.id));
+  const cited = new Set([...JSON.stringify(report).matchAll(/\bev-\d{3,}\b/g)].map((m) => m[0]));
+  return [...cited].filter((id) => !known.has(id)).sort();
 }
 
 export function allowedNumbers(report: ReportJson): Set<string> {

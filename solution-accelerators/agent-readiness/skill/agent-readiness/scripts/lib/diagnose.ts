@@ -26,7 +26,7 @@ export function diagnose(output: string, timedOut: boolean, phase: string): Diag
     const name = cred[1] ?? cred[2];
     if (SECRET_NAME.test(name)) return { cause: "credential", detail: `needs ${name}` };
   }
-  if (phase === "install" && /\b(E?401|Unauthorized|authentication required|no auth token)\b/i.test(output)) {
+  if ((phase === "install" || phase === "doctor") && (/\b(E?401|Unauthorized|authentication required|no auth token)\b/i.test(output) || /Failed to replace env in config: \$\{[A-Z_]+\}/.test(output))) {
     return { cause: "registry", detail: "registry credentials not provided" };
   }
   const tool = output.match(/(?:^|\n)(?:bash: |sh: \d+: |\/bin\/sh: \d+: )?([\w.-]+): (?:command )?not found/);

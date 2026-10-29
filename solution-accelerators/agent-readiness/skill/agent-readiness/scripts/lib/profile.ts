@@ -121,7 +121,8 @@ export function discoverComponents(tree: string, files: string[]): Component[] {
     comps.push({ id: sanitizeId(pkg?.name ?? "root"), path: ".", language: languageOf(tree, ".", files), manifest: "package.json", scripts: pkg?.scripts ?? {}, changes: 0, changeShare: 0, assessed: false });
   } else if (exists(join(tree, "pyproject.toml")) || exists(join(tree, "setup.py")) || exists(join(tree, "requirements.txt"))) {
     const manifest = exists(join(tree, "pyproject.toml")) ? "pyproject.toml" : exists(join(tree, "setup.py")) ? "setup.py" : "requirements.txt";
-    comps.push({ id: sanitizeId(basename(tree) === "tree" ? "root" : basename(tree)), path: ".", language: "py", manifest, scripts: {}, changes: 0, changeShare: 0, assessed: false });
+    const pyName = exists(join(tree, "pyproject.toml")) ? readText(join(tree, "pyproject.toml")).match(/^name\s*=\s*["']([^"']+)["']/m)?.[1] : undefined;
+    comps.push({ id: sanitizeId(pyName ?? "app"), path: ".", language: "py", manifest, scripts: {}, changes: 0, changeShare: 0, assessed: false });
   }
   if (comps.length === 1 && comps[0].path === ".") return comps;
   const claimed = new Set(comps.map((c) => c.path.split("/")[0]));

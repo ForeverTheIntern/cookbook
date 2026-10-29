@@ -8,9 +8,9 @@
     "dirtyTree": false,
     "rubric": "2026-10-alpha",
     "tier": "local-exec",
-    "scriptsDigest": "fe180c43767fead5e28e6b27882505b3fe6110ac6b68ddcc3de2392e8a6eb221",
+    "scriptsDigest": "8ff14a58c1bb993e16831571ad4f908a70d7ead9a47f4113f09d371c21b9e00a",
     "seedPinned": true,
-    "sealStatus": "Seal verified against release agent-readiness-v0.1.0",
+    "sealStatus": "Scripts match the agent-readiness-v0.1.0 manifest bundled with this copy; the published release isn't checked here",
     "staleCopy": null,
     "previous": null,
     "storedAt": ".agent-readiness/history/audits/aud-2026-10-27-7070f44-e101"
@@ -89,7 +89,7 @@
         "comparison": "Level 1 needs 0%, counting the last 90 days"
       }
     ],
-    "nextLine": "Next: Level 1, bootable. Met: installs from the lockfile in a clean container and builds in a clean container. Not yet: api passes every test in a clean container.",
+    "nextLine": "Next: Level 1, bootable. Met: installs from the lockfile in a clean container. Not yet: api passes every test in a clean container.",
     "gaps": [
       {
         "rank": 1,
@@ -391,14 +391,17 @@
         "result": "failed: api; passed: shared and worker",
         "ok": false,
         "counts": {
-          "passed": 3,
-          "failed": 0,
+          "passed": 5,
+          "failed": 1,
           "notRun": 0
         },
         "evidence": [
           "ev-008",
+          "ev-009",
           "ev-010",
-          "ev-012"
+          "ev-011",
+          "ev-012",
+          "ev-013"
         ]
       },
       {
@@ -435,7 +438,7 @@
         "name": "Agent instructions are accurate",
         "why": "Agents follow AGENTS.md, rules and skills literally, so a stale command costs more than a missing one. No outcome study yet measures how much these files help.",
         "sources": [],
-        "result": "4 passed, 3 failed, 0 not run",
+        "result": "4 of 7 instruction items check out, 3 wrong",
         "ok": false,
         "counts": {
           "passed": 4,
@@ -893,11 +896,11 @@
       },
       {
         "label": "Seal",
-        "value": "Seal verified against release agent-readiness-v0.1.0"
+        "value": "Scripts match the agent-readiness-v0.1.0 manifest bundled with this copy; the published release isn't checked here"
       },
       {
         "label": "Skill digest",
-        "value": "fe180c43767f"
+        "value": "8ff14a58c1bb"
       },
       {
         "label": "Planted-fault seed",

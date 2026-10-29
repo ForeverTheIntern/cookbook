@@ -1,6 +1,6 @@
 # Agent readiness: monorepo-mixed
 
-> Eval run with a pinned seed; not a production result. Seal verified against release agent-readiness-v0.1.0.
+> Eval run with a pinned seed; not a production result. Scripts match the agent-readiness-v0.1.0 manifest bundled with this copy; the published release isn't checked here.
 
 ## 1. Where you stand: Level 0 of 4, not bootable, for bug fixes
 
@@ -14,7 +14,7 @@ Audited Oct 27, 2026 at 7070f44
 
 [Level 0 Not bootable] > Level 1 Bootable > Level 2 Verifiable > Level 3 Delegable > Level 4 Scalable
 
-Next: Level 1, bootable. Met: installs from the lockfile in a clean container and builds in a clean container. Not yet: api passes every test in a clean container.
+Next: Level 1, bootable. Met: installs from the lockfile in a clean container. Not yet: api passes every test in a clean container.
 
 1. **Set up Postgres for agents in api.** Blocks Level 1 for api.
 2. **Make worker's tests catch wrong behavior.** Blocks Level 2 for worker.
@@ -98,9 +98,9 @@ Effort against impact (impact is the share of recent changes an action unblocks)
 | Components and where changes land (`scope.profile`) | Levels follow the work, so the audit finds each package and its share of recent changes. | 4 components found, 3 assessed |  |
 | Agent assets in the repo (`scope.agent_assets`) | Shows what agent setup already exists and who maintains it. Not scored. | 3 assets, 3 authors |  |
 | Setup works from a clean checkout (`bootstrap.cold_replay`) | Every agent starts from a clean checkout, so setup that only works on a prepared machine breaks every agent run. In the BootstrapAgent study, a reusable, verified setup cut later agents' token use by 25.9% and build time by 22.3%. Measured on the study's benchmark repositories. ([source](https://arxiv.org/abs/2605.15815)) | **failed: api; passed: shared and worker** | `ev-005`, `ev-006`, `ev-007`, `ev-009`, `ev-011`, `ev-013` and 1 more |
-| Build, lint, type-check and test commands pass (`verify.canonical_interface`) | Agents need one known way to check their own work. | **failed: api; passed: shared and worker** | `ev-008`, `ev-010`, `ev-012` |
+| Build, lint, type-check and test commands pass (`verify.canonical_interface`) | Agents need one known way to check their own work. | **failed: api; passed: shared and worker** | `ev-008`, `ev-009`, `ev-010`, `ev-011`, `ev-012`, `ev-013` |
 | Tests catch planted faults (`verify.behavioral_oracle`) | Green tests aren't proof that a change is right. In DeployBench, 53.9% of failed runs passed generic checks and failed only task-specific ones. 51 research-artifact deployment tasks. ([source](https://deploybench.vercel.app/)) OpenAI estimated about 30% of SWE-Bench Pro's 731 public tasks were broken, including low-coverage tests that let incomplete fixes pass. An audit of one benchmark, not of customer repositories. ([source](https://openai.com/index/separating-signal-from-noise-coding-evaluations)) | **api: tests must pass before faults can be planted; shared: caught 5 of 5 planted faults; worker: caught 0 of 5 planted faults** | `ev-015`, `ev-016`, `ev-017` |
-| Agent instructions are accurate (`context.instructions_verified`) | Agents follow AGENTS.md, rules and skills literally, so a stale command costs more than a missing one. No outcome study yet measures how much these files help. | **4 passed, 3 failed, 0 not run** | `ev-001`, `ev-002`, `ev-003`, `ev-018`, `ev-019` |
+| Agent instructions are accurate (`context.instructions_verified`) | Agents follow AGENTS.md, rules and skills literally, so a stale command costs more than a missing one. No outcome study yet measures how much these files help. | **4 of 7 instruction items check out, 3 wrong** | `ev-001`, `ev-002`, `ev-003`, `ev-018`, `ev-019` |
 | Normal work needs no production access (`safety.execution_boundary`) | Agents run with whatever access setup gives them, so normal work must never need production credentials. | passed | `ev-004` |
 
 Not assessed by this rubric version, which is different from unknown: whether CI matches the local commands, flaky tests, the quality of error messages, how easily code can be found and outcome checks on held-out tasks.
@@ -189,8 +189,8 @@ Evidence strength, weakest to strongest: stated in docs, read from files, ran on
 - **Commit:** 7070f44 (clean tree)
 - **Rubric:** 2026-10-alpha
 - **Permission tier:** local-exec
-- **Seal:** Seal verified against release agent-readiness-v0.1.0
-- **Skill digest:** fe180c43767f
+- **Seal:** Scripts match the agent-readiness-v0.1.0 manifest bundled with this copy; the published release isn't checked here
+- **Skill digest:** 8ff14a58c1bb
 - **Planted-fault seed:** pinned (eval run; not a production result)
 - **Replay environment:** docker container, readiness-ubuntu-node22
 - **Stored in:** .agent-readiness/history/audits/aud-2026-10-27-7070f44-e101

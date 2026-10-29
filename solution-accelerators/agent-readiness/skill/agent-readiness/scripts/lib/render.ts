@@ -279,8 +279,8 @@ export function buildReport(input: RenderInput): ReportJson {
   const gaps = top.map((t, i) => ({ rank: i + 1, text: (narr.gaps?.[t.id] ?? gapText(t)).trim().replace(/\.+$/, ""), blocks: blocksText(t), itemId: t.id }));
   const first = top[0];
   const lower = (s: string) => s.charAt(0).toLowerCase() + s.slice(1);
-  let ask = first?.decision ? `Decision needed: ${lower(first.decision)}.` : noBlocker ? `Decision needed: which ${label} go to agents first.` : `Approve the agent's fix for "${gapText(first)}".`;
-  if (!roadmap.owner) ask += " Also name an owner for agent readiness.";
+  let ask = narr.ask ?? (first?.decision ? `Decision needed: ${lower(first.decision)}.` : noBlocker ? `Decision needed: which ${label} go to agents first.` : `Approve the agent's fix for "${gapText(first)}".`);
+  if (!roadmap.owner && !/\bowner\b/i.test(ask)) ask += " Also name an owner for agent readiness.";
   const actions: ReportAction[] = top.map((t, i) => action(t, i + 1, rubric, roadmap, false, audit.outcomes));
   if (startNow) actions.push(action(startNow, actions.length + 1, rubric, roadmap, true, audit.outcomes));
   const points = actions.map((a, i) => ({ label: `${a.rank}. ${a.title}`, x: Math.min(0.95, rubric.effortX[a.effort] + i * 0.04), y: Math.max(0, Math.min(1, a.impact)), itemId: a.itemId }));
@@ -353,7 +353,7 @@ export function buildReport(input: RenderInput): ReportJson {
       numbers: stats3(input),
       nextLine: nextLine(input),
       gaps,
-      ask: narr.ask ?? ask,
+      ask,
       coverage: coverageLine(input),
       noBlocker,
     },

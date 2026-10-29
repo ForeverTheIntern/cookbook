@@ -69,13 +69,17 @@ For a private registry, ask for the variable names (never values) and pass `--re
 ## 6. Narrate, then seal
 
 1. `readiness status` shows every condition and the levels the scripts computed.
-2. Optional: improve the wording of part 1 with `readiness narrate --file narration.json`:
+2. Always write the headline and the ask with `readiness narrate --file narration.json`. The scripts' default wording is a fallback: it can't say in plain words why a check failed or what the audit proved.
 
    ```json
-   { "headline": "...", "gaps": { "clean.test:api": "..." }, "ask": "..." }
+   { "headline": "...", "ask": "...", "gaps": { "clean.test:api": "..." } }
    ```
 
-   Follow [references/report.md](references/report.md): one message in at most 40 words that names the component that sets the level and what already works elsewhere, at most three plain gap lines, one decision as the ask, no jargon, no code formatting, and no number the audit didn't compute. Skip narration if the default wording already reads well.
+   - **Headline:** one message in at most 40 words for an engineering director. Name the component that sets the level and say why in plain words, from the failing condition's reason in `readiness status`: what failed and what it needs, for example "its tests need a Postgres database the setup doesn't start". Then say what already works, in that component (it installs, builds, its tests catch planted bugs) and in any component already at Level 2. When nothing blocks the activity, name the component, say what the audit proved, and recommend starting to delegate. With a single component, leave out its share of changes; it is always 100%.
+   - **Ask:** the one decision that unblocks the top gap, naming the change to approve, for example "approve adding a Postgres service to the agent setup for api". The report adds "name an owner" when none is recorded, so leave it out.
+   - **Gaps** (optional): one plain line per top item, keyed `<condition>:<component>` as in the example.
+
+   Follow [references/report.md](references/report.md): no jargon, no code formatting, and no number the audit didn't compute.
 3. `readiness seal`. If it refuses, it lists what broke the rules. Fix the narration and seal again.
 
 ## 7. Report back

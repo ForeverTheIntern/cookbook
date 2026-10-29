@@ -149,6 +149,14 @@ describe("part 1 rules", () => {
     assert.equal(later[2].comparison, "Last audit: 98%, counting the last 90 days");
   });
 
+  test("a narrated ask still asks for an owner when none is recorded, once", () => {
+    const audit = makeAudit(mixed);
+    audit.narration = { ask: "Approve adding a Postgres service to the agent setup for api." };
+    assert.equal(reportFor(audit).executive.ask, "Approve adding a Postgres service to the agent setup for api. Also name an owner for agent readiness.");
+    audit.narration = { ask: "Approve the Postgres setup for api and name an owner for agent readiness." };
+    assert.equal(reportFor(audit).executive.ask, "Approve the Postgres setup for api and name an owner for agent readiness.");
+  });
+
   test("activity labels keep their acronyms", () => {
     assert.equal(reportFor(makeAudit({ ...mixed, goal: "first_pr" })).executive.heading, "Level 0 of 4, not bootable, for first PR");
   });

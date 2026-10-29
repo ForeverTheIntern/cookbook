@@ -65,6 +65,21 @@ export function registryNamesOnly(name: string, value: string): Gate {
   };
 }
 
+export const noPhantomCommands: Gate = (ws) => {
+  const last = sealedAudits(ws).at(-1);
+  if (!last) return { name: "no wrong instruction in the contract", pass: false, detail: "no audit" };
+  const wrong = new Set((last.instructions as { kind: string; text: string; staticResult: string }[]).filter((i) => i.kind === "command" && i.staticResult === "fail").map((i) => i.text));
+  const added = (last.contract as { command: string }[]).filter((c) => wrong.has(c.command)).map((c) => c.command);
+  return { name: "no wrong instruction in the contract", pass: added.length === 0, detail: added.length ? `contract runs ${added.join(", ")}, which the scan flagged as wrong instructions` : `${wrong.size} wrong instruction commands left out` };
+};
+
+export function repoLevelIs(activity: string, level: number): Gate {
+  return (ws) => {
+    const got = (latestReport(ws)?.details.levels.repoLevels as Record<string, number> | undefined)?.[activity];
+    return { name: `${activity} at Level ${level}`, pass: got === level, detail: `Level ${got ?? "none"}` };
+  };
+}
+
 export const notProvable: Gate = (ws) => {
   const r = latestReport(ws);
   const pass = Boolean(r && r.maturity.level === 0 && r.maturity.couldBe === 1 && r.details.record.some((x) => x.value.includes("no container runtime")));

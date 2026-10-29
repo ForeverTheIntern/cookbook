@@ -52,7 +52,8 @@ For a private registry, ask for the variable names (never values) and pass `--re
    ```
 
    Add commands the repo documents or CI runs. Never add a command to make a check pass, and never remove one the scan found.
-3. `readiness contract list` to confirm.
+3. Add only commands the repo defines: a script in the manifest, a Make target, or a step CI runs. A documented command with nothing behind it, such as `npm run typecheck` with no `typecheck` script, is a wrong instruction, not a missing command. `readiness status` lists these under "Wrong instructions", and the audit already counts them against the instructions. Leave them out of the contract and mention them in your summary.
+4. `readiness contract list` to confirm.
 
 ## 4. Execute
 

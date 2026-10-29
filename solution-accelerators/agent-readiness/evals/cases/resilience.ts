@@ -1,7 +1,7 @@
 import { appendFileSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { commitAll } from "../../tools/fixture.ts";
-import { envJsonAllowed, evidenceSays, freshFaultsCaught, itemClosed, auditCount, levelRose, noWeakening, notProvable, registryNamesOnly } from "../lib/gates.ts";
+import { envJsonAllowed, evidenceSays, freshFaultsCaught, itemClosed, auditCount, levelRose, noPhantomCommands, noWeakening, notProvable, registryNamesOnly, repoLevelIs } from "../lib/gates.ts";
 import { levelsGate, levelsMatch, reportGate, sealedGate, topGate, trajectory } from "../lib/grade.ts";
 import type { ExpectedLevels } from "../lib/grade.ts";
 import type { EvalCase } from "../lib/types.ts";
@@ -75,6 +75,15 @@ export const cases: EvalCase[] = [
       },
     ],
     gates: [sealedGate, itemClosed("instructions:repo"), auditCount(2), levelsMatch(INSTRUCTIONS_FIXED, "levels after the instruction fix"), trajectory],
+  },
+  {
+    id: "phantom-command",
+    fixture: "healthy-node",
+    tags: ["full"],
+    description: "AGENTS.md documents a type-check command the repo doesn't define. It is a wrong instruction, so it stays out of the contract and bug fixes stay at Level 2.",
+    setup: (ws) => appendFileSync(join(ws.dir, "AGENTS.md"), "- Type-check: `npm run typecheck`\n"),
+    turns: [{ prompt: "Run an agent readiness audit for bug fixes, permission tier local-exec." }],
+    gates: [sealedGate, noPhantomCommands, repoLevelIs("bug_fixes", 2), reportGate, trajectory],
   },
   {
     id: "no-container-runtime",

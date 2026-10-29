@@ -243,4 +243,15 @@ The first run on a real repo, with standalone apps under `apps/`, no root worksp
 | `dotnet: command not found` on the host read as a repo defect, and "Level 1 not provable" never reached the report | A missing tool on a host fallback leaves Level 1 unproven, and part 1 says Level 1 isn't provable on this machine | `tests/cli.test.ts` "on a host fallback, a missing tool"; `tests/units.test.ts` "a script's missing tool" |
 | The host fallback would have run `sudo service docker start` | The safety check lists sudo, and the host fallback never runs it | `tests/units.test.ts` "sudo" |
 
-These change discovery and report text but no level rule or `expected.json`; every existing fixture's levels are unchanged. The new fixture joins the full eval set, which hasn't been rerun with the agent since.
+A review of other readiness tools then shaped how far each fix goes. We took ideas only and wrote our own rules:
+
+| Idea | Where it landed | Test |
+| --- | --- | --- |
+| Walk the whole tree for manifests, including `.csproj` and `.sln`, and read each nested manifest's scripts | `profile.ts` discovery; part 4 lists included and excluded components | `tests/units.test.ts` "discovery walks the whole tree" |
+| Decide which nested manifests are the product and which are tests, samples or tooling | Satellites are listed, not made components, unless nothing else exists | `tests/units.test.ts` "satellites" |
+| Blocked is a result of its own, and an environment limit is never a repo defect | A fourth condition state, `blocked`, with steps behind a blocked install blocked too | `tests/units.test.ts` "a blocked install blocks the steps behind it" |
+| Confidence apart from the level, and named reasons for what caps it | `maturity.confidence` and `maturity.capReasons` | `tests/render.test.ts` "confidence is separate" |
+| No real results, no report | No level, actions or new roadmap steps, and part 1 says why | `tests/render.test.ts` "no real results, no level"; `tests/cli.test.ts` "on a host fallback" |
+| A final consistency pass | The seal refuses contract commands, evidence or narration keys the scan or report doesn't know | `tests/render.test.ts` "consistency pass" |
+
+These change discovery and report text, and add the blocked and not-assessed outcomes, but no level number: every existing fixture's levels are unchanged. The new fixture joins the full eval set, which hasn't been rerun with the agent since.

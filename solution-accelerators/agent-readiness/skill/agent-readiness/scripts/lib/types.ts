@@ -11,7 +11,9 @@ export type CondId =
   | "safety"
   | "toolchain"
   | "lockfile";
-export type CondState = "met" | "not_met" | "unknown";
+// blocked: a limit of this machine (a missing tool, no container runtime, a refused sudo) kept a
+// deciding check from running. It never counts against the repo, and it never counts as met.
+export type CondState = "met" | "not_met" | "unknown" | "blocked";
 export type Level = 0 | 1 | 2 | 3 | 4;
 export type CommandKind = "doctor" | "install" | "build" | "lint" | "typecheck" | "test" | "start";
 export type Where = "static" | "host" | "fresh_copy" | "container";
@@ -31,6 +33,8 @@ export interface Component {
   assessed: boolean;
   notAssessedReason?: string;
   packageManager?: PackageManager | null;
+  toolchain?: string;
+  lockfile?: string | null;
 }
 
 export interface Profile {
@@ -43,6 +47,8 @@ export interface Profile {
   toolchain: { pinned: boolean; files: string[]; missing: string[] };
   environmentJson: { path: string; install?: string; start?: string; build?: { dockerfile: string; context?: string } } | null;
   components: Component[];
+  // Nested manifests deferred as tests, samples or tooling; never components while the repo has others.
+  satellites: { path: string; manifest: string; toolchain: string; reason: string }[];
   historyDays: number;
   totalChanges: number;
 }
@@ -78,6 +84,7 @@ export interface Evidence {
   outputDigest?: string;
   summary: string;
   diagnosis?: Diagnosis;
+  blocked?: string;
   at: string;
 }
 
@@ -98,6 +105,7 @@ export interface InstructionItem {
   staticReason?: string;
   result: Result;
   reason?: string;
+  blocked?: string;
   evidenceId?: string;
 }
 
@@ -317,6 +325,13 @@ export interface ReportJson {
     setBy: string[];
     partialCoverage: boolean;
     assessedComponents: number;
+    // proven: the level rests on checks that ran. blocked: a limit of this machine stopped the
+    // checks that decide the next level. not_assessed: no component could be assessed.
+    outcome: "proven" | "blocked" | "not_assessed";
+    // Separate from the level and never raises it.
+    confidence: { level: "high" | "medium" | "low"; reasons: string[] };
+    // What holds the level where it is: each condition of the next level that isn't met.
+    capReasons: { component: string; condition: string; label: string; state: CondState; reason: string }[];
     next: { level: Level; name: string; met: string[]; unmet: string[] } | null;
   };
   executive: {
@@ -371,6 +386,12 @@ export interface ReportProgress {
 }
 
 export interface ReportDetails {
+  // sampled_monorepo: some supported components were left out because only the most active are assessed.
+  scope: {
+    type: "single" | "monorepo" | "sampled_monorepo";
+    included: { id: string; path: string; toolchain: string; manifest: string | null; lockfile: string | null; changeShare: number }[];
+    excluded: { id: string; path: string; toolchain: string; manifest: string | null; lockfile: string | null; changeShare: number; reason: string }[];
+  };
   steps: { itemId: string; title: string; steps: { title: string; detail: string }[] }[];
   checks: { id: string; name: string; why: string; sources: { claim: string; caveat: string; url: string }[]; result: string; ok: boolean | null; counts: { passed: number; failed: number; notRun: number }; evidence: string[] }[];
   notAssessed: string[];

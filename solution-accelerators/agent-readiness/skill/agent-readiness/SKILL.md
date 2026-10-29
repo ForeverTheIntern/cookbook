@@ -69,14 +69,14 @@ For a private registry, ask for the variable names (never values) and pass `--re
 
 ## 6. Narrate, then seal
 
-1. `readiness status` shows every condition and the levels the scripts computed.
+1. `readiness status` shows every condition, the levels the scripts computed, and part 1 as the seal would build it now, with the ids of its gaps. Key narration by those ids only: the seal refuses a gap or title id that isn't in the report, a contract command for a component that isn't assessed, and evidence for a component the scan didn't find.
 2. Always write the headline and the ask with `readiness narrate --file narration.json`. The scripts' default wording is a fallback: it can't say in plain words why a check failed or what the audit proved.
 
    ```json
    { "headline": "...", "ask": "...", "gaps": { "clean.test:api": "..." } }
    ```
 
-   - **Headline:** one message in at most 40 words for an engineering director. Name the component that sets the level and say why in plain words, from the failing condition's reason in `readiness status`: what failed and what it needs, for example "its tests need a Postgres database the setup doesn't start". Then say what already works, in that component (it installs, builds, its tests catch planted bugs) and in any component already at Level 2. When nothing blocks the activity, name the component, say what the audit proved, and recommend starting to delegate. Keep to the activity you audited; other activities' levels belong in the report, not the headline. The heading already shows the level, so don't restate it, and with a single component leave out its share of changes, which is always 100%. When no component could be assessed, say that, name what was skipped and why, and give no level.
+   - **Headline:** one message in at most 40 words for an engineering director. Name the component that sets the level and say why in plain words, from the failing condition's reason in `readiness status`: what failed and what it needs, for example "its tests need a Postgres database the setup doesn't start". Then say what already works, in that component (it installs, builds, its tests catch planted bugs) and in any component already at Level 2. When nothing blocks the activity, name the component, say what the audit proved, and recommend starting to delegate. Keep to the activity you audited; other activities' levels belong in the report, not the headline. The heading already shows the level, so don't restate it, and with a single component leave out its share of changes, which is always 100%. When no component could be assessed, or no check produced a real result (every check was blocked on this machine, or the tier ran no repo code), say that, name what was skipped or blocked and why, and give no level. A check blocked on this machine, such as a tool the host lacks, is never a repo gap: say where a rerun can prove it.
    - **Ask:** the one decision that unblocks the top gap, naming the change to approve, for example "approve adding a Postgres service to the agent setup for api". The report adds "name an owner" when none is recorded, so leave it out.
    - **Gaps** (optional): one plain line per top item, keyed `<condition>:<component>` as in the example.
 
@@ -86,7 +86,7 @@ For a private registry, ask for the variable names (never values) and pass `--re
 ## 7. Report back
 
 1. `readiness verify-seal`.
-2. Read `.agent-readiness/latest/report.md` and reply with part 1 in your own words: the level and what it means, the headline, the three numbers, the gaps and the one ask. Link the report. Don't paste the whole report.
+2. Read `.agent-readiness/latest/report.md` and reply with part 1 in your own words: the level and what it means, the headline, the three numbers, the gaps and the one ask. Give the confidence too, and its reasons, but never as part of the level. Link the report. Don't paste the whole report.
 3. When the report finds no blocker, say so plainly and recommend starting to delegate. Don't invent work.
 4. Offer the next step in one line, for example: "Say 'fix the primary blocker' and I'll set up Postgres for agents and prove it with a new audit."
 5. Say what to commit: `.agent-readiness/roadmap.json` and `.agent-readiness/latest/` go on the main branch. The sealed audits and `history.jsonl` go to the `agent-readiness/history` branch with `readiness history push --push`, or to CI artifacts.

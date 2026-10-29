@@ -19,7 +19,7 @@ export function statesOf(detail: CompStates): StateMap {
 
 function evaluate(conds: CondId[], states: StateMap): { met: boolean; missing: CondId[]; unknown: CondId[] } {
   const missing = conds.filter((c) => states[c] === "not_met");
-  const unknown = conds.filter((c) => (states[c] ?? "unknown") === "unknown");
+  const unknown = conds.filter((c) => (states[c] ?? "unknown") === "unknown" || states[c] === "blocked");
   return { met: missing.length === 0 && unknown.length === 0, missing, unknown };
 }
 

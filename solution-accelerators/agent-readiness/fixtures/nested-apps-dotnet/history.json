@@ -29,6 +29,13 @@
       "message": "Update commerce-core"
     },
     {
+      "author": "Contributor C",
+      "email": "c@example.com",
+      "daysAgo": 15,
+      "paths": ["services/identity-dev/notes/n1.md", "services/identity-dev/notes/n2.md"],
+      "message": "Update identity-dev"
+    },
+    {
       "author": "Contributor B",
       "email": "b@example.com",
       "daysAgo": 10,

@@ -98,30 +98,107 @@ function sanitizeId(name: string): string {
   return name.replace(/^@[^/]+\//, "").replace(/[^A-Za-z0-9._-]/g, "-") || "root";
 }
 
-const NODE_LOCKFILES = ["package-lock.json", "pnpm-lock.yaml", "yarn.lock"];
-const PY_LOCKFILES = ["uv.lock", "poetry.lock"];
-const SKIP_SEGMENT = /^(\.|node_modules$|fixtures?$|__fixtures__$|testdata$|vendor$|dist$|build$)/;
+const NODE_LOCKFILES = ["package-lock.json", "npm-shrinkwrap.json", "pnpm-lock.yaml", "yarn.lock", "bun.lock", "bun.lockb"];
+const PY_LOCKFILES = ["uv.lock", "poetry.lock", "Pipfile.lock", "pdm.lock"];
+const LOCKFILES = [...NODE_LOCKFILES, ...PY_LOCKFILES, "packages.lock.json", "Cargo.lock", "go.sum", "Gemfile.lock", "composer.lock", "gradle.lockfile", "mix.lock", "pubspec.lock", "Podfile.lock"];
+const SKIP_SEGMENT = /^(\..+|node_modules|fixtures?|__fixtures__|testdata|vendor|dist|build|bin|obj|target)$/;
 
-// Packages outside any workspace, such as apps/web next to a .NET services/ folder.
-// With a root package, only nested packages that pin their own lockfile count.
-function standalonePackages(tree: string, files: string[], hasRoot: boolean): { dir: string; language: "js" | "py"; manifest: string }[] {
-  const found: { dir: string; language: "js" | "py"; manifest: string }[] = [];
-  const dirs = [...new Set(files.map((f) => dirname(f)).filter((d) => d !== "." && d.split("/").length <= 3 && !d.split("/").some((s) => SKIP_SEGMENT.test(s))))];
-  for (const dir of dirs.sort((a, b) => a.split("/").length - b.split("/").length || a.localeCompare(b))) {
-    if (found.some((f) => dir.startsWith(f.dir + "/"))) continue;
-    const has = (name: string) => exists(join(tree, dir, name));
-    if (has("package.json")) {
-      if (hasRoot && !NODE_LOCKFILES.some(has)) continue;
-      found.push({ dir, language: "js", manifest: `${dir}/package.json` });
-    } else if (has("pyproject.toml") || has("setup.py") || (has("requirements.txt") && files.some((f) => f.startsWith(dir + "/") && f.endsWith(".py")))) {
-      if (hasRoot && !PY_LOCKFILES.some(has) && !has("requirements.txt")) continue;
-      found.push({ dir, language: "py", manifest: `${dir}/${has("pyproject.toml") ? "pyproject.toml" : has("setup.py") ? "setup.py" : "requirements.txt"}` });
+// A solution file comes first so it groups the projects under it into one component.
+const UNSUPPORTED_MANIFESTS: { match: RegExp; toolchain: string }[] = [
+  { match: /\.sln$/, toolchain: ".NET" },
+  { match: /\.(csproj|fsproj|vbproj)$/, toolchain: ".NET" },
+  { match: /^go\.mod$/, toolchain: "Go" },
+  { match: /^Cargo\.toml$/, toolchain: "Rust" },
+  { match: /^(pom\.xml|build\.gradle(\.kts)?)$/, toolchain: "JVM" },
+  { match: /^Gemfile$/, toolchain: "Ruby" },
+  { match: /^composer\.json$/, toolchain: "PHP" },
+];
+
+interface FoundManifest {
+  dir: string;
+  kind: "js" | "py" | "other";
+  manifest: string;
+  toolchain?: string;
+}
+
+const within = (dir: string, parent: string) => parent === "." || dir === parent || dir.startsWith(parent + "/");
+
+// Folders that usually hold tests, samples or tooling next to the product. A manifest there is a
+// satellite: it becomes a component only when the repo has nothing else to assess.
+const SATELLITE_SEGMENT = /^(tests?|__tests__|specs?|e2e|samples?|examples?|demos?|bench|benchmarks?|plugins?|utils?|configs?)$/;
+const CONFIG_PACKAGE = /^(@[^/]+\/)?((eslint|prettier|stylelint|babel|jest|vitest|tsconfig|typescript)-config(-[\w.-]+)?|eslint-config|tsconfig|config)$/;
+
+function satelliteReason(tree: string, m: FoundManifest): string | null {
+  const segment = m.dir.split("/").find((s) => SATELLITE_SEGMENT.test(s));
+  if (segment) return `it sits under ${segment}/, which usually holds tests, samples or tooling rather than the product`;
+  const name = m.kind === "js" ? readPackageJson(join(tree, m.dir))?.name : undefined;
+  if (name && CONFIG_PACKAGE.test(name)) return `${name} is a shared config package, not a product`;
+  return null;
+}
+
+// Every manifest in the tree, at any depth, outside workspace members. A supported package owns
+// the folders under it; one nested in an unsupported project (a web client inside a .NET project)
+// is still its own component. Next to a root package, only nested packages with their own lockfile count.
+function discoverManifests(tree: string, files: string[], claimed: string[], hasRoot: boolean): { found: FoundManifest[]; satellites: (FoundManifest & { reason: string })[] } {
+  const byDir = new Map<string, string[]>();
+  for (const f of files) {
+    const dir = dirname(f);
+    if (dir !== "." && dir.split("/").some((s) => SKIP_SEGMENT.test(s))) continue;
+    byDir.set(dir, [...(byDir.get(dir) ?? []), basename(f)]);
+  }
+  const found: FoundManifest[] = [];
+  const satellites: (FoundManifest & { reason: string })[] = [];
+  const add = (m: FoundManifest) => {
+    const reason = m.dir === "." ? null : satelliteReason(tree, m);
+    if (reason) satellites.push({ ...m, reason });
+    else found.push(m);
+  };
+  for (const dir of [...byDir.keys()].sort((a, b) => (a === "." ? -1 : b === "." ? 1 : a.split("/").length - b.split("/").length || a.localeCompare(b)))) {
+    if (claimed.some((c) => within(dir, c))) continue;
+    const names = byDir.get(dir)!;
+    const has = (n: string) => names.includes(n);
+    const insideSupported = [...found, ...satellites].some((f) => f.kind !== "other" && within(dir, f.dir));
+    if (dir !== "." && !insideSupported && has("package.json") && (!hasRoot || NODE_LOCKFILES.some(has))) {
+      add({ dir, kind: "js", manifest: `${dir}/package.json` });
+      continue;
+    }
+    const py = has("pyproject.toml") ? "pyproject.toml" : has("setup.py") ? "setup.py" : has("requirements.txt") && names.some((n) => n.endsWith(".py")) ? "requirements.txt" : null;
+    if (dir !== "." && !insideSupported && py && (!hasRoot || PY_LOCKFILES.some(has))) {
+      add({ dir, kind: "py", manifest: `${dir}/${py}` });
+      continue;
+    }
+    const rule = UNSUPPORTED_MANIFESTS.find((u) => names.some((n) => u.match.test(n)));
+    if (rule && !(dir === "." && hasRoot) && ![...found, ...satellites].some((f) => within(dir, f.dir))) {
+      const project = names.filter((n) => rule.match.test(n)).sort()[0];
+      add({ dir, kind: "other", manifest: dir === "." ? project : `${dir}/${project}`, toolchain: rule.toolchain });
     }
   }
-  return found;
+  return { found, satellites };
+}
+
+// The name a root-level project gives itself, so a Go module isn't called "go".
+function projectName(tree: string, manifest: string): string {
+  const text = exists(join(tree, manifest)) ? readText(join(tree, manifest)) : "";
+  const named =
+    manifest === "go.mod" ? text.match(/^module\s+(\S+)/m)?.[1]?.split("/").pop()
+    : manifest === "Cargo.toml" || manifest === "pyproject.toml" ? text.match(/^name\s*=\s*["']([^"']+)["']/m)?.[1]
+    : manifest === "pom.xml" ? text.match(/<artifactId>([^<]+)<\/artifactId>/)?.[1]
+    : manifest === "composer.json" ? text.match(/"name"\s*:\s*"(?:[^"/]+\/)?([^"]+)"/)?.[1]
+    : /\.(sln|csproj|fsproj|vbproj)$/.test(manifest) ? basename(manifest).replace(/\.\w+$/, "")
+    : undefined;
+  return named ?? "root";
+}
+
+function lockfileIn(tree: string, dir: string): string | null {
+  const name = LOCKFILES.find((l) => exists(join(tree, dir, l)));
+  return name ? (dir === "." ? name : `${dir}/${name}`) : null;
 }
 
 export function discoverComponents(tree: string, files: string[]): Component[] {
+  return discoverLayout(tree, files).components;
+}
+
+export function discoverLayout(tree: string, files: string[]): { components: Component[]; satellites: Profile["satellites"] } {
   const comps: Component[] = [];
   const patterns = workspacePatterns(tree);
   if (patterns.length > 0) {
@@ -147,25 +224,33 @@ export function discoverComponents(tree: string, files: string[]): Component[] {
     const pyName = exists(join(tree, "pyproject.toml")) ? readText(join(tree, "pyproject.toml")).match(/^name\s*=\s*["']([^"']+)["']/m)?.[1] : undefined;
     comps.push({ id: sanitizeId(pyName ?? "app"), path: ".", language: "py", manifest, scripts: {}, changes: 0, changeShare: 0, assessed: false });
   }
-  if (patterns.length === 0) {
-    for (const s of standalonePackages(tree, files, comps.length > 0)) {
-      const pkg = s.language === "js" ? readPackageJson(join(tree, s.dir)) : null;
-      let id = sanitizeId(basename(s.dir));
-      if (comps.some((c) => c.id === id)) id = sanitizeId(s.dir.replace(/\//g, "-"));
-      comps.push({ id, path: s.dir, language: s.language === "js" ? languageOf(tree, s.dir, files) : "py", manifest: s.manifest, scripts: pkg?.scripts ?? {}, changes: 0, changeShare: 0, assessed: false, packageManager: detectPackageManager(join(tree, s.dir)) });
+  const hasRoot = comps.some((c) => c.path === ".");
+  const { found, satellites } = discoverManifests(tree, files, comps.filter((c) => c.path !== ".").map((c) => c.path), hasRoot);
+  const deferred = comps.length === 0 && found.length === 0;
+  for (const m of deferred ? satellites : found) {
+    const pkg = m.kind === "js" ? readPackageJson(join(tree, m.dir)) : null;
+    let id = sanitizeId(m.dir === "." ? projectName(tree, m.manifest) : basename(m.dir));
+    if (comps.some((c) => c.id === id)) id = sanitizeId(m.dir.replace(/\//g, "-"));
+    if (m.kind === "other") {
+      comps.push({ id, path: m.dir, language: "other", manifest: m.manifest, scripts: {}, changes: 0, changeShare: 0, assessed: false, toolchain: m.toolchain, notAssessedReason: `${m.toolchain} isn't supported by this rubric` });
+    } else {
+      comps.push({ id, path: m.dir, language: m.kind === "js" ? languageOf(tree, m.dir, files) : "py", manifest: m.manifest, scripts: pkg?.scripts ?? {}, changes: 0, changeShare: 0, assessed: false, packageManager: detectPackageManager(join(tree, m.dir)) });
     }
   }
-  if (comps.length === 1 && comps[0].path === ".") return comps;
-  const claimed = new Set(comps.map((c) => c.path.split("/")[0]));
+  for (const c of comps) c.lockfile = lockfileIn(tree, c.path);
+  const satelliteList = deferred ? [] : satellites.map((s) => ({ path: s.dir, manifest: s.manifest, toolchain: s.kind === "js" ? "Node" : s.kind === "py" ? "Python" : s.toolchain!, reason: s.reason }));
+  if (comps.length === 1 && comps[0].path === ".") return { components: comps, satellites: satelliteList };
+  // Unsupported source with no manifest, such as infra/*.tf, is listed by its top-level folder.
+  const claimed = new Set([...comps.map((c) => c.path), ...satelliteList.map((s) => s.path)].map((p) => p.split("/")[0]));
   const topDirs = [...new Set(files.filter((f) => f.includes("/")).map((f) => f.split("/")[0]))].filter((d) => !d.startsWith(".") && !claimed.has(d));
   for (const dir of topDirs.sort()) {
     const inside = files.filter((f) => f.startsWith(dir + "/"));
     const hit = UNSUPPORTED.find((u) => inside.some((f) => u.ext.test(f)));
     if (hit) {
-      comps.push({ id: sanitizeId(dir), path: dir, language: "other", manifest: null, scripts: {}, changes: 0, changeShare: 0, assessed: false, notAssessedReason: `${hit.toolchain} isn't supported by this rubric` });
+      comps.push({ id: sanitizeId(dir), path: dir, language: "other", manifest: null, scripts: {}, changes: 0, changeShare: 0, assessed: false, toolchain: hit.toolchain, lockfile: null, notAssessedReason: `${hit.toolchain} isn't supported by this rubric` });
     }
   }
-  return comps;
+  return { components: comps, satellites: satelliteList };
 }
 
 function owningComponent(file: string, comps: Component[]): Component | null {
@@ -271,7 +356,7 @@ export function instructionFiles(files: string[]): string[] {
 export function buildProfile(repo: string, tree: string, rubric: Rubric): Profile {
   const files = listFiles(tree, { includeHidden: true });
   const pm = detectPackageManager(tree);
-  const components = discoverComponents(tree, files);
+  const { components, satellites } = discoverLayout(tree, files);
   const totalChanges = computeChangeShares(repo, components, rubric);
   const supported = components.filter((c) => !c.notAssessedReason && rubric.mutation.languages.includes(c.language === "other" ? "x" : c.language));
   for (const c of components) {
@@ -293,13 +378,14 @@ export function buildProfile(repo: string, tree: string, rubric: Rubric): Profil
   return {
     repoType: components.filter((c) => c.manifest).length > 1 ? "monorepo" : "single",
     packageManager: pm,
-    manifests: files.filter((f) => /(^|\/)(package\.json|pyproject\.toml|setup\.py|requirements[^/]*\.txt|go\.mod|Cargo\.toml)$/.test(f)),
+    manifests: files.filter((f) => /(^|\/)(package\.json|pyproject\.toml|setup\.py|requirements[^/]*\.txt|go\.mod|Cargo\.toml|pom\.xml|build\.gradle(\.kts)?|Gemfile|composer\.json|[^/]+\.(csproj|fsproj|vbproj|sln))$/.test(f) && !f.split("/").slice(0, -1).some((s) => SKIP_SEGMENT.test(s))),
     lockfiles: files.filter((f) => rubric.components.lockfiles.includes(basename(f)) && (dirname(f) === "." || components.some((c) => c.packageManager && c.path === dirname(f)))),
     ciFiles: files.filter((f) => /^\.github\/workflows\/.+\.ya?ml$/.test(f) || f === ".gitlab-ci.yml" || f === ".circleci/config.yml" || f.startsWith(".buildkite/")),
     instructionFiles: instructionFiles(files),
     toolchain: toolchain(tree, files, pm, components),
     environmentJson,
     components,
+    satellites,
     historyDays: rubric.components.historyDays,
     totalChanges,
   };

@@ -3,7 +3,7 @@ import { describe, test } from "node:test";
 import { computeOutcomes, describeRate, rate } from "../skill/agent-readiness/scripts/lib/outcomes.ts";
 import { allowedNumbers, danglingEvidence, renderMarkdown, scaleLine, validatePart1 } from "../skill/agent-readiness/scripts/lib/render.ts";
 import { loadRubric } from "../skill/agent-readiness/scripts/lib/rubric.ts";
-import { sealStatusFor } from "../skill/agent-readiness/scripts/lib/seal.ts";
+import { consistencyErrors, sealStatusFor } from "../skill/agent-readiness/scripts/lib/seal.ts";
 import { skillDigest } from "../skill/agent-readiness/scripts/lib/workspace.ts";
 import { validateAgainst } from "../skill/agent-readiness/scripts/lib/schema.ts";
 import type { HistoryLine, PrRecord, ReportJson } from "../skill/agent-readiness/scripts/lib/types.ts";
@@ -186,7 +186,15 @@ describe("part 1 rules", () => {
   test("an unproven level isn't reported as nothing blocking, and repo-wide conditions name no component", () => {
     const audit = makeAudit({ components: [{ id: "app", share: 1, where: "fresh_copy", faults: "pass" }] });
     audit.environment.containerRuntime = null;
-    const ex = reportFor(audit).executive;
+    const r = reportFor(audit);
+    const ex = r.executive;
+    assert.equal(r.maturity.outcome, "blocked");
+    assert.equal(ex.heading, "Level 0 of 4, not bootable, for bug fixes; Level 1 is blocked on this machine");
+    assert.match(ex.nextLine, /Blocked on this machine: app /);
+    assert.doesNotMatch(ex.nextLine, /Not yet: app/);
+    assert.equal(r.maturity.confidence.level, "low");
+    assert.ok(r.maturity.capReasons.some((c) => c.component === "app" && c.condition === "clean.test" && c.state === "blocked"), JSON.stringify(r.maturity.capReasons));
+    assert.match(renderMarkdown(r, rubric), /What holds the bug fixes level at Level 0:\n\n- `app`: [^\n]+, blocked on this machine \(passed on the host, but Level 1 needs a clean container/);
     assert.equal(ex.noBlocker, false);
     assert.equal(ex.headline, "Level 1 couldn't be proved for app because this machine has no container runtime. A rerun where Docker or Podman is available, such as CI, can prove it.");
     assert.match(ex.ask, /^Decision needed: where to rerun this audit/);
@@ -211,6 +219,76 @@ describe("part 1 rules", () => {
     assert.match(md, /No actions can be planned yet: no component could be assessed/);
     assert.doesNotMatch(md, /No actions are open/);
     assert.deepEqual(validatePart1(r, rubric, null), []);
+    assert.deepEqual([r.maturity.outcome, r.maturity.confidence.level], ["not_assessed", "low"]);
+    assert.deepEqual(validateAgainst("report", r), []);
+  });
+
+  test("no real results, no level: when the only checks were blocked on this machine, the report says so and plans nothing", () => {
+    const audit = makeAudit({ components: [{ id: "buyer-web", share: 0.6, test: "not_run" }, { id: "commerce-core", share: 0.4, assessed: false }] });
+    audit.environment.containerRuntime = null;
+    const install = audit.evidence.find((e) => e.kind === "install")!;
+    Object.assign(install, { where: "fresh_copy", strength: "executed", result: "fail", summary: "install failed: dotnet is not installed", diagnosis: { cause: "missing_tool", detail: "dotnet is not installed" }, blocked: "dotnet is not installed on this machine" });
+    const r = reportFor(audit);
+    const ex = r.executive;
+    assert.equal(r.maturity.outcome, "not_assessed");
+    assert.equal(ex.heading, "Not assessed for bug fixes: no check could run on this machine");
+    assert.equal(ex.headline, "Nothing could be checked for bug fixes on this machine, so this audit gives no level: dotnet is not installed on this machine. A rerun where Docker or Podman is available, such as CI, can give one.");
+    assert.equal(ex.nextLine, "Next: Level 1, bootable, once a check can run. No condition has been checked yet.");
+    assert.deepEqual(ex.numbers.map((n) => n.value), ["none checked", "not measured", "100%"]);
+    assert.deepEqual([r.actions.length, ex.gaps.length, r.matrix.points.length, ex.noBlocker], [0, 0, 0, false]);
+    assert.match(ex.ask, /^Decision needed: where to rerun this audit so its checks can run/);
+    assert.match(ex.coverage, /On this machine dotnet is not installed, an environment limit rather than a repo defect/);
+    assert.equal(r.maturity.confidence.level, "low");
+    assert.doesNotMatch(scaleLine(r), /\[/);
+    assert.equal(r.details.evidence.find((e) => e.id === install.id)!.result, "blocked");
+    const md = renderMarkdown(r, rubric);
+    assert.match(md, /No actions can be planned yet: this audit has no real check results to plan from/);
+    assert.match(md, /This audit added no steps/);
+    assert.deepEqual(validatePart1(r, rubric, null), []);
+    assert.deepEqual(validateAgainst("report", r), []);
+  });
+
+  test("confidence is separate from the level and never raises it", () => {
+    const healthy = reportFor(makeAudit({ components: [{ id: "app", share: 1, faults: "pass" }] }));
+    assert.deepEqual([healthy.maturity.level, healthy.maturity.outcome, healthy.maturity.confidence.level], [2, "proven", "high"]);
+    assert.deepEqual(healthy.maturity.capReasons.map((c) => c.condition), ["outcomes"].slice(0, healthy.maturity.capReasons.length));
+    const partial = reportFor(makeAudit({ components: [{ id: "app", share: 0.7, faults: "pass" }, { id: "infra", share: 0.3, assessed: false }] }));
+    assert.equal(partial.maturity.level, healthy.maturity.level);
+    assert.equal(partial.maturity.confidence.level, "medium");
+    assert.match(partial.maturity.confidence.reasons.join(" "), /30% of recent changes aren't assessed/);
+    assert.match(renderMarkdown(partial, rubric), /Confidence: medium, because 30% of recent changes aren't assessed\./);
+  });
+
+  test("part 4 lists the components found, the ones left out and why, and satellites that aren't components", () => {
+    const audit = makeAudit({ components: [{ id: "web", share: 0.8, faults: "pass" }, { id: "core", share: 0.2, assessed: false }] });
+    audit.profile!.components.find((c) => c.id === "core")!.notAssessedReason = ".NET isn't supported by this rubric";
+    audit.profile!.satellites = [{ path: "examples/starter", manifest: "examples/starter/package.json", toolchain: "Node", reason: "it sits under examples/, which usually holds tests, samples or tooling rather than the product" }];
+    const r = reportFor(audit);
+    assert.deepEqual(r.details.scope.included.map((c) => c.id), ["web"]);
+    assert.deepEqual(r.details.scope.excluded.map((c) => [c.id, c.reason]), [["core", ".NET isn't supported by this rubric"], ["starter", "not a component: it sits under examples/, which usually holds tests, samples or tooling rather than the product"]]);
+    const md = renderMarkdown(r, rubric);
+    assert.match(md, /### Components found/);
+    assert.match(md, /\| `core` \| `core` \| .* \| 20% \| no: \.NET isn't supported by this rubric \|/);
+    assert.match(md, /\| `starter` \| `examples\/starter` \| Node \| .* \| n\/a \| no: not a component/);
+  });
+
+  test("the seal's consistency pass names any component, evidence or narration key the scan doesn't know", () => {
+    const audit = makeAudit({ components: [{ id: "web", share: 0.8, faults: "pass" }, { id: "core", share: 0.2, assessed: false }] });
+    audit.contract = audit.contract.filter((c) => c.component !== "core");
+    const r = reportFor(audit);
+    const roadmap = { schema: "agent-readiness/roadmap@1" as const, owner: null, targets: null, items: [], updatedBy: audit.id, updatedAt: "2026-10-27T15:00:00.000Z" };
+    assert.deepEqual(consistencyErrors(audit, r, roadmap), []);
+    audit.contract.push({ id: "cmd-core-test", kind: "test", component: "core", cwd: "core", command: "dotnet test", source: "agent", reason: "", timeoutSec: 60 });
+    audit.contract.push({ id: "cmd-ghost-test", kind: "test", component: "ghost", cwd: "ghost", command: "npm test", source: "agent", reason: "", timeoutSec: 60 });
+    audit.evidence.push({ ...audit.evidence[0], id: "ev-900", component: "ghost" });
+    audit.narration = { gaps: { "faults:ghost": "Ghost tests miss bugs" }, titles: { "clean.test:ghost": "Fix ghost" } };
+    const errors = consistencyErrors(audit, r, roadmap);
+    assert.equal(errors.length, 5, errors.join("\n"));
+    assert.match(errors[0], /cmd-core-test names core, which isn't assessed/);
+    assert.match(errors[1], /cmd-ghost-test names ghost, which the scan didn't find/);
+    assert.match(errors[2], /evidence ev-900 names ghost/);
+    assert.match(errors[3], /rewrites gap faults:ghost, which isn't in part 1/);
+    assert.match(errors[4], /retitles clean\.test:ghost, which isn't a roadmap item/);
   });
 
   test("activity labels keep their acronyms", () => {

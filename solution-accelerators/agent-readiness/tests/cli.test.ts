@@ -47,16 +47,18 @@ describe("CLI", { concurrency: 4 }, () => {
     const unknown = add("storefront");
     assert.notEqual(unknown.code, 0);
     assert.match(unknown.out, /No component named storefront\. Use \* for a repo-wide command or one of: admin-web, buyer-web\./);
-    const skipped = add("services");
+    const skipped = add("commerce-core");
     assert.notEqual(skipped.code, 0);
-    assert.match(skipped.out, /services isn't assessed \(\.NET isn't supported by this rubric\), so replay wouldn't run its commands/);
+    assert.match(skipped.out, /commerce-core isn't assessed \(\.NET isn't supported by this rubric\), so replay wouldn't run its commands/);
     assert.equal(add("buyer-web").code, 0);
     const run = readiness(repo, ["run", "--component", "storefront"]);
     assert.notEqual(run.code, 0);
     assert.match(run.out, /No component named storefront/);
+    const status = readiness(repo, ["status"]);
+    assert.match(status.out, /Part 1 now: /, "status shows the part 1 the seal would build, so narration can use its ids");
   });
 
-  test("on a host fallback, a missing tool is an environment limit and part 1 says Level 1 isn't provable", () => {
+  test("on a host fallback, a missing tool blocks the checks, and with no real results part 1 gives no level", () => {
     const repo = materialize("healthy-node");
     mkdirSync(join(repo, ".cursor"));
     writeFileSync(join(repo, ".cursor/environment.json"), JSON.stringify({ install: "readiness-test-missing-toolchain restore && npm ci" }));
@@ -64,12 +66,16 @@ describe("CLI", { concurrency: 4 }, () => {
     const r = readiness(repo, ["audit", "--goal", "bug_fixes", "--tier", "local-exec", "--runtime", "none", "--no-mutants"]);
     assert.equal(r.code, 0, r.out);
     const report = JSON.parse(readFileSync(join(repo, ".agent-readiness/latest/report.json"), "utf8"));
-    assert.equal(report.maturity.level, 0);
-    assert.equal(report.maturity.couldBe, 1);
-    assert.ok(!report.actions.some((a: { itemId: string }) => a.itemId.startsWith("clean.install")), "no install fix is offered for a limit of this machine");
-    assert.match(report.executive.headline, /^Level 1 couldn't be proved for healthy-node because this machine has no container runtime/);
+    assert.equal(report.maturity.outcome, "not_assessed");
+    assert.equal(report.maturity.confidence.level, "low");
+    assert.equal(report.executive.heading, "Not assessed for bug fixes: no check could run on this machine");
+    assert.deepEqual(report.actions, [], "no fix is offered for a limit of this machine");
+    assert.match(report.executive.headline, /^Nothing could be checked for bug fixes on this machine, so this audit gives no level: readiness-test-missing-toolchain is not installed on this machine\./);
     assert.match(report.executive.coverage, /Level 1 isn't provable on this machine: it has no container runtime, so setup ran in a fresh copy on the host\./);
     assert.match(report.executive.coverage, /On this machine readiness-test-missing-toolchain is not installed, an environment limit rather than a repo defect\./);
+    assert.ok(report.details.evidence.some((e: { result: string }) => e.result === "blocked"));
+    const history = readFileSync(join(repo, ".agent-readiness/history/history.jsonl"), "utf8");
+    assert.match(history, /"note":"no level: nothing could run on this machine/);
   });
 
   test("a sealed audit refuses further writes", () => {

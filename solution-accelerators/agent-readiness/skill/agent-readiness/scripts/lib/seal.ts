@@ -14,7 +14,7 @@ import type { Rubric } from "./rubric.ts";
 import { loadRubric } from "./rubric.ts";
 import { validateAgainst } from "./schema.ts";
 import type { CompStates } from "./score.ts";
-import { componentStates } from "./score.ts";
+import { componentStates, noRealResults } from "./score.ts";
 import type { ActivityId, Audit, CondId, CondState, HistoryLine, Level, OutcomeStats, ReportJson, Roadmap } from "./types.ts";
 import { exists, fail, fmtShortDate, gitOrThrow, nowIso, randomHex, readText, sha256, stableStringify, today } from "./util.ts";
 import type { LocalInfo, Paths } from "./workspace.ts";
@@ -86,7 +86,11 @@ export function buildSealedReport(audit: Audit, rubric: Rubric, history: History
   const goalRepo = c.repoLevels.get(goal)!;
   const outcome = outcomeLevel(rubric, { level2: goalRepo.level === 2, targets: prevRoadmap?.targets ?? null, outcomes: audit.outcomes, previous: history, goal });
   const goalLevel = { level: (outcome.level ?? goalRepo.level) as Level, couldBe: outcome.level ? null : goalRepo.couldBe, setBy: goalRepo.setBy, outcomeReasons: outcome.reasons };
-  const rm = updateRoadmap(prevRoadmap, { audit, rubric, goal, components: audit.profile.components, states: c.states, active: c.active, outcomes: audit.outcomes });
+  const noResults = noRealResults(audit, c.states);
+  // With no real results there is nothing to plan from, so the roadmap stays as it was.
+  const rm = noResults
+    ? { roadmap: prevRoadmap ?? { schema: "agent-readiness/roadmap@1" as const, owner: null, targets: null, items: [], updatedBy: audit.id, updatedAt: nowIso() }, top: [], startNow: null }
+    : updateRoadmap(prevRoadmap, { audit, rubric, goal, components: audit.profile.components, states: c.states, active: c.active, outcomes: audit.outcomes });
   const prevAuditLine = [...history].reverse().find((h) => h.kind === "audit");
   let weak: string | null = null;
   let previousOutcomes: { window: string; agent: OutcomeStats } | null = null;
@@ -109,6 +113,7 @@ export function buildSealedReport(audit: Audit, rubric: Rubric, history: History
     rubric: audit.rubric,
     scriptsDigest: audit.skill.scriptsDigest,
     result: "sealed",
+    note: noResults ? `no level: ${noResults}` : undefined,
     goal,
     levels: levelsRecord,
     repoLevels: repoLevelsRecord,
@@ -138,8 +143,33 @@ export function buildSealedReport(audit: Audit, rubric: Rubric, history: History
     staleCopy: null,
     storedAt,
     partial: partialCoverage(rubric, audit.profile.components),
+    noResults,
   });
   return { report, roadmap: rm.roadmap, line };
+}
+
+// A last pass before sealing: every contract command, evidence item and narration key must name
+// something the scan and the report know, so nothing an agent added is silently dropped.
+export function consistencyErrors(audit: Audit, report: ReportJson, roadmap: Roadmap): string[] {
+  const comps = audit.profile?.components ?? [];
+  const known = new Set(comps.map((c) => c.id));
+  const assessed = new Set(comps.filter((c) => c.assessed).map((c) => c.id));
+  const errors: string[] = [];
+  for (const c of audit.contract) {
+    if (c.component !== "*" && !assessed.has(c.component)) errors.push(`contract command ${c.id} names ${c.component}, which ${known.has(c.component) ? "isn't assessed" : "the scan didn't find"}; remove it or rescan`);
+  }
+  for (const e of audit.evidence) {
+    if (e.component && e.component !== "*" && !known.has(e.component)) errors.push(`evidence ${e.id} names ${e.component}, which the scan didn't find`);
+  }
+  const gaps = report.executive.gaps.map((g) => g.itemId);
+  const items = roadmap.items.map((i) => i.id);
+  for (const k of Object.keys(audit.narration?.gaps ?? {})) {
+    if (!gaps.includes(k)) errors.push(`the narration rewrites gap ${k}, which isn't in part 1 (part 1 gaps: ${gaps.join(", ") || "none"}); run \`readiness status\` for the ids`);
+  }
+  for (const k of Object.keys(audit.narration?.titles ?? {})) {
+    if (!items.includes(k)) errors.push(`the narration retitles ${k}, which isn't a roadmap item (items: ${items.join(", ") || "none"})`);
+  }
+  return errors;
 }
 
 export function seal(audit: Audit, local: LocalInfo, p: Paths, log: (s: string) => void): SealResult {
@@ -150,6 +180,7 @@ export function seal(audit: Audit, local: LocalInfo, p: Paths, log: (s: string) 
   const storedAt = join(p.history, "audits", audit.id).replace(p.repo + "/", "");
   const { report, roadmap, line } = buildSealedReport(audit, rubric, readHistory(p), readRoadmap(p), p.repo, storedAt);
   const errors = [
+    ...consistencyErrors(audit, report, roadmap),
     ...danglingEvidence(report, audit).map((id) => `the report cites ${id}, which isn't in the audit`),
     ...validatePart1(report, rubric, audit.narration ? allowedNumbers(report) : null),
     ...validateAgainst("report", report).map((e) => `report.json ${e}`),

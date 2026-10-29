@@ -14,7 +14,7 @@ import { evidenceFromPhase, hostExecutor, newBudget, replay, runContract } from 
 import { latestRubricVersion, loadRubric } from "./lib/rubric.ts";
 import { validateAgainst } from "./lib/schema.ts";
 import { componentStates } from "./lib/score.ts";
-import { recheck, seal, verifySeal } from "./lib/seal.ts";
+import { buildSealedReport, recheck, seal, verifySeal } from "./lib/seal.ts";
 import { renderEnvFiles, renderVerifySkill, serviceKey, writeFiles } from "./lib/skill.ts";
 import { instructionItems, safetyScan } from "./lib/static.ts";
 import type { ActivityId, Audit, CommandKind, Narration, Result, Roadmap, Strength, Tier } from "./lib/types.ts";
@@ -106,8 +106,10 @@ function cmdScan(a: Args): void {
   addEvidence(audit, { checkId: "safety.execution_boundary", condition: "safety", strength: "static", where: "static", result: blocking.length ? "fail" : "pass", summary: blocking.length ? blocking.map((b) => `${b.file}${b.line ? ":" + b.line : ""} ${b.detail}`).join("; ") : `no blocking findings; ${audit.safety.length} items listed for review` });
   addEvidence(audit, { checkId: "bootstrap.cold_replay", condition: "toolchain", component: "*", strength: "static", where: "static", result: profile.toolchain.pinned ? "pass" : "fail", summary: profile.toolchain.pinned ? `toolchain pinned in ${profile.toolchain.files.join(", ")}` : `missing ${profile.toolchain.missing.join(" and ")}` });
   audit.assets = inventory(repo, local.tree, audit.instructions);
+  const assessedIds = new Set(profile.components.filter((c) => c.assessed).map((c) => c.id));
   const agentCmds = audit.contract.filter((c) => c.source !== "readiness" && !c.source.includes("scripts.") && !c.source.startsWith(".cursor/environment.json"));
-  audit.contract = [...discoverContract(profile, local.tree, rubric, audit.safety), ...agentCmds];
+  for (const c of agentCmds.filter((x) => x.component !== "*" && !assessedIds.has(x.component))) log(`Dropped ${c.id} (${c.command}): ${c.component} isn't an assessed component after this scan.`);
+  audit.contract = [...discoverContract(profile, local.tree, rubric, audit.safety), ...agentCmds.filter((x) => x.component === "*" || assessedIds.has(x.component))];
   saveDraft(p, audit);
   log(`Scanned ${audit.repo.name}: ${profile.repoType}, package manager ${profile.packageManager ?? "none"}.`);
   for (const c of profile.components) log(`  ${c.id.padEnd(14)} ${String(Math.round(c.changeShare * 100)).padStart(3)}% of changes  ${c.assessed ? "assessed" : `not assessed: ${c.notAssessedReason}`}`);
@@ -255,9 +257,12 @@ function cmdNarrate(a: Args): void {
 
 function cmdStatus(a: Args): void {
   const repo = repoOf(a);
-  const { audit } = loadDraft(repo);
+  const { audit, paths: p } = loadDraft(repo);
   const rubric = loadRubric(audit.rubric);
   const comps = audit.profile?.components.filter((c) => c.assessed) ?? [];
+  // The ids narration may use, from the report the seal would build right now.
+  const preview = audit.profile ? buildSealedReport(JSON.parse(JSON.stringify(audit)) as Audit, rubric, readHistory(p), readRoadmap(p), repo, "") : null;
+  const part1 = preview ? { heading: preview.report.executive.heading, gaps: preview.report.executive.gaps.map((g) => ({ itemId: g.itemId, text: g.text })), roadmapItems: preview.roadmap.items.map((i) => i.id) } : null;
   const summary = {
     id: audit.id,
     goal: audit.goal,
@@ -278,6 +283,7 @@ function cmdStatus(a: Args): void {
     instructionsWrong: audit.instructions.filter((i) => i.result === "fail").map((i) => `${i.source}:${i.line} ${i.text}: ${i.reason}`),
     safety: audit.safety.map((s) => `${s.blocking ? "BLOCKING" : "listed"} ${s.kind} ${s.file}${s.line ? ":" + s.line : ""}: ${s.detail}`),
     outcomes: audit.outcomes ? { window: audit.outcomes.window, agent: audit.outcomes.agent.opened, control: audit.outcomes.control.opened } : null,
+    part1,
   };
   if (a.flags.json) log(JSON.stringify(summary, null, 2));
   else {
@@ -285,6 +291,10 @@ function cmdStatus(a: Args): void {
     for (const c of summary.components) log(`  ${c.id}: ${JSON.stringify(c.levels)}\n    ${Object.entries(c.conditions).map(([k, v]) => `${k} ${v}`).join("\n    ")}`);
     if (summary.instructionsWrong.length) log(`Wrong instructions:\n  ${summary.instructionsWrong.join("\n  ")}`);
     if (summary.safety.length) log(`Safety:\n  ${summary.safety.join("\n  ")}`);
+    if (part1) {
+      log(`Part 1 now: ${part1.heading}`);
+      log(part1.gaps.length ? `Part 1 gaps (narrate with --gap <id>=<text>):\n  ${part1.gaps.map((g) => `${g.itemId}: ${g.text}`).join("\n  ")}` : "Part 1 has no gaps to narrate.");
+    }
   }
 }
 

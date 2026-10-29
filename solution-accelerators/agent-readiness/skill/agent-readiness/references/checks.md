@@ -6,7 +6,11 @@ Evidence strength, weakest to strongest: stated in docs (`asserted`), read from 
 
 ## `scope.profile`: components and where changes land
 
-Informational. Finds workspace packages and apps (npm, pnpm and yarn workspaces, single Node or Python packages) and counts each one's share of changed files over 90 days. Bot authors, lockfile-only commits, generated files and renames don't count. The most active six supported components are assessed. Folders in toolchains the rubric doesn't support yet (Terraform, Go, Rust, JVM, .NET, Ruby) are listed as not assessed with the reason.
+Informational. Walks the whole tree for manifests at any depth: workspace packages (npm, pnpm and yarn workspaces), standalone Node and Python packages, and projects in toolchains the rubric doesn't support yet (`.csproj`, `.fsproj` and `.vbproj` projects, `.sln` solutions, `go.mod`, `Cargo.toml`, `pom.xml`, `build.gradle`, `Gemfile`, `composer.json`). Each becomes a component with its own scripts, lockfile and install. Next to a root package, a nested package counts only with its own lockfile. A solution groups the projects under it. Unsupported components are listed as not assessed with the reason and keep their share of changes.
+
+A nested manifest under a folder that usually holds tests, samples or tooling (`test`, `tests`, `spec`, `e2e`, `sample`, `example`, `demo`, `bench`, `plugin`, `util`, `config`), or a shared config package such as `@acme/eslint-config`, is a satellite: it's listed in part 4, not made a component, and only becomes one when the repo has nothing else to assess.
+
+Each component's share counts changed files over 90 days. Bot authors, lockfile-only commits, generated files and renames don't count. The most active six supported components are assessed; when there are more, the report labels the scope "sampled" and lists the rest. Part 4 lists every component found, included or excluded, with its path, toolchain, manifest, lockfile and reason.
 
 ## `scope.agent_assets`: agent assets in the repo
 
@@ -15,7 +19,8 @@ Informational and never scored. Lists AGENTS.md and CLAUDE.md, skills (`.cursor/
 ## `bootstrap.cold_replay`: setup works from a clean checkout
 
 - **Runs:** the frozen install (`npm ci`, `pnpm install --frozen-lockfile`, `yarn install --frozen-lockfile`, `uv sync --frozen`, or a virtualenv install from requirements), then each component's build and full test suite, in a clean container started from the repo's pinned toolchain. The network is on for install and build, and off for tests. A repo-declared `.cursor/environment.json` install and start replace the defaults, and a declared `.cursor/Dockerfile` is built and used as the image.
-- **Passes:** each step exits 0 in the container. A pass on the host or in a fresh copy on the host is "not proven", because it can't rule out a service or tool the machine already had.
+- **Passes:** each step exits 0 in the container. A pass on the host or in a fresh copy on the host is "blocked on this machine", because it can't rule out a service or tool the machine already had.
+- **Blocked, not failed:** with no container runtime, a step that fails because this machine lacks a tool (`dotnet: command not found`), a setup command that uses `sudo`, and every step behind a blocked install are blocked. Blocked never counts against the repo and never counts as met. When the repo's declared image installs the missing tool, the report says so.
 - **Also records:** whether a frozen install left the lockfile unchanged, and whether the toolchain is pinned (`.nvmrc`, `engines.node`, `packageManager`, `.python-version`). Repo-wide changes need both.
 - **Needs:** ran in a clean container.
 - **Why:** every agent starts from a clean checkout, so setup that only works on a prepared machine breaks every agent run. In the BootstrapAgent study, a reusable, verified setup cut later agents' token use by 25.9% and build time by 22.3%, measured on the study's benchmark repositories ([arXiv 2605.15815](https://arxiv.org/abs/2605.15815), [code](https://github.com/Vossera/BootstrapAgent)).
@@ -53,9 +58,17 @@ Informational and never scored. Lists AGENTS.md and CLAUDE.md, skills (`.cursor/
 ## `safety.execution_boundary`: normal work needs no production access
 
 - **Fails on:** committed secrets (reported by type and line, never the value), tests that read production credentials (environment variables named `*PROD*`, `*PRODUCTION*`, `*LIVE*`, or a test failure that names a missing key, secret, token or password), and install hooks that pipe a download into a shell.
-- **Lists for review without failing:** other install hooks, destructive scripts, and deploy or publish scripts.
+- **Lists for review without failing:** other install hooks, destructive scripts, deploy or publish scripts, and any setup or script that runs `sudo`.
 - **Needs:** read from files.
-- **Why:** agents run with whatever access setup gives them, so normal work must never need production credentials. When a hook pipes a download into a shell, the replay installs with `--ignore-scripts` instead of running it.
+- **Why:** agents run with whatever access setup gives them, so normal work must never need production credentials, and setup must not need more privilege than a container gives it. When a hook pipes a download into a shell, the replay installs with `--ignore-scripts` instead of running it. A command that uses `sudo` runs only inside the throwaway container, never on the host.
+
+## Met, not met, blocked and unknown
+
+Every condition ends in one of four states. Met and not met come from a run at the strength the check needs. Blocked means a limit of this machine kept the deciding run from happening. Unknown means it didn't run for another reason, such as the time budget. A level needs every condition met.
+
+No real results, no level: when no Level 1 check ran and passed, or failed for a reason in the repo, the report gives no level, plans no actions, adds no roadmap steps and says why. That covers an audit where no component could be assessed, where every check was blocked on this machine, and the read-only tier.
+
+The report names each condition that holds the level where it is, and gives a confidence (high, medium or low) with its reasons. Confidence drops when setup ran on the host, a deciding check was blocked, part of the recent changes isn't assessed, or the scope was sampled. It's reported next to the level and never raises it.
 
 ## Why scripts own the results
 

@@ -67,7 +67,10 @@ export interface PhaseResult {
   outcome: RunOutcome | null;
   diagnosis: Diagnosis | null;
   note: string;
+  blocked?: string;
 }
+
+export const INSTALL_BLOCKED = "not run because the install was blocked on this machine";
 
 export interface Budget {
   componentMs: number;
@@ -104,25 +107,35 @@ export async function runContract(
   const online = contract.filter((c) => order.includes(c.kind) && wanted(c)).sort((a, b) => order.indexOf(a.kind) - order.indexOf(b.kind));
   const offlineCmds = contract.filter((c) => !order.includes(c.kind) && wanted(c));
   const failedInstalls = new Set<string>();
+  const blockedInstalls = new Set<string>();
   const run = async (cmd: ContractCommand) => {
     if (overBudget(opts.budget, cmd.component)) {
       push({ cmd, status: "not_run", outcome: null, diagnosis: null, note: "cut off by the time budget" });
       return;
     }
     if (cmd.kind !== "doctor" && (failedInstalls.has("*") || failedInstalls.has(cmd.component))) {
-      push({ cmd, status: "not_run", outcome: null, diagnosis: null, note: "not run because the install failed" });
+      const blocked = blockedInstalls.has("*") || blockedInstalls.has(cmd.component);
+      push({ cmd, status: "not_run", outcome: null, diagnosis: null, note: blocked ? INSTALL_BLOCKED : "not run because the install failed", blocked: blocked ? "the install was blocked on this machine" : undefined });
       return;
     }
     if (ex.where !== "container" && SUDO.test(cmd.command)) {
-      if (cmd.kind === "install") failedInstalls.add(cmd.component);
-      push({ cmd, status: "not_run", outcome: null, diagnosis: null, note: SUDO_REFUSED });
+      if (cmd.kind === "install") {
+        failedInstalls.add(cmd.component);
+        blockedInstalls.add(cmd.component);
+      }
+      push({ cmd, status: "not_run", outcome: null, diagnosis: null, note: SUDO_REFUSED, blocked: `the ${cmd.kind} command uses sudo, which the audit never runs on the host` });
       return;
     }
     const out = await ex.exec(cmd.command, cmd.cwd, cmd.timeoutSec);
     charge(opts.budget, cmd.component, out.durationMs);
     const ok = out.exitCode === 0 && !out.timedOut;
-    if (!ok && cmd.kind === "install") failedInstalls.add(cmd.component);
-    push({ cmd, status: ok ? "pass" : "fail", outcome: out, diagnosis: ok ? null : diagnose(out.output, out.timedOut, cmd.kind), note: "" });
+    const diagnosis = ok ? null : diagnose(out.output, out.timedOut, cmd.kind);
+    const blocked = !ok && ex.where !== "container" && diagnosis?.cause === "missing_tool" ? `${diagnosis.detail} on this machine` : undefined;
+    if (!ok && cmd.kind === "install") {
+      failedInstalls.add(cmd.component);
+      if (blocked) blockedInstalls.add(cmd.component);
+    }
+    push({ cmd, status: ok ? "pass" : "fail", outcome: out, diagnosis, note: "", blocked });
   };
   for (const cmd of online) await run(cmd);
   const wentOffline = ex.offline();
@@ -160,7 +173,17 @@ export function evidenceFromPhase(audit: Audit, ex: Executor, r: PhaseResult, re
     outputDigest: r.outcome ? sha256(redacted) : undefined,
     summary,
     diagnosis: r.diagnosis ?? undefined,
+    blocked: r.blocked,
   });
+}
+
+// When the repo's declared image installs the tool this machine lacks, say so: it is the clearest
+// sign that the failure is the machine's, not the repo's.
+function declaredImageInstalls(copyDir: string, profile: Profile, tool: string): string | null {
+  const dockerfile = profile.environmentJson?.build?.dockerfile;
+  if (!dockerfile || !/^[\w.+-]+$/.test(tool)) return null;
+  const path = join(copyDir, ".cursor", dockerfile);
+  return exists(path) && new RegExp(`(^|[^\\w.-])${tool.replace(/[.+]/g, "\\$&")}([^\\w.-]|$)`, "m").test(readText(path)) ? `.cursor/${dockerfile}` : null;
 }
 
 export interface ReplayOptions {
@@ -325,6 +348,11 @@ export async function replay(audit: Audit, repo: string, tree: string, rubric: R
       onResult: (r) => opts.log(`  ${r.cmd.kind.padEnd(9)} ${r.cmd.component.padEnd(12)} ${r.status}${r.diagnosis ? ` (${r.diagnosis.detail})` : r.note ? ` (${r.note})` : ""}`),
     });
     for (const r of results) {
+      if (r.blocked && r.diagnosis?.cause === "missing_tool") {
+        const tool = r.diagnosis.detail.replace(/ is not installed$/, "");
+        const declared = declaredImageInstalls(copyDir, profile, tool);
+        if (declared) r.blocked += `, though the repo's declared image (${declared}) installs it`;
+      }
       const ev = evidenceFromPhase(audit, ex, r, registryValues);
       if (r.diagnosis?.cause === "credential" && !audit.safety.some((s) => s.kind === "credential_needed" && s.detail.includes(r.diagnosis!.detail))) {
         audit.safety.push({ id: `saf-${String(audit.safety.length + 1).padStart(3, "0")}`, kind: "credential_needed", file: ev.id, detail: `tests ${r.diagnosis.detail}`, blocking: true });
@@ -333,6 +361,10 @@ export async function replay(audit: Audit, repo: string, tree: string, rubric: R
     const installs = results.filter((r) => r.cmd.kind === "install");
     const installed = installs.length > 0 && installs.every((r) => r.status === "pass");
     if (installed) lockfileEvidence(audit, ex, profile, copyDir, before, installs.map((r) => r.cmd));
+    else if (installs.some((r) => r.blocked) && installs.every((r) => r.status === "pass" || r.blocked)) {
+      const blocked = installs.find((r) => r.blocked)!.blocked!;
+      addEvidence(audit, { checkId: "bootstrap.cold_replay", condition: "lockfile", component: "*", strength: ex.strength, where: ex.where, result: "not_run", summary: "the frozen install couldn't run on this machine", blocked, image: ex.image ?? undefined });
+    }
     if (opts.mutants) {
       for (const comp of components) {
         const testRes = results.find((r) => r.cmd.kind === "test" && r.cmd.component === comp);
@@ -356,8 +388,10 @@ export async function replay(audit: Audit, repo: string, tree: string, rubric: R
     if (opts.instructions) {
       for (const item of audit.instructions.filter((i) => i.category === "replay" && i.staticResult === "pass")) {
         if (!installed) {
+          const blocked = installs.find((r) => r.blocked)?.blocked;
           item.result = "not_run";
-          item.reason = "not replayed because the install failed";
+          item.reason = blocked ? "not replayed because the install was blocked on this machine" : "not replayed because the install failed";
+          item.blocked = blocked;
           continue;
         }
         const cwd = dirname(item.source) === "" ? "." : dirname(item.source);
@@ -365,6 +399,12 @@ export async function replay(audit: Audit, repo: string, tree: string, rubric: R
         const ok = out.exitCode === 0 && !out.timedOut;
         const redacted = redact(out.output, registryValues);
         const why = ok ? null : diagnose(out.output, out.timedOut, "instruction");
+        if (why?.cause === "missing_tool" && ex.where !== "container") {
+          item.result = "not_run";
+          item.reason = `not replayed: ${why.detail} on this machine, an environment limit rather than a repo defect`;
+          item.blocked = `${why.detail} on this machine`;
+          continue;
+        }
         if (why && (why.cause === "credential" || why.cause === "network" || why.cause === "service" || why.cause === "registry")) {
           item.category = "needs_access";
           item.result = "not_run";

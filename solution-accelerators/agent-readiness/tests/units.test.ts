@@ -15,7 +15,8 @@ import { allSites, applySite, chooseSites, sitesForLine, targetFiles } from "../
 import { computeOutcomes, fetchPrs, isAgentPr } from "../skill/agent-readiness/scripts/lib/outcomes.ts";
 import { buildProfile } from "../skill/agent-readiness/scripts/lib/profile.ts";
 import { redact, scanText } from "../skill/agent-readiness/scripts/lib/redact.ts";
-import { SUDO_REFUSED, hostExecutor, newBudget, runContract } from "../skill/agent-readiness/scripts/lib/replay.ts";
+import { INSTALL_BLOCKED, SUDO_REFUSED, hostExecutor, newBudget, runContract } from "../skill/agent-readiness/scripts/lib/replay.ts";
+import { componentLevel, statesOf } from "../skill/agent-readiness/scripts/lib/levels.ts";
 import { runCommand, scrubbedEnv } from "../skill/agent-readiness/scripts/lib/run.ts";
 import { componentStates } from "../skill/agent-readiness/scripts/lib/score.ts";
 import { loadRubric } from "../skill/agent-readiness/scripts/lib/rubric.ts";
@@ -127,11 +128,29 @@ describe("diagnosis", () => {
     const audit = makeAudit({ components: [{ id: "app", share: 1, test: "not_run" }] });
     const install = audit.evidence.find((e) => e.kind === "install")!;
     Object.assign(install, { result: "fail", where: "fresh_copy", strength: "executed", diagnosis: d, summary: "install failed: dotnet is not installed" });
-    const s = componentStates(audit, rubric, "app")["clean.install"];
-    assert.equal(s.state, "unknown");
-    assert.match(s.reason, /dotnet is not installed on this machine, an environment limit rather than a repo defect/);
+    const states = componentStates(audit, rubric, "app");
+    assert.equal(states["clean.install"].state, "blocked");
+    assert.match(states["clean.install"].reason, /dotnet is not installed on this machine, an environment limit rather than a repo defect/);
+    assert.equal(states["clean.build"].state, "blocked", "a step that follows a blocked install is blocked too, not failed");
+    assert.equal(componentLevel(rubric, statesOf(states), "bug_fixes").level, 0);
+    assert.equal(componentLevel(rubric, statesOf(states), "bug_fixes").couldBe, 1, "blocked counts as unproven, never as met or failed");
     install.where = "container";
     assert.equal(componentStates(audit, rubric, "app")["clean.install"].state, "not_met", "in a clean container it is the repo's problem");
+  });
+
+  test("on a host fallback, a blocked install blocks the steps behind it, and a declared image that installs the tool is named", async () => {
+    const dir = tmp();
+    mkdirSync(join(dir, ".cursor"), { recursive: true });
+    writeFileSync(join(dir, ".cursor", "Dockerfile"), "FROM node:22\nRUN apt-get install -y readiness-test-missing-toolchain\n");
+    const ex = hostExecutor(dir, [], false, "fresh_copy");
+    const cmd = (id: string, kind: "install" | "build" | "test", command: string) => ({ id, kind, component: "app", cwd: ".", command, source: "readiness", reason: "", timeoutSec: 30 });
+    const results = await runContract(ex, [cmd("i", "install", "readiness-test-missing-toolchain restore"), cmd("b", "build", "true"), cmd("t", "test", "true")], { components: new Set(["app"]), budget: newBudget(10, 10), registryValues: [] });
+    assert.deepEqual(results.map((r) => r.status), ["fail", "not_run", "not_run"]);
+    assert.match(results[0].blocked ?? "", /readiness-test-missing-toolchain is not installed on this machine/);
+    assert.deepEqual(results.slice(1).map((r) => r.note), [INSTALL_BLOCKED, INSTALL_BLOCKED]);
+    const plain = await runContract(ex, [cmd("i", "install", "exit 3"), cmd("t", "test", "true")], { components: new Set(["app"]), budget: newBudget(10, 10), registryValues: [] });
+    assert.equal(plain[0].blocked, undefined, "a plain install failure is the repo's, not the machine's");
+    assert.equal(plain[1].note, "not run because the install failed");
   });
 });
 
@@ -255,12 +274,13 @@ describe("profile", () => {
     });
     const profile = buildProfile(repo, repo, rubric);
     const byId = Object.fromEntries(profile.components.map((c) => [c.id, c]));
-    assert.deepEqual(Object.keys(byId).sort(), ["services", "tool", "web"]);
+    assert.deepEqual(Object.keys(byId).sort(), ["core", "tool", "web"]);
     assert.equal(byId.web.path, "apps/web");
     assert.equal(byId.web.assessed, true);
     assert.equal(byId.tool.assessed, true);
-    assert.equal(byId.services.assessed, false);
-    assert.match(byId.services.notAssessedReason!, /\.NET/);
+    assert.equal(byId.core.assessed, false);
+    assert.equal(byId.core.manifest, "services/core/Core.csproj");
+    assert.match(byId.core.notAssessedReason!, /\.NET/);
     assert.deepEqual(profile.lockfiles, ["apps/web/package-lock.json"]);
     const installs = discoverContract(profile, repo, rubric, []).filter((c) => c.kind === "install");
     assert.deepEqual(installs.map((c) => [c.component, c.cwd, c.command]), [["tool", "apps/tool", "npm install"], ["web", "apps/web", "npm ci"]]);
@@ -274,6 +294,62 @@ describe("profile", () => {
     const tc = buildProfile(dotnetOnly, dotnetOnly, rubric).toolchain;
     assert.equal(tc.pinned, false);
     assert.ok(tc.missing.length > 0 && tc.missing.every((m) => m.trim().length > 0));
+  });
+
+  test("discovery walks the whole tree: each .NET project at any depth, a solution groups its projects, and nested scripts are read", () => {
+    const repo = gitRepo({
+      "platform/storefront/web/buyer/package.json": JSON.stringify({ name: "buyer", scripts: { lint: "node lint.mjs", typecheck: "tsc", test: "node --test" } }),
+      "platform/storefront/web/buyer/package-lock.json": "{}",
+      "services/orders/Orders.csproj": "<Project />",
+      "services/orders/Order.cs": "",
+      "services/billing/Billing.sln": "",
+      "services/billing/src/Billing/Billing.csproj": "<Project />",
+      "services/billing/tests/Billing.Tests/Billing.Tests.csproj": "<Project />",
+      "services/billing/web/package.json": JSON.stringify({ name: "billing-web", scripts: { test: "node --test" } }),
+      "services/billing/web/package-lock.json": "{}",
+    });
+    const profile = buildProfile(repo, repo, rubric);
+    const rows = profile.components.map((c) => [c.id, c.path, c.assessed]).sort();
+    assert.deepEqual(rows, [
+      ["billing", "services/billing", false],
+      ["buyer", "platform/storefront/web/buyer", true],
+      ["orders", "services/orders", false],
+      ["web", "services/billing/web", true],
+    ]);
+    assert.deepEqual(profile.components.filter((c) => !c.assessed).map((c) => c.toolchain), [".NET", ".NET"]);
+    assert.deepEqual(profile.components.find((c) => c.id === "buyer")!.scripts, { lint: "node lint.mjs", typecheck: "tsc", test: "node --test" });
+    assert.equal(profile.components.find((c) => c.id === "billing")!.manifest, "services/billing/Billing.sln");
+    assert.ok(profile.manifests.includes("services/orders/Orders.csproj"));
+    const kinds = discoverContract(profile, repo, rubric, []).filter((c) => c.component === "buyer").map((c) => c.kind).sort();
+    assert.deepEqual(kinds, ["install", "lint", "test", "typecheck"]);
+  });
+
+  test("a root-level project is named after itself, not its manifest file", () => {
+    const go = gitRepo({ "go.mod": "module example.com/acme/inventory-api\n\ngo 1.22\n", "main.go": "package main\n" });
+    const [c] = buildProfile(go, go, rubric).components;
+    assert.deepEqual([c.id, c.path, c.assessed, c.toolchain], ["inventory-api", ".", false, "Go"]);
+  });
+
+  test("manifests under tests, samples, plugins or shared config are satellites, not components, unless nothing else exists", () => {
+    const repo = gitRepo({
+      "apps/shop/package.json": JSON.stringify({ name: "shop", scripts: { test: "node --test" } }),
+      "apps/shop/package-lock.json": "{}",
+      "examples/starter/package.json": JSON.stringify({ name: "starter" }),
+      "examples/starter/package-lock.json": "{}",
+      "tests/e2e-runner/package.json": JSON.stringify({ name: "e2e-runner" }),
+      "tests/e2e-runner/package-lock.json": "{}",
+      "tooling/eslint/package.json": JSON.stringify({ name: "@acme/eslint-config" }),
+      "tooling/eslint/package-lock.json": "{}",
+      "tests/Shop.Tests/Shop.Tests.csproj": "<Project />",
+      "tests/Shop.Tests/CartTests.cs": "",
+    });
+    const profile = buildProfile(repo, repo, rubric);
+    assert.deepEqual(profile.components.map((c) => c.id), ["shop"]);
+    assert.deepEqual(profile.satellites.map((s) => s.path).sort(), ["examples/starter", "tests/Shop.Tests", "tests/e2e-runner", "tooling/eslint"]);
+    assert.match(profile.satellites.find((s) => s.path === "tooling/eslint")!.reason, /shared config package/);
+    const onlySamples = gitRepo({ "examples/demo/package.json": JSON.stringify({ name: "demo", scripts: { test: "node --test" } }), "examples/demo/package-lock.json": "{}" });
+    const p2 = buildProfile(onlySamples, onlySamples, rubric);
+    assert.deepEqual([p2.components.map((c) => c.id), p2.satellites.length], [["demo"], 0], "with nothing else to assess, a deferred package is assessed");
   });
 });
 

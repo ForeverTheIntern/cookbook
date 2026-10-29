@@ -28,14 +28,36 @@ export function hostToolMissing(ev: Evidence): boolean {
   return ev.result === "fail" && ev.where !== "container" && ev.where !== "static" && ev.diagnosis?.cause === "missing_tool";
 }
 
+export function blockedBy(ev: Evidence): string | null {
+  if (ev.blocked) return ev.blocked;
+  return hostToolMissing(ev) ? `${ev.diagnosis!.detail} on this machine` : null;
+}
+
+// No real results, no level: a level needs at least one Level 1 check that ran and passed, or failed
+// for a reason in the repo. Returns why there is none, or null when there is one.
+export function noRealResults(audit: Audit, states: Map<string, CompStates>): string | null {
+  const assessed = audit.profile?.components.filter((c) => c.assessed) ?? [];
+  if (assessed.length === 0) return "no component could be assessed";
+  const ids = new Set(assessed.map((c) => c.id));
+  const ran = audit.evidence.some((e) => (e.kind === "install" || e.kind === "build" || e.kind === "test") && (e.component === "*" || ids.has(e.component ?? "")) && (e.result === "pass" || (e.result === "fail" && !blockedBy(e))));
+  const noTests = assessed.some((c) => states.get(c.id)?.["clean.test"].state === "not_met");
+  if (ran || noTests) return null;
+  if (audit.tier === "read-only") return "the read-only tier runs no repo code";
+  const causes = [...new Set(audit.evidence.map(blockedBy).filter((b): b is string => Boolean(b) && b !== "the install was blocked on this machine"))];
+  if (causes.length) return `nothing could run on this machine: ${causes.join(" and ")}`;
+  return "no check produced a result";
+}
+
 function fromEvidence(rubric: Rubric, ev: Evidence | undefined, check: string, missingReason: string): CondDetail {
   if (!ev) return { state: "unknown", reason: missingReason, evidence: [] };
-  if (hostToolMissing(ev)) return { state: "unknown", reason: `${ev.diagnosis!.detail} on this machine, an environment limit rather than a repo defect; Level 1 needs a clean container`, evidence: [ev.id] };
+  const blocked = blockedBy(ev);
+  if (blocked) return { state: "blocked", reason: `blocked: ${blocked}, an environment limit rather than a repo defect; Level 1 needs a clean container`, evidence: [ev.id] };
   if (ev.result === "fail") return { state: "not_met", reason: ev.summary, evidence: [ev.id] };
   if (ev.result === "not_run") return { state: "unknown", reason: ev.summary, evidence: [ev.id] };
   const min = rubric.checks.find((c) => c.id === check)?.minStrengthForPass ?? "executed";
   if (strengthRank(rubric, ev.strength) < strengthRank(rubric, min)) {
-    return { state: "unknown", reason: needsContainer(rubric, check) ? "passed on the host, but Level 1 needs a clean container: no container runtime on this machine" : `passed, but only ${rubric.strengthLabels[ev.strength]}`, evidence: [ev.id] };
+    if (needsContainer(rubric, check)) return { state: "blocked", reason: "passed on the host, but Level 1 needs a clean container: no container runtime on this machine", evidence: [ev.id] };
+    return { state: "unknown", reason: `passed, but only ${rubric.strengthLabels[ev.strength]}`, evidence: [ev.id] };
   }
   return { state: "met", reason: ev.summary, evidence: [ev.id] };
 }
@@ -70,12 +92,17 @@ export function componentStates(audit: Audit, rubric: Rubric, componentId: strin
     const parts = discovered.map((c) => fromEvidence(rubric, latest(evs.filter((e) => e.contractId === c.id)), "verify.canonical_interface", `${c.kind} hasn't run`));
     const failed = parts.filter((p) => p.state === "not_met");
     const unknown = parts.filter((p) => p.state === "unknown");
+    const blocked = parts.filter((p) => p.state === "blocked");
     const ids = parts.flatMap((p) => p.evidence);
     if (failed.length > 0) states.commands = { state: "not_met", reason: failed.map((p) => p.reason).join("; "), evidence: ids };
-    else if (unknown.length > 0) states.commands = { state: "unknown", reason: unknown.map((p) => p.reason).join("; "), evidence: ids };
+    else if (blocked.length > 0 && unknown.length === 0) states.commands = { state: "blocked", reason: blocked[0].reason, evidence: ids };
+    else if (unknown.length > 0 || blocked.length > 0) states.commands = { state: "unknown", reason: [...unknown, ...blocked].map((p) => p.reason).join("; "), evidence: ids };
     else states.commands = { state: "met", reason: `${discovered.length} commands pass`, evidence: ids };
   }
   states.faults = fromEvidence(rubric, latest(evs.filter((e) => e.condition === "faults" && e.component === componentId)), "verify.behavioral_oracle", "faults haven't been planted");
+  if (states.faults.state === "unknown" && states["clean.test"].state === "blocked") {
+    states.faults = { state: "blocked", reason: "not checked: the clean test run was blocked on this machine", evidence: states.faults.evidence };
+  }
   const repo = repoStates(audit, rubric);
   states.instructions = repo.instructions;
   states.safety = repo.safety;
@@ -92,9 +119,11 @@ export function repoStates(audit: Audit, rubric: Rubric): Record<"instructions" 
   const instructions: CondDetail =
     failed.length > 0
       ? { state: "not_met", reason: `${failed.length} of ${items.length} instruction items are wrong`, evidence: insEvidence }
-      : pending.length > 0
-        ? { state: "unknown", reason: `${pending.length} instruction commands haven't been replayed`, evidence: insEvidence }
-        : { state: "met", reason: items.length ? `${items.length} instruction items check out` : "no agent instructions to check", evidence: insEvidence };
+      : pending.length > 0 && pending.every((i) => i.blocked)
+        ? { state: "blocked", reason: `${pending.length} instruction commands couldn't be replayed: ${pending[0].blocked}`, evidence: insEvidence }
+        : pending.length > 0
+          ? { state: "unknown", reason: `${pending.length} instruction commands haven't been replayed`, evidence: insEvidence }
+          : { state: "met", reason: items.length ? `${items.length} instruction items check out` : "no agent instructions to check", evidence: insEvidence };
   const blocking = audit.safety.filter((s) => s.blocking);
   const safety: CondDetail = blocking.length > 0 ? { state: "not_met", reason: blocking.map((b) => b.detail).join("; "), evidence: [] } : { state: "met", reason: "no blocking safety findings", evidence: [] };
   const tc = audit.profile?.toolchain;

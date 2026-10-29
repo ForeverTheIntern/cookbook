@@ -18,7 +18,7 @@ import { renderEnvFiles, renderVerifySkill, serviceKey, writeFiles } from "./lib
 import { staticSignals } from "./lib/signals.ts";
 import { instructionItems, safetyScan } from "./lib/static.ts";
 import type { Audit, CommandKind, Narration, Result, Roadmap, ScenarioId, ScenarioSpec, Strength, Tier } from "./lib/types.ts";
-import { exists, fail, git, nowIso, randomHex, readJson, readText, sha256, today, writeJson } from "./lib/util.ts";
+import { addDays, exists, fail, git, nowIso, randomHex, readJson, readText, sha256, today, writeJson } from "./lib/util.ts";
 import { initAudit, loadDraft, paths, releaseManifest, resolveRepo, saveDraft } from "./lib/workspace.ts";
 
 const BOOLEAN = new Set(["force", "remediate", "inherit-env", "no-mutants", "no-instructions", "no-outcomes", "json", "push", "allow-eval", "dockerfile", "instructions", "strict", "help"]);
@@ -89,6 +89,16 @@ function scenarioIds(a: Args): ScenarioId[] {
   return [...new Set(ids)] as ScenarioId[];
 }
 
+// Signs that agents already open PRs here: agent branch names in merges, or agent co-author trailers.
+function agentHistory(repo: string): string | null {
+  const r = git(["log", `--since=${addDays(today(), -90)}`, "--format=%s%n%b", "-n", "500"], repo);
+  const text = r.stdout;
+  const branches = text.match(/\b(cursor|codex|claude|copilot|devin)\/[\w./-]+/gi) ?? [];
+  const trailers = text.match(/^Co-authored-by: .*(Cursor|Codex|Claude|Copilot|Devin)/gim) ?? [];
+  if (branches.length + trailers.length === 0) return null;
+  return [branches.length ? `${branches.length} agent branch ${branches.length === 1 ? "merge" : "merges"}` : "", trailers.length ? `${trailers.length} agent co-author ${trailers.length === 1 ? "trailer" : "trailers"}` : ""].filter(Boolean).join(" and ");
+}
+
 function cmdInit(a: Args): void {
   const scenarios: ScenarioSpec[] = scenarioIds(a).map((id) => ({ id, components: ["*"] }));
   const tier = str(a, "tier", "local-exec") as Tier;
@@ -114,7 +124,7 @@ function cmdScan(a: Args): void {
     item.evidenceId = ev.id;
   }
   const blocking = audit.safety.filter((s) => s.blocking);
-  addEvidence(audit, { checkId: "safety.execution_boundary", condition: "safety", strength: "static", where: "static", result: blocking.length ? "fail" : "pass", summary: blocking.length ? blocking.map((b) => `${b.file}${b.line ? ":" + b.line : ""} ${b.detail}`).join("; ") : `no blocking findings; ${audit.safety.length} items listed for review` });
+  addEvidence(audit, { checkId: "safety.execution_boundary", condition: "safety", strength: "static", where: "static", result: blocking.length ? "fail" : "pass", summary: blocking.length ? blocking.map((b) => `${b.file}${b.line ? ":" + b.line : ""} ${b.detail}`).join("; ") : `no blocking findings; ${audit.safety.length} ${audit.safety.length === 1 ? "item" : "items"} listed for review` });
   if (profile.components.some((c) => c.assessed)) addEvidence(audit, { checkId: "bootstrap.cold_replay", condition: "toolchain", component: "*", strength: "static", where: "static", result: profile.toolchain.pinned ? "pass" : "fail", summary: profile.toolchain.pinned ? `toolchain pinned in ${profile.toolchain.files.join(", ")}` : `missing ${profile.toolchain.missing.join(" and ")}` });
   audit.assets = inventory(repo, local.tree, audit.instructions);
   const assessedIds = new Set(profile.components.filter((c) => c.assessed).map((c) => c.id));
@@ -125,6 +135,8 @@ function cmdScan(a: Args): void {
   saveDraft(p, audit);
   log(`Scanned ${audit.repo.name}: ${profile.repoType}, package manager ${profile.packageManager ?? "none"}.`);
   for (const c of profile.components) log(`  ${c.id.padEnd(14)} ${String(Math.round(c.changeShare * 100)).padStart(3)}% of changes  ${c.assessed ? "assessed" : `not assessed: ${c.notAssessedReason}`}`);
+  const agentWork = agentHistory(repo);
+  if (agentWork && audit.tier !== "external-systems") log(`Agent work in the history (${agentWork}). Offer --tier external-systems so the report can measure agent PRs against other PRs; it reads pull requests through gh.`);
   log(`Contract: ${audit.contract.length} commands. Instructions: ${audit.instructions.length} items, ${audit.instructions.filter((i) => i.result === "fail").length} wrong. Safety: ${blocking.length} blocking, ${audit.safety.length - blocking.length} listed.`);
   if (a.flags.strict) {
     const wrong = audit.instructions.filter((i) => i.result === "fail");
@@ -166,7 +178,13 @@ function cmdScenario(a: Args): void {
     if (sub === "add") {
       const components = csv(opt(a, "components"));
       if (components.length && !audit.profile) fail("Run `readiness scan` first: a scenario names components the scan found.");
-      for (const c of components) checkComponent(audit.profile, c);
+      const assessed = audit.profile!.components.filter((x) => x.assessed).map((x) => x.id);
+      for (const c of components) {
+        const found = audit.profile!.components.find((x) => x.id === c);
+        const choices = assessed.length ? `Use one of: ${assessed.join(", ")}.` : "No component was assessed.";
+        if (!found) fail(`No component named ${c}. ${choices}`);
+        if (!found.assessed) fail(`${c} isn't assessed (${found.notAssessedReason ?? "not supported"}), so it has no level for a scenario to break down. ${choices}`);
+      }
       audit.scenarios.push({ id, components: components.length ? components : ["*"] });
       log(`Added the ${id} scenario for ${components.length ? components.join(", ") : "every assessed component"}. It's reported under ${components.length === 1 ? "that component" : "those components"}, next to the standard level.`);
     } else log(`Removed the ${id} scenario.`);
@@ -214,16 +232,26 @@ async function cmdReplay(a: Args): Promise<void> {
   const repo = repoOf(a);
   const { audit, local, paths: p } = loadDraft(repo);
   const rubric = loadRubric(audit.rubric);
-  await replay(audit, repo, local.tree, rubric, {
-    component: opt(a, "component"),
-    mutants: !a.flags["no-mutants"],
-    instructions: !a.flags["no-instructions"],
-    runtime: str(a, "runtime", process.env.READINESS_RUNTIME || "auto"),
-    image: opt(a, "image") ?? (process.env.READINESS_IMAGE || undefined),
-    budgetComponentMinutes: Number(str(a, "budget-component", String(rubric.budgets.componentMinutes))),
-    budgetTotalMinutes: Number(str(a, "budget-total", String(rubric.budgets.totalMinutes))),
-    log,
-  });
+  const before = audit.evidence.length;
+  try {
+    await replay(audit, repo, local.tree, rubric, {
+      component: opt(a, "component"),
+      mutants: !a.flags["no-mutants"],
+      instructions: !a.flags["no-instructions"],
+      runtime: str(a, "runtime", process.env.READINESS_RUNTIME || "auto"),
+      image: opt(a, "image") ?? (process.env.READINESS_IMAGE || undefined),
+      budgetComponentMinutes: Number(str(a, "budget-component", String(rubric.budgets.componentMinutes))),
+      budgetTotalMinutes: Number(str(a, "budget-total", String(rubric.budgets.totalMinutes))),
+      log,
+    });
+  } catch (e) {
+    // Whatever ran before the error is real evidence; keep it so `status` and a rerun can use it.
+    if (audit.evidence.length > before) {
+      saveDraft(p, audit);
+      log(`Kept ${audit.evidence.length - before} results from before the error.`);
+    }
+    throw e;
+  }
   saveDraft(p, audit);
 }
 
@@ -304,7 +332,7 @@ function cmdStatus(a: Args): void {
     tier: audit.tier,
     commit: audit.repo.commit.slice(0, 7),
     environment: audit.environment,
-    repoLevel: preview ? (preview.report.maturity.outcome === "not_assessed" ? "not assessed" : preview.report.maturity.level) : null,
+    repoLevel: preview ? (preview.report.maturity.outcome === "not_assessed" ? "not assessed" : preview.report.maturity.unproven ? "Level 1 unproven on this machine (could be 1)" : preview.report.maturity.level) : null,
     scenarios: audit.scenarios ?? [],
     components: comps.map((c) => {
       const s = componentStates(audit, rubric, c.id);
@@ -313,8 +341,8 @@ function cmdStatus(a: Args): void {
         id: c.id,
         changeShare: c.changeShare,
         conditions: Object.fromEntries(Object.entries(s).map(([k, v]) => [k, `${v.state}: ${v.reason}`])),
-        level: row?.level ?? "not assessed",
-        scenarios: Object.fromEntries((row?.scenarios ?? []).map((x) => [x.id, x.level ?? "not assessed"])),
+        level: row?.unproven ? "Level 1 unproven on this machine (could be 1)" : (row?.level ?? "not assessed"),
+        scenarios: Object.fromEntries((row?.scenarios ?? []).map((x) => [x.id, x.unproven ? "Level 1 unproven on this machine" : (x.level ?? "not assessed")])),
       };
     }),
     contract: audit.contract.map((c) => `${c.id}: ${c.command}`),

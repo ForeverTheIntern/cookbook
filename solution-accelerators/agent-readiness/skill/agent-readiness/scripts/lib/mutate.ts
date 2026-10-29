@@ -1,3 +1,4 @@
+import { statSync } from "node:fs";
 import { dirname, join, normalize } from "node:path";
 import type { Component, Language } from "./types.ts";
 import { exists, git, listFiles, readText, sha256 } from "./util.ts";
@@ -44,6 +45,15 @@ function firstMatch(line: string, re: RegExp): RegExpExecArray | null {
 
 const BOUNDARY: Record<string, string> = { "<": "<=", "<=": "<", ">": ">=", ">=": ">" };
 
+// Styling values no reasonable test checks, such as `margin: 0` in an inline style or a JSX
+// `strokeWidth={2}`. A changed constant there is noise, not a gap in the tests.
+const CSS_KEY = /\b(margin\w*|padding\w*|width|height|min(Width|Height)|max(Width|Height)|top|left|right|bottom|inset|gap|rowGap|columnGap|font(Size|Weight)|lineHeight|letterSpacing|opacity|zIndex|flex(Grow|Shrink|Basis)?|order|border\w*|outline\w*|grid(Column|Row)\w*|elevation|transition\w*|animation\w*)\s*:\s*['"]?-?\d/;
+const JSX_PRESENTATION = /\b(style|sx|className|width|height|size|strokeWidth|spacing|elevation|tabIndex|rows|cols)=\{\s*\{?[^}]*\d/;
+
+export function cosmetic(line: string): boolean {
+  return CSS_KEY.test(line) || JSX_PRESENTATION.test(line) || /\bstyle=\{\{/.test(line);
+}
+
 export function sitesForLine(line: string, lang: Language): Omit<Site, "file" | "line">[] {
   const trimmed = line.trim();
   if (!trimmed || isCommentOrImport(trimmed, lang)) return [];
@@ -83,19 +93,28 @@ export function sitesForLine(line: string, lang: Language): Omit<Site, "file" | 
     out.push({ operator: "drop_throw_or_return", before: line, after: `${indent}void 0;` });
   }
   const c = firstMatch(line, /(?<![\w.$])(\d+)(?![\w.])/);
-  if (c && !/^\s*(case |default)/.test(line)) {
+  if (c && !/^\s*(case |default)/.test(line) && !cosmetic(line)) {
     const n = Number(c[1]);
     if (Number.isSafeInteger(n)) out.push({ operator: "change_constant", before: line, after: line.slice(0, c.index) + String(n + 1) + line.slice(c.index + c[0].length) });
   }
   return out;
 }
 
-const JS_EXT = [".ts", ".tsx", ".mts", ".cts", ".js", ".mjs", ".cjs", "/index.ts", "/index.js"];
+const JS_EXT = [".ts", ".tsx", ".mts", ".cts", ".js", ".jsx", ".mjs", ".cjs"];
 
-function resolveJs(tree: string, fromFile: string, spec: string): string | null {
-  const base = normalize(join(dirname(fromFile), spec));
-  const candidates = [base, ...JS_EXT.map((e) => base + e), base.replace(/\.js$/, ".ts")];
-  for (const c of candidates) if (exists(join(tree, c)) && !c.endsWith("/")) return c;
+function isFile(path: string): boolean {
+  try {
+    return statSync(path).isFile();
+  } catch {
+    return false;
+  }
+}
+
+// `import "../store"` can name a folder, which resolves to its index file.
+export function resolveJs(tree: string, fromFile: string, spec: string): string | null {
+  const base = normalize(join(dirname(fromFile), spec)).replace(/\/$/, "");
+  const candidates = [base, ...JS_EXT.map((e) => base + e), base.replace(/\.js$/, ".ts"), base.replace(/\.js$/, ".tsx"), ...JS_EXT.map((e) => `${base}/index${e}`)];
+  for (const c of candidates) if (isFile(join(tree, c))) return c;
   return null;
 }
 
@@ -103,7 +122,7 @@ function resolvePy(tree: string, comp: Component, fromFile: string, mod: string)
   const rel = mod.startsWith(".") ? normalize(join(dirname(fromFile), mod.replace(/^\.+/, "").replace(/\./g, "/"))) : mod.replace(/\./g, "/");
   const roots = mod.startsWith(".") ? [""] : [comp.path === "." ? "" : comp.path, join(comp.path === "." ? "" : comp.path, "src")];
   for (const root of roots) {
-    for (const cand of [join(root, rel + ".py"), join(root, rel, "__init__.py")]) if (exists(join(tree, cand))) return cand;
+    for (const cand of [join(root, rel + ".py"), join(root, rel, "__init__.py")]) if (isFile(join(tree, cand))) return cand;
   }
   return null;
 }

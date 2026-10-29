@@ -149,7 +149,7 @@ function categorize(cmd: string): InstructionItem["category"] {
   return "replay";
 }
 
-const FUTURE = /\b(will (be )?(add|creat|live|hold|contain)\w*|(to be|not yet) (added|created)|(added|created|coming) later|later on|planned|upcoming|in the future|doesn't exist yet|does not exist yet|TODO)\b/i;
+const FUTURE = /\b(will (be )?(add|creat|live|hold|contain)\w*|(to be|not yet) (added|created|written)|(added|created|written|coming) (later|as|when|once)|later on|planned|upcoming|in the future|doesn't exist yet|does not exist yet|TODO)\b/i;
 
 export function instructionItems(tree: string, profile: Profile): InstructionItem[] {
   const items: InstructionItem[] = [];

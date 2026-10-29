@@ -244,6 +244,8 @@ function lockfileEvidence(audit: Audit, ex: Executor, profile: Profile, copyDir:
   addEvidence(audit, { checkId: "bootstrap.cold_replay", condition: "lockfile", component: "*", strength: ex.strength, where: ex.where, result, summary, image: ex.image ?? undefined });
 }
 
+export const NO_MUTANTS = "planted faults skipped by --no-mutants";
+
 async function plantFaults(audit: Audit, repo: string, tree: string, ex: Executor, rubric: Rubric, testCmd: ContractCommand, budget: Budget, log: (s: string) => void): Promise<void> {
   const comp = audit.profile!.components.find((c) => c.id === testCmd.component)!;
   const sites = chooseSites(repo, tree, comp, audit.seed.value, rubric.mutation.perComponent);
@@ -402,8 +404,16 @@ export async function replay(audit: Audit, repo: string, tree: string, rubric: R
           addEvidence(audit, { checkId: "verify.behavioral_oracle", condition: "faults", component: comp, strength: ex.strength, where: ex.where, result: "not_run", summary: `faults can't be planted in ${lang} yet` });
           continue;
         }
-        await plantFaults(audit, repo, tree, ex, rubric, testRes.cmd, budget, opts.log);
+        try {
+          await plantFaults(audit, repo, tree, ex, rubric, testRes.cmd, budget, opts.log);
+        } catch (e) {
+          const why = (e as Error).message.split("\n")[0].slice(0, 200);
+          opts.log(`  faults in ${comp}: couldn't be planted (${why}); the other results are kept`);
+          addEvidence(audit, { checkId: "verify.behavioral_oracle", condition: "faults", component: comp, strength: ex.strength, where: ex.where, result: "not_run", summary: `planting faults failed: ${why}` });
+        }
       }
+    } else {
+      for (const comp of components) addEvidence(audit, { checkId: "verify.behavioral_oracle", condition: "faults", component: comp, strength: ex.strength, where: ex.where, result: "not_run", summary: NO_MUTANTS, skipped: "--no-mutants" });
     }
     if (opts.instructions) {
       for (const item of audit.instructions.filter((i) => i.category === "replay" && i.staticResult === "pass")) {

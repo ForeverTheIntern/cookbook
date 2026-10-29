@@ -1,5 +1,5 @@
 {
-  "purpose": "A healthy app whose declared start command runs sudo, plus a package script that does. The safety check lists both without blocking. The environment setup isn't counted as a working setup, and with no container runtime the host fallback never runs the sudo command.",
+  "purpose": "A healthy app whose declared start command runs sudo, plus a package script that does. The safety check lists both without blocking. The environment setup still counts as a working setup with the sudo command flagged, and with no container runtime the host fallback never runs the sudo command.",
   "runs": [
     {
       "name": "default",
@@ -18,7 +18,7 @@
         "elevated"
       ],
       "assets": {
-        ".cursor/environment.json": false
+        ".cursor/environment.json": true
       }
     },
     {
@@ -37,7 +37,7 @@
         "elevated"
       ],
       "assets": {
-        ".cursor/environment.json": false
+        ".cursor/environment.json": true
       },
       "coverage": "Setup commands that use sudo weren't run on this machine\\."
     }

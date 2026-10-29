@@ -44,11 +44,16 @@ function envSignal(tree: string, files: string[]): Signal {
   const names = [...reads].sort();
   const shown = `${names.slice(0, 5).join(", ")}${names.length > 5 ? ` and ${names.length - 5} more` : ""}`;
   if (names.length === 0) return { id: "env_sample", label: "Sample env file", found: samples.length ? true : null, detail: samples.length ? `${samples.join(", ")}; the code reads no environment variables of its own` : "the code reads no environment variables of its own" };
+  const vars = (n: number) => `${n} environment ${n === 1 ? "variable" : "variables"}`;
+  if (samples.length === 0) return { id: "env_sample", label: "Sample env file", found: false, detail: `none, though the code reads ${vars(names.length)} (${shown})` };
+  const defined = new Set(samples.flatMap((f) => [...readText(join(tree, f)).matchAll(/^\s*(?:export\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*=/gm)].map((m) => m[1])));
+  const missing = names.filter((n) => !defined.has(n));
+  const missingShown = `${missing.slice(0, 5).join(", ")}${missing.length > 5 ? ` and ${missing.length - 5} more` : ""}`;
   return {
     id: "env_sample",
     label: "Sample env file",
-    found: samples.length > 0,
-    detail: samples.length ? `${samples.join(", ")}, for ${names.length} environment variables the code reads (${shown})` : `none, though the code reads ${names.length} environment ${names.length === 1 ? "variable" : "variables"} (${shown})`,
+    found: missing.length === 0,
+    detail: missing.length === 0 ? `${samples.join(", ")} names all ${vars(names.length)} the code reads (${shown})` : `${samples.join(", ")} leaves out ${missing.length} of the ${vars(names.length)} the code reads (${missingShown})`,
   };
 }
 

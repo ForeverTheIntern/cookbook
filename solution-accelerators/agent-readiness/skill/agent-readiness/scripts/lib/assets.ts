@@ -35,19 +35,21 @@ export function statusFor(asset: Pick<Asset, "kind" | "path" | "frontmatterOk" |
   if (failed > 0) return { status: `${failed} stale ${failed === 1 ? "item" : "items"}`, ok: false };
   if (notRun > 0) return { status: `${notRun} ${notRun === 1 ? "command" : "commands"} not checked`, ok: false };
   if (asset.kind === "skill" && asset.frontmatterOk === false) return { status: "Frontmatter is missing a name or description", ok: false };
-  if (asset.elevated) return { status: `${asset.elevated}, so it isn't counted as a working setup`, ok: false };
+  if (asset.elevated) return { status: `Present; flagged for review: ${asset.elevated}`, ok: true };
   return { status: mine.length > 0 ? "Replays" : "Present", ok: true };
 }
 
+// The sudo command is flagged, not the whole setup: a declared image can grant passwordless sudo.
 function elevatedSetup(path: string): string | undefined {
-  let env: { install?: unknown; start?: unknown };
+  let env: { install?: unknown; start?: unknown; build?: { dockerfile?: unknown } };
   try {
     env = JSON.parse(readText(path));
   } catch {
     return undefined;
   }
+  const image = typeof env.build?.dockerfile === "string" ? `inside its declared image (.cursor/${env.build.dockerfile})` : "on a machine that grants it";
   for (const field of ["install", "start"] as const) {
-    if (typeof env[field] === "string" && ELEVATED.test(env[field] as string)) return `Its ${field} command uses sudo`;
+    if (typeof env[field] === "string" && ELEVATED.test(env[field] as string)) return `its ${field} command uses sudo, so it works only ${image}`;
   }
   return undefined;
 }

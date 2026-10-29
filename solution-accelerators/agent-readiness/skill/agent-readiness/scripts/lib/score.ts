@@ -51,7 +51,7 @@ export function noRealResults(audit: Audit, states: Map<string, CompStates>): st
 function fromEvidence(rubric: Rubric, ev: Evidence | undefined, check: string, missingReason: string): CondDetail {
   if (!ev) return { state: "unknown", reason: missingReason, evidence: [] };
   const blocked = blockedBy(ev);
-  if (blocked) return { state: "blocked", reason: `blocked: ${blocked}, an environment limit rather than a repo defect; Level 1 needs a clean container`, evidence: [ev.id] };
+  if (blocked) return { state: "blocked", reason: `${blocked}, an environment limit rather than a repo defect; Level 1 needs a clean container`, evidence: [ev.id] };
   if (ev.result === "fail") return { state: "not_met", reason: ev.summary, evidence: [ev.id] };
   if (ev.result === "not_run") return { state: "unknown", reason: ev.summary, evidence: [ev.id] };
   const min = rubric.checks.find((c) => c.id === check)?.minStrengthForPass ?? "executed";
@@ -99,8 +99,9 @@ export function componentStates(audit: Audit, rubric: Rubric, componentId: strin
     else if (unknown.length > 0 || blocked.length > 0) states.commands = { state: "unknown", reason: [...unknown, ...blocked].map((p) => p.reason).join("; "), evidence: ids };
     else states.commands = { state: "met", reason: `${discovered.length} commands pass`, evidence: ids };
   }
-  states.faults = fromEvidence(rubric, latest(evs.filter((e) => e.condition === "faults" && e.component === componentId)), "verify.behavioral_oracle", "faults haven't been planted");
-  if (states.faults.state === "unknown" && states["clean.test"].state === "blocked") {
+  const faults = latest(evs.filter((e) => e.condition === "faults" && e.component === componentId));
+  states.faults = fromEvidence(rubric, faults, "verify.behavioral_oracle", "faults haven't been planted");
+  if (states.faults.state === "unknown" && states["clean.test"].state === "blocked" && !faults?.skipped) {
     states.faults = { state: "blocked", reason: "not checked: the clean test run was blocked on this machine", evidence: states.faults.evidence };
   }
   const repo = repoStates(audit, rubric);

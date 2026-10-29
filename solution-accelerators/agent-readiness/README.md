@@ -110,7 +110,7 @@ npm run sample           # regenerate examples/ from the monorepo-mixed fixture
 npm run release-manifest # after changing the skill's scripts, rubric, schemas or templates
 ```
 
-Fourteen fixtures under `fixtures/`, each a tiny repo with one planted defect or repo shape and an `expected.json`, are the diagnostic ground truth. Four cover repo shapes from the field: standalone apps next to .NET projects with no root package (`standalone-nested-mixed`), a setup that needs a tool only the declared image installs (`declared-image-missing-toolchain`), a start command that runs sudo (`sudo-start`), and a toolchain the rubric doesn't support (`unsupported-go-service`). Two of them also run with no container runtime. [AGENTS.md](AGENTS.md) holds the rule for adding checks and scenarios, and for turning field feedback bundles into fixtures.
+Fifteen fixtures under `fixtures/`, each a tiny repo with one planted defect or repo shape and an `expected.json`, are the diagnostic ground truth. Five cover repo shapes from the field: tests that import a folder (`folder-import`), standalone apps next to .NET projects with no root package (`standalone-nested-mixed`), a setup that needs a tool only the declared image installs (`declared-image-missing-toolchain`), a start command that runs sudo (`sudo-start`), and a toolchain the rubric doesn't support (`unsupported-go-service`). Two of them also run with no container runtime. [AGENTS.md](AGENTS.md) holds the rule for adding checks and scenarios, and for turning field feedback bundles into fixtures.
 
 ### Skill evals
 

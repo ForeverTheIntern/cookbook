@@ -12,7 +12,7 @@ import { diagnose } from "../skill/agent-readiness/scripts/lib/diagnose.ts";
 import { weakening, weakeningFlags } from "../skill/agent-readiness/scripts/lib/diff.ts";
 import { recordObservation } from "../skill/agent-readiness/scripts/lib/evidence.ts";
 import { appendHistory, pushHistory, readHistory, storeAudit } from "../skill/agent-readiness/scripts/lib/history.ts";
-import { allSites, applySite, chooseSites, sitesForLine, targetFiles } from "../skill/agent-readiness/scripts/lib/mutate.ts";
+import { allSites, applySite, chooseSites, cosmetic, resolveJs, sitesForLine, targetFiles } from "../skill/agent-readiness/scripts/lib/mutate.ts";
 import { computeOutcomes, fetchPrs, isAgentPr } from "../skill/agent-readiness/scripts/lib/outcomes.ts";
 import { buildProfile } from "../skill/agent-readiness/scripts/lib/profile.ts";
 import { redact, scanText } from "../skill/agent-readiness/scripts/lib/redact.ts";
@@ -181,10 +181,12 @@ describe("sudo", () => {
     assert.equal(existsSync(marker), false);
   });
 
-  test("an environment setup that needs sudo isn't counted as a working setup, and sudo never reaches the verify skill", () => {
+  test("a sudo command in the environment setup is flagged without failing the setup, and sudo never reaches the verify skill", () => {
     const repo = materialize("sudo-start");
     const env = inventory(repo, repo, []).find((a) => a.path === ".cursor/environment.json")!;
-    assert.deepEqual([env.ok, env.status], [false, "Its start command uses sudo, so it isn't counted as a working setup"]);
+    assert.deepEqual([env.ok, env.status], [true, "Present; flagged for review: its start command uses sudo, so it works only on a machine that grants it"]);
+    writeFileSync(join(repo, ".cursor/environment.json"), JSON.stringify({ build: { dockerfile: "Dockerfile" }, install: "npm ci", start: "sudo service docker start" }));
+    assert.match(inventory(repo, repo, []).find((a) => a.path === ".cursor/environment.json")!.status, /works only inside its declared image \(\.cursor\/Dockerfile\)$/);
     const audit = makeAudit({ components: [{ id: "app", share: 1, faults: "pass" }] });
     audit.contract.push({ id: "cmd-repo-start", kind: "start", component: "*", cwd: ".", command: "sudo service docker start", source: ".cursor/environment.json start", reason: "", timeoutSec: 60 });
     audit.evidence.push({ id: "ev-090", checkId: "bootstrap.cold_replay", component: "*", kind: "start", contractId: "cmd-repo-start", strength: "clean_replay", where: "container", result: "pass", summary: "start passed", at: audit.createdAt });
@@ -214,7 +216,10 @@ describe("informational signals", () => {
     assert.match(signals.isolation.detail, /docker-compose\.yml publishes fixed host port 5432/);
     assert.match(signals.isolation.detail, /scripts\/seed\.sh uses the absolute path \/Users\/alex\//);
     assert.match(signals.agents_md_length.detail, /^950 words, over 900/);
-    writeFileSync(join(repo, ".env.example"), "DATABASE_URL=\nSTRIPE_KEY=\n");
+    writeFileSync(join(repo, ".env.example"), "PORT=3000\nDATABASE_URL=\n");
+    const partial = staticSignals(repo, buildProfile(repo, repo, rubric), []).find((s) => s.id === "env_sample")!;
+    assert.deepEqual([partial.found, partial.detail], [false, ".env.example leaves out 1 of the 2 environment variables the code reads (STRIPE_KEY)"], "a sample that lacks the variables the code reads doesn't count");
+    writeFileSync(join(repo, ".env.example"), "DATABASE_URL=\nexport STRIPE_KEY=\n");
     writeFileSync(join(repo, "AGENTS.md"), "Run `npm test`.\n");
     const again = Object.fromEntries(staticSignals(repo, buildProfile(repo, repo, rubric), []).map((s) => [s.id, s.found]));
     assert.deepEqual([again.env_sample, again.agents_md_length, again.targeted_tests], [true, true, false]);
@@ -230,7 +235,7 @@ describe("static checks", () => {
 
   test("a path the docs say comes later isn't a stale instruction, and a missing path still is", () => {
     const repo = materialize("healthy-node");
-    writeFileSync(join(repo, "AGENTS.md"), "- Decisions will be added to `docs/adr/` later.\n- The service map is in `docs/architecture.md`.\n");
+    writeFileSync(join(repo, "AGENTS.md"), "- Decisions will be added to `docs/adr/` later.\n- Records live in `docs/decisions/` (added as decisions are made).\n- The service map is in `docs/architecture.md`.\n");
     const items = instructionItems(repo, { ...buildProfile(repo, repo, rubric), instructionFiles: ["AGENTS.md"] });
     assert.deepEqual(items.map((i) => [i.text, i.result]), [["docs/architecture.md", "fail"]]);
   });
@@ -392,7 +397,7 @@ describe("profile", () => {
       "apps/web/package.json": JSON.stringify({ name: "web", packageManager: undefined, scripts: { test: "node --test" } }),
       "apps/web/pnpm-lock.yaml": "lockfileVersion: '9.0'\n",
       ".cursor/environment.json": JSON.stringify({ build: { dockerfile: "Dockerfile" }, install: "true" }),
-      ".cursor/Dockerfile": "ARG NODE_VERSION=24\nFROM node:${NODE_VERSION}-bookworm-slim\nRUN corepack enable && corepack prepare pnpm@12.8.1 --activate\n",
+      ".cursor/Dockerfile": "ARG NODE_MAJOR=24\nFROM mcr.microsoft.com/devcontainers/base:bookworm\nRUN curl -fsSL https://deb.nodesource.com/setup_${NODE_MAJOR}.x | bash -\nRUN corepack enable && corepack prepare pnpm@12.8.1 --activate\n",
     });
     const tc = buildProfile(repo, repo, rubric).toolchain;
     assert.equal(tc.pinned, true, JSON.stringify(tc));
@@ -449,6 +454,32 @@ describe("planted faults", () => {
     assert.deepEqual(ops('  const s = "a < b and 5";'), []);
     assert.deepEqual(ops("  // if (a < b) return 1;"), []);
     assert.deepEqual(sitesForLine("    if score >= 90:", "py").map((s) => s.after.trim()), ["if score > 90:", "if not (score >= 90):", "if score >= 91:"]);
+  });
+
+  test("an import of a folder resolves to its index file, and a folder is never read as a file", () => {
+    const repo = gitRepo({
+      "package.json": JSON.stringify({ name: "web", scripts: { test: "vitest run" } }),
+      "src/store/index.ts": "export function total(n: number) {\n  if (n < 0) return 0;\n  return n;\n}\n",
+      "src/layout/Layout.tsx": "export function Layout() {\n  return <div style={{ margin: 0 }}>x</div>;\n}\n",
+      "src/layout/Layout.test.tsx": "import { total } from '../store';\nimport { Layout } from './Layout';\nimport '../empty';\n",
+      "src/empty/readme.md": "no index here\n",
+    });
+    assert.equal(resolveJs(repo, "src/layout/Layout.test.tsx", "../store"), "src/store/index.ts");
+    assert.equal(resolveJs(repo, "src/layout/Layout.test.tsx", "../empty"), null, "a folder with no index file resolves to nothing");
+    const comp = buildProfile(repo, repo, rubric).components[0];
+    assert.deepEqual(targetFiles(repo, comp), ["src/layout/Layout.tsx", "src/store/index.ts"]);
+    assert.doesNotThrow(() => chooseSites(repo, repo, comp, "seed", 5));
+  });
+
+  test("styling constants aren't planted as faults; logic constants still are", () => {
+    for (const line of ["  return <div style={{ margin: 0 }}>", "  margin: 0,", "    borderRadius: 4,", "  <Icon strokeWidth={2} />", "  padding: '8px',"]) {
+      assert.ok(cosmetic(line), line);
+      assert.ok(!sitesForLine(line, "js").some((s) => s.operator === "change_constant"), line);
+    }
+    for (const line of ["  if (items.length === 0) {", "  const limit = 10;", "  return count >= 10 ? 15 : 0;"]) {
+      assert.ok(!cosmetic(line), line);
+      assert.ok(sitesForLine(line, "js").some((s) => s.operator === "change_constant"), line);
+    }
   });
 
   test("targets are files the tests import, and the seed decides the pick", () => {

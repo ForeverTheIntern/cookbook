@@ -35,13 +35,15 @@ Settle the tier, and any scenario the user asks for, from their words or these d
   - `local-exec` (default): repo code runs in a clean container, or in a scrubbed throwaway copy when no container runtime exists.
   - `external-systems`: also reads pull requests through `gh` for the outcome numbers, and can check the published release.
 
+  Before settling on `local-exec`, run `git log --since=90.days --format=%s%n%b | grep -Eic 'cursor/|codex/|claude/|copilot/|co-authored-by: .*(cursor|claude|codex)'`. If agents already open PRs here, offer `external-systems` so the report can measure them against other PRs. `readiness scan` prints the same hint.
+
 - **Scenarios** (optional, none by default): `first_pr`, `bug_fixes`, `features` (features and refactors) or `repo_wide` (upgrades, migrations, large refactors). Add one only when the user names that kind of work, for example "can agents take bug fixes in web?". `--scenario bug_fixes` adds it for every component; after the scan, `readiness scenario add bug_fixes --components web` adds it for some. A scenario is an extra breakdown in part 4; it never changes a component's standard level or the repo level.
 
 For a private registry, ask for the variable names (never values) and pass `--registry-env NPM_TOKEN,PIP_INDEX_URL`. Their names are recorded and their values never are.
 
 ## 2. Preflight
 
-1. `git status --short`. Uncommitted changes aren't audited: the audit reads `git archive HEAD`. Say so if the tree is dirty.
+1. `git status --short`. Uncommitted changes aren't audited: the audit reads `git archive HEAD`. Say so if the tree is dirty. An uncommitted copy of this skill under `.cursor/skills/agent-readiness/` and the `.agent-readiness/` records don't count; the audit records "clean tree" without them.
 2. `docker info` (or `podman info`). With no container runtime, tell the user up front that Level 1 can't be proved on this machine. It's an environment limit, not a repo gap, and the scheduled CI recheck can prove it. The fallback runs on the host, so a tool this machine lacks (for example a .NET SDK the repo's own image installs) is reported as a limit of this machine, and commands that use `sudo` are never run there.
 3. `readiness init --tier <tier>`, plus `--scenario <id>` if the user asked for one. If a draft is already open from an earlier attempt, add `--force`.
 
@@ -64,6 +66,7 @@ For a private registry, ask for the variable names (never values) and pass `--re
 1. `readiness replay`. It copies `HEAD` into a clean container, installs and builds with the network on, turns the network off, runs lint, type-check and tests, plants faults the tests should catch, and replays every command in the agent instructions. It takes a few minutes. Let it finish.
    - Pass `--image <ref>` only when the user names an approved base image, for example an internal mirror.
    - An install that fails with "registry credentials not provided" needs `--registry-env`: start again with `readiness init --force ... --registry-env <NAMES>`.
+   - Don't pass `--no-mutants` on your own: it skips the planted faults, so no component can reach Level 2, and the report says it was skipped. Use it only when the user asks for a quicker, partial run. If planting faults hits an error, the replay keeps every other result and records the fault check as not run with the error.
 2. Use `readiness run --component <id>` only to rerun commands on the host while diagnosing. Host runs never prove Level 1.
 
 ## 5. Outcomes (external-systems tier only)
@@ -73,7 +76,7 @@ For a private registry, ask for the variable names (never values) and pass `--re
 ## 6. Narrate, then seal
 
 1. `readiness status` shows every condition, the levels the scripts computed, and part 1 as the seal would build it now, with the ids of its gaps. Key narration by those ids only: the seal refuses a gap or title id that isn't in the report, a contract command for a component that isn't assessed, and evidence for a component the scan didn't find.
-2. Always write the headline and the ask with `readiness narrate --file narration.json`. The scripts' default wording is a fallback: it can't say in plain words why a check failed or what the audit proved.
+2. Always write the headline and the ask with `readiness narrate`. Write the JSON file outside the repository, for example `$TMPDIR/readiness-narration.json`, and pass `--file <path>`, or pass `--headline "..." --ask "..."` directly. `narrate` copies the text into the audit, so nothing is left in the working tree. The scripts' default wording is a fallback: it can't say in plain words why a check failed or what the audit proved.
 
    ```json
    { "headline": "...", "ask": "...", "gaps": { "clean.test:api": "..." } }

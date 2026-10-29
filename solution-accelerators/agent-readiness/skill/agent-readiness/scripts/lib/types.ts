@@ -94,6 +94,8 @@ export interface Evidence {
   summary: string;
   diagnosis?: Diagnosis;
   blocked?: string;
+  // The flag that skipped this step on purpose, such as --no-mutants.
+  skipped?: string;
   at: string;
 }
 
@@ -356,6 +358,8 @@ export interface ReportJson {
     confidence: { level: "high" | "medium" | "low"; reasons: string[] };
     // What holds the level where it is: each condition of the next level that isn't met.
     capReasons: CapReason[];
+    // True when the level is 0 only because this machine couldn't check Level 1.
+    unproven: boolean;
     next: { level: Level; name: string; met: string[]; unmet: string[] } | null;
   };
   // Tier 2: each component found, with tier 3, the scenarios added for it, nested under it.
@@ -401,8 +405,9 @@ export interface ComponentLevel {
   active: boolean;
   level: Level | null;
   couldBe: Level | null;
+  unproven: boolean;
   capReasons: CapReason[];
-  scenarios: { id: ScenarioId; label: string; level: Level | null; couldBe: Level | null }[];
+  scenarios: { id: ScenarioId; label: string; level: Level | null; couldBe: Level | null; unproven: boolean }[];
 }
 
 export interface ReportAction {

@@ -40,7 +40,7 @@
     },
     "maturity": {
       "type": "object",
-      "required": ["level", "rule", "couldBe", "couldBeReason", "setBy", "partialCoverage", "assessedComponents", "outcome", "confidence", "capReasons", "next"],
+      "required": ["level", "rule", "couldBe", "couldBeReason", "setBy", "partialCoverage", "assessedComponents", "outcome", "confidence", "capReasons", "unproven", "next"],
       "properties": {
         "level": { "$ref": "#/$defs/level" },
         "rule": { "type": "string", "minLength": 1 },
@@ -73,13 +73,13 @@
           "type": "array",
           "items": {
             "type": "object",
-            "required": ["id", "path", "toolchain", "manifest", "lockfile", "changeShare", "active", "level", "couldBe", "capReasons", "scenarios"],
+            "required": ["id", "path", "toolchain", "manifest", "lockfile", "changeShare", "active", "level", "couldBe", "unproven", "capReasons", "scenarios"],
             "properties": {
               "level": { "anyOf": [{ "$ref": "#/$defs/level" }, { "type": "null" }] },
               "couldBe": { "anyOf": [{ "$ref": "#/$defs/level" }, { "type": "null" }] },
               "scenarios": {
                 "type": "array",
-                "items": { "type": "object", "required": ["id", "label", "level", "couldBe"], "properties": { "id": { "$ref": "#/$defs/activity" }, "level": { "anyOf": [{ "$ref": "#/$defs/level" }, { "type": "null" }] } } }
+                "items": { "type": "object", "required": ["id", "label", "level", "couldBe", "unproven"], "properties": { "id": { "$ref": "#/$defs/activity" }, "level": { "anyOf": [{ "$ref": "#/$defs/level" }, { "type": "null" }] } } }
               }
             }
           }
@@ -91,7 +91,7 @@
       "type": "object",
       "required": ["heading", "headline", "numbers", "nextLine", "gaps", "ask", "coverage", "noBlocker"],
       "properties": {
-        "heading": { "type": "string", "pattern": "^(Level [0-4] of 4, |Not assessed: )" },
+        "heading": { "type": "string", "pattern": "^(Level [0-4] of 4, |Level 1 unproven on this machine: |Not assessed: )" },
         "headline": { "type": "string", "minLength": 1, "maxLength": 400 },
         "numbers": {
           "type": "array",

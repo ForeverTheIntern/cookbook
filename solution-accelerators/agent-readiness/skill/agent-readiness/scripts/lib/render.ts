@@ -439,6 +439,7 @@ export function buildReport(input: RenderInput): ReportJson {
   const setByShare = input.components.filter((c) => input.rollup.setBy.includes(c.id)).reduce((s, c) => s + c.changeShare, 0);
   const none = notAssessed(input);
   const outcome = outcomeOf(input);
+  const caps = capReasons(input);
   const noBlocker = !none && !unproven(input) && top.every((t) => t.kind !== "fix");
   const narr = audit.narration ?? {};
   const gaps = top.map((t, i) => ({ rank: i + 1, text: (narr.gaps?.[t.id] ?? gapText(t)).trim().replace(/\.+$/, ""), blocks: blocksText(t), itemId: t.id }));
@@ -527,7 +528,8 @@ export function buildReport(input: RenderInput): ReportJson {
       assessedComponents: input.components.filter((c) => c.assessed).length,
       outcome,
       confidence: confidenceOf(input, outcome),
-      capReasons: capReasons(input),
+      capReasons: caps,
+      unproven: !none && unprovenLevel1(L, input.rollup.couldBe, caps),
       next: L < 4 ? { level: (L + 1) as Level, name: rubric.scale[L + 1].name, met: [], unmet: [] } : null,
     },
     components: componentsOf(input),
@@ -536,7 +538,9 @@ export function buildReport(input: RenderInput): ReportJson {
         ? "Not assessed: no component could be assessed"
         : none
           ? `Not assessed: ${audit.tier === "read-only" ? "the read-only tier runs no repo code" : "no check could run on this machine"}`
-          : `Level ${L} of 4, ${rubric.scale[L].plain}${outcome === "blocked" ? `; Level ${L + 1} is blocked on this machine` : ""}`,
+          : !none && unprovenLevel1(L, input.rollup.couldBe, caps)
+            ? "Level 1 unproven on this machine: every Level 1 check that ran passed"
+            : `Level ${L} of 4, ${rubric.scale[L].plain}${outcome === "blocked" ? `; Level ${L + 1} is blocked on this machine` : ""}`,
       headline: narr.headline ?? headlineFor(input, ready, setByShare),
       numbers: stats3(input),
       nextLine: nextLine(input),
@@ -601,7 +605,7 @@ export function buildReport(input: RenderInput): ReportJson {
           ran: e.command ?? e.summary,
           where: e.result === "not_run" ? "not run" : rubric.strengthLabels[e.strength],
           result: blocked ? "blocked" : e.result,
-          summary: blocked && !e.summary.includes(blocked) ? `${e.summary}; blocked: ${blocked}` : e.summary,
+          summary: blocked && e.result === "fail" ? `${e.kind ?? "step"} blocked: ${blocked}` : blocked && !e.summary.includes(blocked) ? `${e.summary}; blocked: ${blocked}` : e.summary,
         };
       }),
       record: [
@@ -611,13 +615,24 @@ export function buildReport(input: RenderInput): ReportJson {
         { label: "Permission tier", value: audit.tier },
         { label: "Seal", value: input.sealStatus },
         { label: "Skill digest", value: audit.skill.scriptsDigest.slice(0, 12) },
-        { label: "Planted-fault seed", value: audit.seed.pinned ? "pinned (eval run; not a production result)" : "fresh for this audit" },
+        { label: "Planted faults", value: plantedFaultsRecord(audit) },
         { label: "Replay environment", value: audit.environment.containerRuntime ? `${audit.environment.containerRuntime} container, ${audit.environment.image}` : "fresh copy on the host (no container runtime)" },
         { label: "Stored in", value: input.storedAt },
       ],
     },
   };
   return report;
+}
+
+function plantedFaultsRecord(audit: Audit): string {
+  const faults = audit.evidence.filter((e) => e.condition === "faults");
+  if (faults.length > 0 && faults.every((e) => e.skipped)) return `not planted: ${faults[0].skipped} skipped them, so no fault check ran`;
+  return audit.seed.pinned ? "seed pinned (eval run; not a production result)" : "fresh seed for this audit";
+}
+
+// Held at Level 0 only because this machine couldn't check Level 1: nothing that ran failed.
+export function unprovenLevel1(level: Level | null, couldBe: Level | null, caps: { state: string }[]): boolean {
+  return level === 0 && couldBe === 1 && caps.length > 0 && caps.every((c) => c.state === "blocked");
 }
 
 function componentCaps(input: RenderInput, id: string): ComponentLevel["capReasons"] {
@@ -643,8 +658,12 @@ function componentsOf(input: RenderInput): ReportJson["components"] {
       .filter((c) => c.assessed)
       .map((c) => {
         const l = compLevel(input, c.id);
-        const scenarios = [...(input.scenarioLevels.get(c.id) ?? new Map<ScenarioId, LevelResult>()).entries()].map(([sid, s]) => ({ id: sid, label: input.rubric.scenarios.find((x) => x.id === sid)!.label, level: none ? null : s.level, couldBe: none ? null : s.couldBe }));
-        return { ...row(c), active: input.active.has(c.id), level: none || !l ? null : l.level, couldBe: none || !l ? null : l.couldBe, capReasons: componentCaps(input, c.id), scenarios };
+        const caps = componentCaps(input, c.id);
+        const level = none || !l ? null : l.level;
+        const couldBe = none || !l ? null : l.couldBe;
+        const unproven = unprovenLevel1(level, couldBe, caps);
+        const scenarios = [...(input.scenarioLevels.get(c.id) ?? new Map<ScenarioId, LevelResult>()).entries()].map(([sid, s]) => ({ id: sid, label: input.rubric.scenarios.find((x) => x.id === sid)!.label, level: none ? null : s.level, couldBe: none ? null : s.couldBe, unproven: unproven && s.level === 0 && s.couldBe === 1 }));
+        return { ...row(c), active: input.active.has(c.id), level, couldBe, unproven, capReasons: caps, scenarios };
       }),
     excluded: [
       ...comps.filter((c) => !c.assessed).map((c) => ({ ...row(c), reason: c.notAssessedReason ?? "not assessed" })),
@@ -724,7 +743,7 @@ function levelWord(rubric: Rubric, l: number): string {
 }
 
 export function scaleLine(r: ReportJson): string {
-  const here = r.maturity.assessedComponents === 0 || r.maturity.outcome === "not_assessed" ? null : r.maturity.level;
+  const here = r.maturity.assessedComponents === 0 || r.maturity.outcome === "not_assessed" || r.maturity.unproven ? null : r.maturity.level;
   return r.scale.map((s) => (s.level === here ? `[Level ${s.level} ${s.name}]` : `Level ${s.level} ${s.name}`)).join(" > ");
 }
 
@@ -757,7 +776,7 @@ export function renderMarkdown(r: ReportJson, rubric: Rubric): string {
     out.push(`- **Done when:** ${a.doneWhen}`, "");
   }
   const noResults = r.maturity.outcome === "not_assessed";
-  if (r.actions.length === 0) out.push(r.maturity.assessedComponents === 0 ? "No actions can be planned yet: no component could be assessed, so nothing was checked. Part 1 says why." : noResults ? "No actions can be planned yet: this audit has no real check results to plan from. Part 1 says why." : "No actions are open.", "");
+  if (r.actions.length === 0) out.push(r.maturity.assessedComponents === 0 ? "No actions can be planned yet: no component could be assessed, so nothing was checked. Part 1 says why." : noResults ? "No actions can be planned yet: this audit has no real check results to plan from. Part 1 says why." : r.maturity.outcome === "blocked" ? `No actions are open: nothing in the repo blocks Level ${r.maturity.level + 1}. Proving it needs a rerun where this machine's limits don't apply, such as CI with Docker or Podman.` : "No actions are open.", "");
   out.push("## 3. Where you are on the roadmap", "");
   if (noResults) out.push("This audit added no steps, because it has no real check results to plan from. The roadmap is as the last audit left it.", "");
   out.push(`${r.roadmap.doneCount} of ${r.roadmap.total} steps done. Kept in \`.agent-readiness/roadmap.json\`.${r.roadmap.owner ? ` Owner: ${r.roadmap.owner}.` : ""}`, "");
@@ -790,18 +809,18 @@ export function renderMarkdown(r: ReportJson, rubric: Rubric): string {
   }
   out.push("", `Not assessed by this rubric version, which is different from unknown: ${list(r.details.notAssessed.map((n) => n.charAt(0).toLowerCase() + n.slice(1)))}.`, "");
   const comps = r.components;
-  const levelCell = (level: Level | null, couldBe: Level | null) => (level === null ? "not assessed" : `${levelWord(rubric, level)}${couldBe !== null ? ` (could be ${couldBe})` : ""}`);
+  const levelCell = (level: Level | null, couldBe: Level | null, unproven = false) => (level === null ? "not assessed" : unproven ? "Level 1 unproven on this machine (could be 1)" : `${levelWord(rubric, level)}${couldBe !== null ? ` (could be ${couldBe})` : ""}`);
   out.push("### Levels by component", "", `Repo shape: ${comps.shape === "sampled_monorepo" ? "monorepo, sampled (only the most active supported components are assessed)" : comps.shape}. Each component gets one standard level; scenarios someone added appear under the components they cover.`, "", "| Component | Path | Toolchain | Manifest | Lockfile | Share of changes | Level |", "|---|---|---|---|---|---|---|");
   const file = (f: string | null) => (f ? `\`${f}\`` : "none");
   for (const c of comps.included) {
-    out.push(`| \`${c.id}\`${c.active ? "" : " (under 10%)"} | \`${c.path}\` | ${c.toolchain} | ${file(c.manifest)} | ${file(c.lockfile)} | ${Math.round(c.changeShare * 100)}% | ${levelCell(c.level, c.couldBe)} |`);
-    for (const s of c.scenarios) out.push(`| \`${c.id}\` › ${s.label} | | | | | | ${levelCell(s.level, s.couldBe)} |`);
+    out.push(`| \`${c.id}\`${c.active ? "" : " (under 10%)"} | \`${c.path}\` | ${c.toolchain} | ${file(c.manifest)} | ${file(c.lockfile)} | ${Math.round(c.changeShare * 100)}% | ${levelCell(c.level, c.couldBe, c.unproven)} |`);
+    for (const s of c.scenarios) out.push(`| \`${c.id}\` › ${s.label} | | | | | | ${levelCell(s.level, s.couldBe, s.unproven)} |`);
   }
   for (const c of comps.excluded) out.push(`| \`${c.id}\` | \`${c.path}\` | ${c.toolchain} | ${file(c.manifest)} | ${file(c.lockfile)} | ${c.reason.startsWith("not a component") ? "n/a" : `${Math.round(c.changeShare * 100)}%`} | not assessed: ${c.reason} |`);
   const noLevel = r.maturity.outcome === "not_assessed";
-  out.push("", `Repo level: ${noLevel ? "not assessed" : levelWord(rubric, r.maturity.level)}. ${r.maturity.rule}`, "");
+  out.push("", `Repo level: ${noLevel ? "not assessed" : r.maturity.unproven ? "Level 1 unproven on this machine (could be 1)" : levelWord(rubric, r.maturity.level)}. ${r.maturity.rule}`, "");
   if (r.maturity.capReasons.length) {
-    out.push(`What holds the repo at Level ${r.maturity.level}:`, "");
+    out.push(r.maturity.unproven ? "What keeps Level 1 unproven on this machine:" : `What holds the repo at Level ${r.maturity.level}:`, "");
     for (const c of r.maturity.capReasons) out.push(`- ${c.component === "*" ? "Repo" : `\`${c.component}\``}: ${c.label}, ${c.state === "blocked" ? "blocked on this machine" : c.state === "unknown" ? "not proven" : "not met"} (${c.reason}).`);
     out.push("");
   }

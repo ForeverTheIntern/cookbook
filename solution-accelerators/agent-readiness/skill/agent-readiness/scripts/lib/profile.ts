@@ -325,8 +325,8 @@ function dockerfilePins(tree: string, dockerfile: string | undefined): { node: b
   const out = { node: false, pm: new Set<string>(), python: false };
   if (!dockerfile || !exists(join(tree, ".cursor", dockerfile))) return out;
   const text = readText(join(tree, ".cursor", dockerfile));
-  out.node = /^\s*FROM\s+(?:\S+\/)?node:\d/im.test(text) || /^\s*(ARG|ENV)\s+NODE_VERSION[= ]\s*\S/im.test(text);
-  out.python = /^\s*FROM\s+(?:\S+\/)?python:\d/im.test(text) || /^\s*(ARG|ENV)\s+PYTHON_VERSION[= ]\s*\S/im.test(text);
+  out.node = /^\s*FROM\s+(?:\S+\/)?node:\d/im.test(text) || /^\s*(ARG|ENV)\s+NODE_(VERSION|MAJOR)[= ]\s*\d/im.test(text);
+  out.python = /^\s*FROM\s+(?:\S+\/)?python:\d/im.test(text) || /^\s*(ARG|ENV)\s+PYTHON_(VERSION|MAJOR)[= ]\s*\d/im.test(text);
   for (const m of text.matchAll(/\b(?:corepack\s+(?:prepare|install\s+-g)|npm\s+(?:i|install)\s+-g)\s+(pnpm|yarn)@\d/g)) out.pm.add(m[1]);
   for (const m of text.matchAll(/^\s*(?:ARG|ENV)\s+(PNPM|YARN)_VERSION[= ]\s*\S/gim)) out.pm.add(m[1].toLowerCase());
   return out;

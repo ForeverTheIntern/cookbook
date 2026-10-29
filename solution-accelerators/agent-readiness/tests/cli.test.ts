@@ -61,6 +61,44 @@ describe("CLI", { concurrency: 4 }, () => {
     assert.match(status.out, /Part 1 now: /, "status shows the part 1 the seal would build, so narration can use its ids");
     assert.match(status.out, /Repo level: not assessed/, "before anything ran, status gives no level");
     assert.match(status.out, /buyer-web: level not assessed/);
+    const json = readiness(repo, ["status", "--json"]).out;
+    assert.match(json, /no blocking findings; 1 item listed for review/);
+    assert.doesNotMatch(json, /blocked: blocked:/);
+    const scenario = readiness(repo, ["scenario", "add", "bug_fixes", "--components", "commerce-core"]);
+    assert.notEqual(scenario.code, 0);
+    assert.match(scenario.out, /commerce-core isn't assessed \(\.NET isn't supported by this rubric\), so it has no level for a scenario to break down\. Use one of: admin-web, buyer-web\./);
+    assert.doesNotMatch(scenario.out, /replay/);
+  });
+
+  test("--no-mutants is disclosed with its own reason, not as a blocked check", () => {
+    const repo = hostAudit("healthy-node", ["--no-mutants"]);
+    const report = JSON.parse(readFileSync(join(repo, ".agent-readiness/latest/report.json"), "utf8"));
+    assert.equal(report.details.checks.find((c: { id: string }) => c.id === "verify.behavioral_oracle").result, "healthy-node: planted faults skipped by --no-mutants");
+    assert.ok(report.details.record.some((x: { label: string; value: string }) => x.label === "Planted faults" && x.value === "not planted: --no-mutants skipped them, so no fault check ran"));
+    assert.ok(!report.components.included[0].capReasons.some((c: { condition: string; state: string }) => c.condition === "faults" && c.state === "blocked"));
+  });
+
+  test("an error while planting faults is contained: the other results are kept and the fault check says why", () => {
+    const repo = materialize("healthy-node");
+    const pkg = JSON.parse(readFileSync(join(repo, "package.json"), "utf8"));
+    const stamp = "node -e \"const fs=require('fs');for(const f of fs.readdirSync('src'))fs.writeFileSync('src/'+f,'// built\\n'+fs.readFileSync('src/'+f,'utf8'))\"";
+    writeFileSync(join(repo, "package.json"), JSON.stringify({ ...pkg, scripts: { ...pkg.scripts, build: stamp } }, null, 2));
+    commitAll(repo, "Stamp sources at build time");
+    const r = readiness(repo, ["audit", "--tier", "local-exec", "--runtime", "none"]);
+    assert.equal(r.code, 0, r.out);
+    const report = JSON.parse(readFileSync(join(repo, ".agent-readiness/latest/report.json"), "utf8"));
+    const evidence = report.details.evidence as { summary: string; result: string }[];
+    assert.ok(evidence.some((e) => e.summary === "test passed"), "the test results are kept");
+    assert.ok(evidence.some((e) => /^planting faults failed: Line \d+ of src\/\S+ changed since the site was chosen$/.test(e.summary)), JSON.stringify(evidence.map((e) => e.summary)));
+  });
+
+  test("scan offers external-systems when agents already open PRs here", () => {
+    const repo = materialize("healthy-node");
+    writeFileSync(join(repo, "notes.md"), "x\n");
+    commitAll(repo, "Merge pull request #12 from example/cursor/fix-rounding");
+    assert.equal(readiness(repo, ["init", "--tier", "local-exec"]).code, 0);
+    const scan = readiness(repo, ["scan"]);
+    assert.match(scan.out, /Agent work in the history \(1 agent branch merge\)\. Offer --tier external-systems/);
   });
 
   test("on a host fallback, a missing tool blocks the checks, and with no real results part 1 gives no level", () => {
@@ -105,7 +143,7 @@ describe("CLI", { concurrency: 4 }, () => {
       assert.ok(ev(app, "planted faults").length > 0, `${app} got planted faults`);
     }
     assert.equal(report.maturity.outcome, "blocked", "real results exist, and Level 1 still needs a clean container");
-    assert.match(report.executive.heading, /^Level 0 of 4, not bootable; Level 1 is blocked on this machine$/);
+    assert.equal(report.executive.heading, "Level 1 unproven on this machine: every Level 1 check that ran passed");
     assert.ok(report.components.included.every((c: { level: number; capReasons: { state: string }[] }) => c.level === 0 && c.capReasons.every((x) => x.state === "blocked")), JSON.stringify(report.components.included));
   });
 

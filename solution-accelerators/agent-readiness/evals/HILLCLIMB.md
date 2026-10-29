@@ -277,3 +277,17 @@ The rerun on the brownfield repo at `a8eb1ef` found four of the five fixes worki
 | The evidence log said "ran on host" for steps that never ran | Steps that didn't run say "not run" | `tests/cli.test.ts` "a step that never ran" |
 | "blocked: blocked:", "100%. counting", "1 scripts" | Fixed | `tests/render.test.ts` |
 | The doctor check was npm-only; a future `docs/adr/` was flagged; Dockerfile pins were ignored; the copied skill made the tree dirty | The doctor checks the toolchains in use; a path the docs say comes later isn't drift; the declared image's pins count; the copied skill and `.agent-readiness/` don't make the tree dirty | `tests/units.test.ts` |
+
+## The third field run (October 29, 2026)
+
+The rerun at `46bee96` found buyer-web really running (82 of 82 tests) and all five original findings fixed. These changes close what it found next, each with a regression test:
+
+| Finding | Fix | Test |
+| --- | --- | --- |
+| `replay` crashed with EISDIR on `import '../store'`, and lost every result | Folder imports resolve to their index file, and only regular files are read. A fault-planting error is contained to its component, and `replay` saves the results it has before an error escapes | Fixture `folder-import`; `tests/units.test.ts` "an import of a folder"; `tests/cli.test.ts` "an error while planting faults is contained" |
+| `--no-mutants` wasn't disclosed, and `status` blamed the machine | The fault check reads "planted faults skipped by --no-mutants", and the audit record says no faults were planted | `tests/cli.test.ts` "--no-mutants is disclosed" |
+| Inline-style constants were planted as faults | Styling values (CSS-like keys, `style={{ }}`, JSX presentation props) are skipped | `tests/units.test.ts` "styling constants" |
+| An app whose every Level 1 step passed on the host read "Not bootable" | When every unmet Level 1 condition is blocked, every tier reads "Level 1 unproven on this machine (could be 1)" | `tests/render.test.ts` "an unproven level" |
+| The sample env file signal passed without the variables the code reads | It compares names and lists the missing ones | `tests/units.test.ts` "informational signals" |
+| A sudo start made environment.json "not a working setup" | The command is flagged; the setup still counts | `tests/units.test.ts` "a sudo command in the environment setup" |
+| "blocked: blocked:", "1 items", `ARG NODE_MAJOR`, "(added as decisions are made)", the narration file left at the root, `external-systems` never offered, the scenario refusal's contract wording | Fixed; `scan` prints an `external-systems` hint when the history shows agent work | `tests/units.test.ts`, `tests/cli.test.ts` |

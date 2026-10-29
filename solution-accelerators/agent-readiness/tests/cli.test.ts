@@ -3,6 +3,7 @@ import { execFileSync } from "node:child_process";
 import { readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, test } from "node:test";
+import { detectRuntime } from "../skill/agent-readiness/scripts/lib/container.ts";
 import { saveDraft } from "../skill/agent-readiness/scripts/lib/workspace.ts";
 import { paths } from "../skill/agent-readiness/scripts/lib/workspace.ts";
 import { commitAll, materialize, readiness } from "../tools/fixture.ts";
@@ -29,6 +30,13 @@ describe("CLI", { concurrency: 4 }, () => {
     assert.ok(r.details.record.some((x: { value: string }) => x.value.includes("fresh copy on the host")));
     const status = readFileSync(join(sealedDir(repo), "audit.json"), "utf8");
     assert.match(status, /"where": "fresh_copy"/);
+  });
+
+  test("empty READINESS_IMAGE and READINESS_RUNTIME mean the defaults", { skip: detectRuntime("auto") ? false : "no container runtime" }, () => {
+    const repo = materialize("healthy-node");
+    const r = readiness(repo, ["audit", "--goal", "bug_fixes", "--tier", "local-exec", "--no-mutants"], { READINESS_IMAGE: "", READINESS_RUNTIME: "" });
+    assert.equal(r.code, 0, r.out);
+    assert.doesNotMatch(r.out, /Could not start a container|No container runtime/);
   });
 
   test("a sealed audit refuses further writes", () => {

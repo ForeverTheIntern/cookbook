@@ -180,8 +180,8 @@ async function cmdReplay(a: Args): Promise<void> {
     component: opt(a, "component"),
     mutants: !a.flags["no-mutants"],
     instructions: !a.flags["no-instructions"],
-    runtime: str(a, "runtime", process.env.READINESS_RUNTIME ?? "auto"),
-    image: opt(a, "image") ?? process.env.READINESS_IMAGE,
+    runtime: str(a, "runtime", process.env.READINESS_RUNTIME || "auto"),
+    image: opt(a, "image") ?? (process.env.READINESS_IMAGE || undefined),
     budgetComponentMinutes: Number(str(a, "budget-component", String(rubric.budgets.componentMinutes))),
     budgetTotalMinutes: Number(str(a, "budget-total", String(rubric.budgets.totalMinutes))),
     log,
@@ -307,7 +307,7 @@ function cmdVerify(a: Args): void {
 
 async function cmdRecheck(a: Args): Promise<void> {
   const p = paths(repoOf(a));
-  const r = await recheck(p, { runtime: str(a, "runtime", process.env.READINESS_RUNTIME ?? "auto"), image: opt(a, "image") ?? process.env.READINESS_IMAGE, log });
+  const r = await recheck(p, { runtime: str(a, "runtime", process.env.READINESS_RUNTIME || "auto"), image: opt(a, "image") ?? (process.env.READINESS_IMAGE || undefined), log });
   log(`Recheck ${r.line.id}: ${r.line.result}${r.line.note ? ` (${r.line.note})` : ""}. Repo levels: ${JSON.stringify(r.line.repoLevels)}.`);
   if (r.line.result === "failed") process.exitCode = 1;
 }

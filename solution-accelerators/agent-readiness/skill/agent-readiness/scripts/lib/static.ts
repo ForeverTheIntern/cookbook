@@ -138,8 +138,11 @@ function staticCheckCommand(cmd: string, tree: string, profile: Profile, fileDir
 
 const MACHINE_PATH = /(^|\s|=)(~\/|\$HOME\b|\/Users\/|\/home\/[a-z])/;
 
+const ELEVATED = /(^|[\s;&|(`]|\$\()sudo(\s|$)/;
+
 function categorize(cmd: string): InstructionItem["category"] {
   if (isRisky(cmd)) return "risky";
+  if (ELEVATED.test(cmd)) return "needs_access";
   if (INSTALL.test(cmd)) return "install";
   if (LONG_RUNNING.test(cmd)) return "long_running";
   if (MACHINE_PATH.test(cmd)) return "needs_access";
@@ -181,7 +184,7 @@ export function instructionItems(tree: string, profile: Profile): InstructionIte
         reason = "install commands are checked statically; the clean replay runs the frozen install";
       } else if (category === "risky" || category === "long_running" || category === "needs_access") {
         result = "not_run";
-        reason = category === "risky" ? "not replayed: it deploys, publishes, deletes or pipes the network into a shell" : category === "long_running" ? "not replayed: it starts a long-running process" : "not replayed: it refers to a path on the author's machine";
+        reason = category === "risky" ? "not replayed: it deploys, publishes, deletes or pipes the network into a shell" : category === "long_running" ? "not replayed: it starts a long-running process" : ELEVATED.test(e.text) ? "not replayed: it uses sudo" : "not replayed: it refers to a path on the author's machine";
       } else {
         result = "not_run";
         reason = "waiting for replay";
@@ -221,15 +224,23 @@ export function safetyScan(tree: string, profile: Profile): SafetyFinding[] {
       });
     }
   }
+  const env = profile.environmentJson;
+  for (const [field, cmd] of [["install", env?.install], ["start", env?.start]] as const) {
+    if (cmd && ELEVATED.test(cmd)) add({ kind: "elevated", file: env!.path, detail: `${field} runs sudo (\`${cmd}\`); the audit runs it only inside a container, never on the host`, blocking: false });
+  }
   for (const manifest of profile.manifests.filter((m) => m.endsWith("package.json"))) {
     const pkg = readPackageJson(join(tree, dirname(manifest)));
     for (const [name, cmd] of Object.entries(pkg?.scripts ?? {})) {
       const hook = /^(pre|post)?install$|^prepare$|^prepublish$/.test(name);
+      if (ELEVATED.test(cmd)) add({ kind: "elevated", file: manifest, detail: `scripts.${name} runs sudo; the audit runs it only inside a container, never on the host`, blocking: false });
       if (NETWORK_PIPED.test(cmd)) add({ kind: "network_piped", file: manifest, detail: `scripts.${name} pipes a download into a shell`, blocking: hook });
       else if (hook) add({ kind: "lifecycle_hook", file: manifest, detail: `scripts.${name} runs on every install`, blocking: false });
       if (DESTRUCTIVE.test(cmd)) add({ kind: "destructive", file: manifest, detail: `scripts.${name} deletes data`, blocking: false });
       if (DEPLOY.test(cmd) || /^(deploy|publish|release)/.test(name)) add({ kind: "deploy_publish", file: manifest, detail: `scripts.${name} deploys or publishes`, blocking: false });
     }
+  }
+  for (const file of files.filter((f) => /(^|\/)Makefile$/.test(f) || /^(scripts|\.cursor)\/[^/]+\.sh$/.test(f))) {
+    if (readText(join(tree, file)).split("\n").some((l) => !l.trim().startsWith("#") && ELEVATED.test(l))) add({ kind: "elevated", file, detail: "runs sudo; the audit runs it only inside a container, never on the host", blocking: false });
   }
   for (const file of files.filter((f) => /(^|\/)Makefile$/.test(f) || /^scripts\/.+\.sh$/.test(f))) {
     const text = readText(join(tree, file));

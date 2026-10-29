@@ -30,6 +30,7 @@ export interface Component {
   changeShare: number;
   assessed: boolean;
   notAssessedReason?: string;
+  packageManager?: PackageManager | null;
 }
 
 export interface Profile {
@@ -102,7 +103,7 @@ export interface InstructionItem {
 
 export interface SafetyFinding {
   id: string;
-  kind: "secret" | "lifecycle_hook" | "network_piped" | "destructive" | "deploy_publish" | "credential_needed";
+  kind: "secret" | "lifecycle_hook" | "network_piped" | "destructive" | "deploy_publish" | "credential_needed" | "elevated";
   file: string;
   line?: number;
   detail: string;
@@ -315,6 +316,7 @@ export interface ReportJson {
     couldBeReason: string | null;
     setBy: string[];
     partialCoverage: boolean;
+    assessedComponents: number;
     next: { level: Level; name: string; met: string[]; unmet: string[] } | null;
   };
   executive: {

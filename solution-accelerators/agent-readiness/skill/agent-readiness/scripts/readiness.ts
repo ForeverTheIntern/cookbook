@@ -1,7 +1,7 @@
 import { appendFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { inventory, orgSkillBuilders } from "./lib/assets.ts";
-import { addContractCommand, discoverContract } from "./lib/contract.ts";
+import { addContractCommand, checkComponent, discoverContract } from "./lib/contract.ts";
 import { compareAudits, weakeningFlags } from "./lib/diff.ts";
 import { addEvidence, recordObservation } from "./lib/evidence.ts";
 import { ghAvailable, ghJson } from "./lib/gh.ts";
@@ -132,7 +132,7 @@ function cmdContract(a: Args): void {
       command: str(a, "cmd"),
       source: str(a, "source", "agent"),
       reason: str(a, "reason"),
-    });
+    }, audit.profile);
     saveDraft(p, audit);
     log(`Added ${cmd.id}: ${cmd.command}`);
     return;
@@ -148,11 +148,12 @@ async function cmdRun(a: Args): Promise<void> {
   const rubric = loadRubric(audit.rubric);
   const ex = hostExecutor(local.tree, audit.environment.registryEnv, audit.environment.inheritEnv, "host");
   const registryValues = audit.environment.registryEnv.map((k) => process.env[k] ?? "").filter(Boolean);
+  const component = opt(a, "component");
+  if (component) checkComponent(audit.profile, component);
   if (opt(a, "cmd")) {
-    const cmd = addContractCommand(audit.contract, { kind: str(a, "kind") as CommandKind, component: str(a, "component"), cwd: str(a, "cwd", "."), command: str(a, "cmd"), source: str(a, "source", "agent"), reason: str(a, "reason") });
+    const cmd = addContractCommand(audit.contract, { kind: str(a, "kind") as CommandKind, component: str(a, "component"), cwd: str(a, "cwd", "."), command: str(a, "cmd"), source: str(a, "source", "agent"), reason: str(a, "reason") }, audit.profile);
     log(`Added ${cmd.id} to the contract.`);
   }
-  const component = opt(a, "component");
   const id = opt(a, "id");
   const selected = audit.contract.filter((c) => (id ? c.id === id : true) && (!component || c.component === component || c.component === "*") && c.kind !== "start");
   const comps = new Set(audit.profile.components.filter((c) => c.assessed && (!component || c.id === component)).map((c) => c.id));

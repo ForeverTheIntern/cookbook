@@ -1,0 +1,37 @@
+{
+  "goal": "bug_fixes",
+  "purpose": "Shaped like a brownfield repo: standalone apps under apps/ with no root package or workspace, a .NET service the rubric can't assess, and an environment start command that runs sudo. Both apps must be found and assessed with their own installs, the service listed as not assessed, and sudo flagged.",
+  "runs": [
+    {
+      "name": "default",
+      "level": 1,
+      "levels": {
+        "admin-web": {
+          "first_pr": 2,
+          "bug_fixes": 1,
+          "features": 1
+        },
+        "buyer-web": {
+          "first_pr": 2,
+          "bug_fixes": 2,
+          "features": 2
+        }
+      },
+      "repoLevels": {
+        "first_pr": 2,
+        "bug_fixes": 1,
+        "features": 1,
+        "repo_wide": 1
+      },
+      "top": [
+        "faults:admin-web"
+      ],
+      "startNow": "delegate:bug_fixes:buyer-web",
+      "noBlocker": false,
+      "safety": "pass",
+      "notAssessed": [
+        "services"
+      ]
+    }
+  ]
+}

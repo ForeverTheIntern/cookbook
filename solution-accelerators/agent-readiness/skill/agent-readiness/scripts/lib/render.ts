@@ -3,7 +3,7 @@ import { describeRate, rate, windowLabel } from "./outcomes.ts";
 import { watchFor } from "./roadmap.ts";
 import type { Rubric } from "./rubric.ts";
 import type { CompStates } from "./score.ts";
-import { checkCounts } from "./score.ts";
+import { checkCounts, hostToolMissing } from "./score.ts";
 import type { ActivityId, Asset, Audit, CondId, Component, HistoryLine, Level, OutcomeStats, OutcomesSnapshot, ReportAction, ReportJson, Roadmap, RoadmapItem } from "./types.ts";
 import { fmtDate, fmtShortDate, pct, wordCount } from "./util.ts";
 
@@ -119,11 +119,27 @@ function compLevel(input: RenderInput, id: string, act: ActivityId): LevelResult
   return input.levels.get(id)?.get(act);
 }
 
+// With nothing assessed, every level rule is vacuously met and every count is 0 of 0.
+function noneAssessed(input: RenderInput): boolean {
+  return !input.components.some((c) => c.assessed);
+}
+
+function whyNoneAssessed(input: RenderInput): string[] {
+  const skipped = input.components.filter((c) => !c.assessed).sort((a, b) => b.changeShare - a.changeShare);
+  if (skipped.length === 0) return ["the audit found no package it supports"];
+  const detailed = list(skipped.map((c) => `${c.id} (${pct(c.changeShare, 1)}% of changes) because ${c.notAssessedReason ?? "it isn't supported"}`));
+  return [detailed, `${skipped.length} ${skipped.length === 1 ? "component uses a toolchain" : "components use toolchains"} this rubric doesn't support`];
+}
+
 function headlineFor(input: RenderInput, ready: string[], setByShare: number): string {
   const { goalLevel, rubric, goal } = input;
   const top = input.top;
   const label = goalLabel(rubric, goal);
   const active = [...input.active];
+  if (noneAssessed(input)) {
+    const fit = (...c: string[]) => c.find((x) => wordCount(x) <= rubric.part1.maxHeadlineWords) ?? c[c.length - 1];
+    return fit(...whyNoneAssessed(input).map((why) => `No component could be assessed for ${label}, so this audit can't give a level yet: it skipped ${why}.`), `No component could be assessed for ${label}, so this audit can't give a level yet.`);
+  }
   if (unproven(input)) {
     const where = active.length <= 3 ? list(active) : `all ${active.length} active components`;
     const readOnly = input.audit.tier === "read-only";
@@ -219,9 +235,18 @@ function stats3(input: RenderInput): ReportJson["executive"]["numbers"] {
   const o = audit.outcomes;
   const ciValue = o ? describeRate(rate(o.agent.firstTimeCiPass, o.agent.firstTimeCiKnown, rubric, windowLabel(o))) : "not measured";
   const ciComparison = o ? `${describeRate(rate(o.control.firstTimeCiPass, o.control.firstTimeCiKnown, rubric, windowLabel(o)))}, ${windowLabel(o)}` : "";
+  const ci = { label: "Agent PRs that pass CI the first time", value: ciValue, comparison: o ? `Other PRs: ${ciComparison}` : "The audit needs read access to pull requests to compare agent PRs with other PRs" };
+  if (noneAssessed(input)) {
+    const found = input.components.length;
+    return [
+      { label: `Components ready for ${label}`, value: "none assessed", comparison: `${found} ${found === 1 ? "component" : "components"} found, none of them assessable by this rubric` },
+      ci,
+      { label: "Recent changes this audit couldn't assess", value: `${pct(input.partial.unassessedShare, 1)}%`, comparison: `counting the last ${days} days; a level needs at least one assessed component` },
+    ];
+  }
   return [
     { label: `Components ready for ${label}`, value: `${ready} of ${activeIds.length}`, comparison: readyComparison },
-    { label: "Agent PRs that pass CI the first time", value: ciValue, comparison: o ? `Other PRs: ${ciComparison}` : "The audit needs read access to pull requests to compare agent PRs with other PRs" },
+    ci,
     { label: `Recent changes in components below Level ${nextLevel}`, value: `${pct(below, 1)}%`, comparison: belowComparison },
   ];
 }
@@ -231,6 +256,7 @@ function nextLine(input: RenderInput): string {
   const L = goalLevel.level;
   if (L >= 4) return "This is the top of the scale. Keep the weekly recheck running.";
   const next = rubric.scale[L + 1];
+  if (noneAssessed(input)) return `Next: Level ${L + 1}, ${next.plain}, once a component can be assessed. No condition has been checked yet.`;
   if (L >= 2) return `Next: Level ${L + 1}, ${next.plain}. It needs outcome targets your team sets and agent PRs that meet them${goalLevel.outcomeReasons.length ? `: ${goalLevel.outcomeReasons[0]}` : ""}.`;
   const conds = L === 0 ? rubric.level1 : rubric.activities.find((a) => a.id === goal)!.level2;
   const met: string[] = [];
@@ -255,6 +281,12 @@ function coverageLine(input: RenderInput): string {
   const low = assessed.filter((c) => !input.active.has(c.id));
   if (low.length) line += ` ${list(low.map((c) => c.id))} ${low.length > 1 ? "get" : "gets"} under 10% of changes, so ${low.length > 1 ? "they don't" : "it doesn't"} set the repo level.`;
   if (input.partial.partial) line += ` Partial coverage: ${pct(input.partial.unassessedShare, 1)}% of changes aren't assessed.`;
+  if (audit.tier !== "read-only" && !audit.environment.containerRuntime && audit.evidence.some((e) => e.where === "fresh_copy")) {
+    const declared = audit.profile?.environmentJson?.build?.dockerfile;
+    const missing = [...new Set(audit.evidence.filter(hostToolMissing).map((e) => e.diagnosis!.detail))];
+    line += ` Level 1 isn't provable on this machine: it has no container runtime, so setup ran in a fresh copy on the host${declared ? ` and the repo's declared environment image (.cursor/${declared}) couldn't be built` : ""}.`;
+    if (missing.length) line += ` On this machine ${list(missing)}, an environment limit rather than a repo defect.`;
+  }
   const f = audit.outcomes?.filter;
   line += f ? ` Agent PRs are matched by ${describeFilter(f)}.` : " Agent PRs weren't measured.";
   return line;
@@ -335,14 +367,18 @@ export function buildReport(input: RenderInput): ReportJson {
   const gaps = top.map((t, i) => ({ rank: i + 1, text: (narr.gaps?.[t.id] ?? gapText(t)).trim().replace(/\.+$/, ""), blocks: blocksText(t), itemId: t.id }));
   const first = top[0];
   const lower = (s: string) => s.charAt(0).toLowerCase() + s.slice(1);
-  const defaultAsk = unproven(input)
+  const skippedIds = input.components.filter((c) => !c.assessed).map((c) => c.id);
+  const defaultAsk = noneAssessed(input)
+    ? `Decision needed: which component this audit should cover${skippedIds.length ? `, since it can't assess ${list(skippedIds)}` : ", since it found none it supports"}.`
+    : unproven(input)
     ? `Decision needed: where to rerun this audit so it can prove Level ${L + 1}, for example a CI job.`
     : first?.decision
       ? `Decision needed: ${lower(first.decision)}.`
       : noBlocker
         ? `Decision needed: which ${label} go to agents first.`
         : `Approve the agent's fix for "${gapText(first)}".`;
-  let ask = narr.ask ?? defaultAsk;
+  let ask = (narr.ask ?? defaultAsk).trim();
+  if (!/[.!?]$/.test(ask)) ask += ".";
   if (!roadmap.owner && !/\bowner\b/i.test(ask)) ask += " Also name an owner for agent readiness.";
   const actions: ReportAction[] = top.map((t, i) => action(t, i + 1, rubric, roadmap, false, audit.outcomes));
   if (startNow) actions.push(action(startNow, actions.length + 1, rubric, roadmap, true, audit.outcomes));
@@ -408,10 +444,11 @@ export function buildReport(input: RenderInput): ReportJson {
       couldBeReason: input.goalLevel.couldBe !== null ? "a check that would decide it couldn't run here" : null,
       setBy: input.goalLevel.setBy,
       partialCoverage: input.partial.partial,
+      assessedComponents: input.components.filter((c) => c.assessed).length,
       next: L < 4 ? { level: (L + 1) as Level, name: rubric.scale[L + 1].name, met: [], unmet: [] } : null,
     },
     executive: {
-      heading: `Level ${L} of 4, ${rubric.scale[L].plain}, for ${label}`,
+      heading: noneAssessed(input) ? `Not assessed for ${label}: no component could be assessed` : `Level ${L} of 4, ${rubric.scale[L].plain}, for ${label}`,
       headline: narr.headline ?? headlineFor(input, ready, setByShare),
       numbers: stats3(input),
       nextLine: nextLine(input),
@@ -560,7 +597,8 @@ function levelWord(rubric: Rubric, l: number): string {
 }
 
 export function scaleLine(r: ReportJson): string {
-  return r.scale.map((s) => (s.level === r.maturity.level ? `[Level ${s.level} ${s.name}]` : `Level ${s.level} ${s.name}`)).join(" > ");
+  const here = r.maturity.assessedComponents === 0 ? null : r.maturity.level;
+  return r.scale.map((s) => (s.level === here ? `[Level ${s.level} ${s.name}]` : `Level ${s.level} ${s.name}`)).join(" > ");
 }
 
 export function renderMarkdown(r: ReportJson, rubric: Rubric): string {
@@ -590,7 +628,7 @@ export function renderMarkdown(r: ReportJson, rubric: Rubric): string {
     if (a.dependsOn.length) out.push(`- **Depends on:** ${list(a.dependsOn)}`);
     out.push(`- **Done when:** ${a.doneWhen}`, "");
   }
-  if (r.actions.length === 0) out.push("No actions are open.", "");
+  if (r.actions.length === 0) out.push(r.maturity.assessedComponents === 0 ? "No actions can be planned yet: no component could be assessed, so nothing was checked. Part 1 says why." : "No actions are open.", "");
   out.push("## 3. Where you are on the roadmap", "", `${r.roadmap.doneCount} of ${r.roadmap.total} steps done. Kept in \`.agent-readiness/roadmap.json\`.${r.roadmap.owner ? ` Owner: ${r.roadmap.owner}.` : ""}`, "");
   for (const i of r.roadmap.items) out.push(`- [${i.status === "done" ? "x" : " "}] ${i.order}. ${i.title}: unlocks ${i.unlocks} (${i.statusText})`);
   out.push("");
@@ -622,7 +660,8 @@ export function renderMarkdown(r: ReportJson, rubric: Rubric): string {
   for (const c of r.details.levels.components) {
     out.push(`| \`${c.id}\`${c.active ? "" : " (under 10%)"} | ${Math.round(c.changeShare * 100)}% | ${r.details.levels.activities.filter((a) => a.id !== "repo_wide").map((a) => levelWord(rubric, c.levels[a.id] ?? 0) + (c.couldBe[a.id] !== undefined ? ` (could be ${c.couldBe[a.id]})` : "")).join(" | ")} |`);
   }
-  out.push("", `Repo levels: ${r.details.levels.activities.map((a) => `${a.label} ${r.details.levels.repoLevels[a.id] ?? 0}`).join(", ")}. The repo level is ${r.details.levels.repoLevelRule}.`, "");
+  if (r.details.levels.components.length === 0) out.push("", "No component could be assessed, so there are no levels to show.", "");
+  else out.push("", `Repo levels: ${r.details.levels.activities.map((a) => `${a.label} ${r.details.levels.repoLevels[a.id] ?? 0}`).join(", ")}. The repo level is ${r.details.levels.repoLevelRule}.`, "");
   for (const a of r.details.levels.activities) out.push(`- **${a.label}:** ${a.bar}.`);
   for (const u of r.details.levels.unassessed) out.push(`- \`${u.id}\` (${Math.round(u.changeShare * 100)}% of changes) is not assessed: ${u.reason}.`);
   out.push("");

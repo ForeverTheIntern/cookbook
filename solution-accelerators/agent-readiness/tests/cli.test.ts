@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, test } from "node:test";
 import { detectRuntime } from "../skill/agent-readiness/scripts/lib/container.ts";
@@ -37,6 +37,39 @@ describe("CLI", { concurrency: 4 }, () => {
     const r = readiness(repo, ["audit", "--goal", "bug_fixes", "--tier", "local-exec", "--no-mutants"], { READINESS_IMAGE: "", READINESS_RUNTIME: "" });
     assert.equal(r.code, 0, r.out);
     assert.doesNotMatch(r.out, /Could not start a container|No container runtime/);
+  });
+
+  test("contract add and run refuse components the scan didn't find or can't assess", () => {
+    const repo = materialize("nested-apps-dotnet");
+    assert.equal(readiness(repo, ["init", "--goal", "bug_fixes", "--tier", "local-exec"]).code, 0);
+    assert.equal(readiness(repo, ["scan"]).code, 0);
+    const add = (component: string) => readiness(repo, ["contract", "add", "--kind", "typecheck", "--component", component, "--cmd", "npm run lint", "--source", "agent", "--reason", "the documented check"]);
+    const unknown = add("storefront");
+    assert.notEqual(unknown.code, 0);
+    assert.match(unknown.out, /No component named storefront\. Use \* for a repo-wide command or one of: admin-web, buyer-web\./);
+    const skipped = add("services");
+    assert.notEqual(skipped.code, 0);
+    assert.match(skipped.out, /services isn't assessed \(\.NET isn't supported by this rubric\), so replay wouldn't run its commands/);
+    assert.equal(add("buyer-web").code, 0);
+    const run = readiness(repo, ["run", "--component", "storefront"]);
+    assert.notEqual(run.code, 0);
+    assert.match(run.out, /No component named storefront/);
+  });
+
+  test("on a host fallback, a missing tool is an environment limit and part 1 says Level 1 isn't provable", () => {
+    const repo = materialize("healthy-node");
+    mkdirSync(join(repo, ".cursor"));
+    writeFileSync(join(repo, ".cursor/environment.json"), JSON.stringify({ install: "readiness-test-missing-toolchain restore && npm ci" }));
+    commitAll(repo, "Declare the install");
+    const r = readiness(repo, ["audit", "--goal", "bug_fixes", "--tier", "local-exec", "--runtime", "none", "--no-mutants"]);
+    assert.equal(r.code, 0, r.out);
+    const report = JSON.parse(readFileSync(join(repo, ".agent-readiness/latest/report.json"), "utf8"));
+    assert.equal(report.maturity.level, 0);
+    assert.equal(report.maturity.couldBe, 1);
+    assert.ok(!report.actions.some((a: { itemId: string }) => a.itemId.startsWith("clean.install")), "no install fix is offered for a limit of this machine");
+    assert.match(report.executive.headline, /^Level 1 couldn't be proved for healthy-node because this machine has no container runtime/);
+    assert.match(report.executive.coverage, /Level 1 isn't provable on this machine: it has no container runtime, so setup ran in a fresh copy on the host\./);
+    assert.match(report.executive.coverage, /On this machine readiness-test-missing-toolchain is not installed, an environment limit rather than a repo defect\./);
   });
 
   test("a sealed audit refuses further writes", () => {

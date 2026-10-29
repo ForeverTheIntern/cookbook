@@ -23,6 +23,9 @@ export interface Executor {
   close(): void;
 }
 
+export const SUDO = /(^|[\s;&|(`]|\$\()sudo(\s|$)/;
+export const SUDO_REFUSED = "not run on the host: it uses sudo, which the audit only runs inside a container";
+
 export function hostExecutor(root: string, registryEnv: string[], inheritEnv: boolean, where: Where = "fresh_copy"): Executor {
   const env = scrubbedEnv({ registryEnv, inheritEnv });
   return {
@@ -30,7 +33,7 @@ export function hostExecutor(root: string, registryEnv: string[], inheritEnv: bo
     strength: "executed",
     image: null,
     root,
-    exec: (command, cwd, timeoutSec) => runCommand(command, join(root, cwd), env, timeoutSec),
+    exec: (command, cwd, timeoutSec) => (SUDO.test(command) ? Promise.resolve({ exitCode: null, timedOut: false, durationMs: 0, output: `readiness: ${SUDO_REFUSED}` }) : runCommand(command, join(root, cwd), env, timeoutSec)),
     offline: () => false,
     close: () => {},
   };
@@ -100,20 +103,25 @@ export async function runContract(
   const order: CommandKind[] = ["doctor", "install", "build", "start"];
   const online = contract.filter((c) => order.includes(c.kind) && wanted(c)).sort((a, b) => order.indexOf(a.kind) - order.indexOf(b.kind));
   const offlineCmds = contract.filter((c) => !order.includes(c.kind) && wanted(c));
-  let installFailed = false;
+  const failedInstalls = new Set<string>();
   const run = async (cmd: ContractCommand) => {
     if (overBudget(opts.budget, cmd.component)) {
       push({ cmd, status: "not_run", outcome: null, diagnosis: null, note: "cut off by the time budget" });
       return;
     }
-    if (installFailed && cmd.kind !== "doctor") {
+    if (cmd.kind !== "doctor" && (failedInstalls.has("*") || failedInstalls.has(cmd.component))) {
       push({ cmd, status: "not_run", outcome: null, diagnosis: null, note: "not run because the install failed" });
+      return;
+    }
+    if (ex.where !== "container" && SUDO.test(cmd.command)) {
+      if (cmd.kind === "install") failedInstalls.add(cmd.component);
+      push({ cmd, status: "not_run", outcome: null, diagnosis: null, note: SUDO_REFUSED });
       return;
     }
     const out = await ex.exec(cmd.command, cmd.cwd, cmd.timeoutSec);
     charge(opts.budget, cmd.component, out.durationMs);
     const ok = out.exitCode === 0 && !out.timedOut;
-    if (!ok && cmd.kind === "install") installFailed = true;
+    if (!ok && cmd.kind === "install") failedInstalls.add(cmd.component);
     push({ cmd, status: ok ? "pass" : "fail", outcome: out, diagnosis: ok ? null : diagnose(out.output, out.timedOut, cmd.kind), note: "" });
   };
   for (const cmd of online) await run(cmd);
@@ -166,7 +174,7 @@ export interface ReplayOptions {
   log: (line: string) => void;
 }
 
-function lockfileEvidence(audit: Audit, ex: Executor, profile: Profile, copyDir: string, before: Map<string, string>, installCmd: ContractCommand | undefined): void {
+function lockfileEvidence(audit: Audit, ex: Executor, profile: Profile, copyDir: string, before: Map<string, string>, installCmds: ContractCommand[]): void {
   const pm = profile.packageManager;
   let result: "pass" | "fail" = "pass";
   let summary = "frozen install reproduced the lockfile";
@@ -184,7 +192,7 @@ function lockfileEvidence(audit: Audit, ex: Executor, profile: Profile, copyDir:
   } else if (profile.lockfiles.length === 0) {
     result = "fail";
     summary = "no lockfile is committed";
-  } else if (installCmd && !/(\bci\b|--frozen|--immutable|--frozen-lockfile)/.test(installCmd.command) && installCmd.source === "readiness") {
+  } else if (installCmds.some((c) => c.source === "readiness" && !/(\bci\b|--frozen|--immutable|--frozen-lockfile)/.test(c.command))) {
     result = "fail";
     summary = "the install isn't frozen";
   } else {
@@ -322,8 +330,9 @@ export async function replay(audit: Audit, repo: string, tree: string, rubric: R
         audit.safety.push({ id: `saf-${String(audit.safety.length + 1).padStart(3, "0")}`, kind: "credential_needed", file: ev.id, detail: `tests ${r.diagnosis.detail}`, blocking: true });
       }
     }
-    const install = results.find((r) => r.cmd.kind === "install");
-    if (install?.status === "pass") lockfileEvidence(audit, ex, profile, copyDir, before, install.cmd);
+    const installs = results.filter((r) => r.cmd.kind === "install");
+    const installed = installs.length > 0 && installs.every((r) => r.status === "pass");
+    if (installed) lockfileEvidence(audit, ex, profile, copyDir, before, installs.map((r) => r.cmd));
     if (opts.mutants) {
       for (const comp of components) {
         const testRes = results.find((r) => r.cmd.kind === "test" && r.cmd.component === comp);
@@ -346,7 +355,7 @@ export async function replay(audit: Audit, repo: string, tree: string, rubric: R
     }
     if (opts.instructions) {
       for (const item of audit.instructions.filter((i) => i.category === "replay" && i.staticResult === "pass")) {
-        if (install?.status !== "pass") {
+        if (!installed) {
           item.result = "not_run";
           item.reason = "not replayed because the install failed";
           continue;

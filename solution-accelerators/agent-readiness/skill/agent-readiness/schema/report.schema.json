@@ -43,7 +43,8 @@
         "level": { "$ref": "#/$defs/level" },
         "couldBe": { "anyOf": [{ "$ref": "#/$defs/level" }, { "type": "null" }] },
         "setBy": { "type": "array", "items": { "type": "string" } },
-        "partialCoverage": { "type": "boolean" }
+        "partialCoverage": { "type": "boolean" },
+        "assessedComponents": { "type": "integer", "minimum": 0 }
       }
     },
     "executive": {

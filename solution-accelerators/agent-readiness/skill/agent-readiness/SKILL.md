@@ -39,7 +39,7 @@ For a private registry, ask for the variable names (never values) and pass `--re
 ## 2. Preflight
 
 1. `git status --short`. Uncommitted changes aren't audited: the audit reads `git archive HEAD`. Say so if the tree is dirty.
-2. `docker info` (or `podman info`). With no container runtime, tell the user up front that Level 1 can't be proved on this machine. It's an environment limit, not a repo gap, and the scheduled CI recheck can prove it.
+2. `docker info` (or `podman info`). With no container runtime, tell the user up front that Level 1 can't be proved on this machine. It's an environment limit, not a repo gap, and the scheduled CI recheck can prove it. The fallback runs on the host, so a tool this machine lacks (for example a .NET SDK the repo's own image installs) is reported as a limit of this machine, and commands that use `sudo` are never run there.
 3. `readiness init --goal <goal> --tier <tier>`. If a draft is already open from an earlier attempt, add `--force`.
 
 ## 3. Profile, agent assets and static checks
@@ -52,6 +52,7 @@ For a private registry, ask for the variable names (never values) and pass `--re
    ```
 
    Add commands the repo documents or CI runs. Never add a command to make a check pass, and never remove one the scan found.
+   `--component` must be `*` or a component the scan assessed; `contract add` refuses any other, because replay would never run it. `--source` is `agent` or a `file:line`.
 3. Add only commands the repo defines: a script in the manifest, a Make target, or a step CI runs. A documented command with nothing behind it, such as `npm run typecheck` with no `typecheck` script, is a wrong instruction, not a missing command. `readiness status` lists these under "Wrong instructions", and the audit already counts them against the instructions. Leave them out of the contract and mention them in your summary.
 4. `readiness contract list` to confirm.
 
@@ -75,7 +76,7 @@ For a private registry, ask for the variable names (never values) and pass `--re
    { "headline": "...", "ask": "...", "gaps": { "clean.test:api": "..." } }
    ```
 
-   - **Headline:** one message in at most 40 words for an engineering director. Name the component that sets the level and say why in plain words, from the failing condition's reason in `readiness status`: what failed and what it needs, for example "its tests need a Postgres database the setup doesn't start". Then say what already works, in that component (it installs, builds, its tests catch planted bugs) and in any component already at Level 2. When nothing blocks the activity, name the component, say what the audit proved, and recommend starting to delegate. Keep to the activity you audited; other activities' levels belong in the report, not the headline. The heading already shows the level, so don't restate it, and with a single component leave out its share of changes, which is always 100%.
+   - **Headline:** one message in at most 40 words for an engineering director. Name the component that sets the level and say why in plain words, from the failing condition's reason in `readiness status`: what failed and what it needs, for example "its tests need a Postgres database the setup doesn't start". Then say what already works, in that component (it installs, builds, its tests catch planted bugs) and in any component already at Level 2. When nothing blocks the activity, name the component, say what the audit proved, and recommend starting to delegate. Keep to the activity you audited; other activities' levels belong in the report, not the headline. The heading already shows the level, so don't restate it, and with a single component leave out its share of changes, which is always 100%. When no component could be assessed, say that, name what was skipped and why, and give no level.
    - **Ask:** the one decision that unblocks the top gap, naming the change to approve, for example "approve adding a Postgres service to the agent setup for api". The report adds "name an owner" when none is recorded, so leave it out.
    - **Gaps** (optional): one plain line per top item, keyed `<condition>:<component>` as in the example.
 

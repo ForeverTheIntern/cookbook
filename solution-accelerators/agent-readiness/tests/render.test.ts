@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, test } from "node:test";
 import { computeOutcomes, describeRate, rate } from "../skill/agent-readiness/scripts/lib/outcomes.ts";
-import { allowedNumbers, danglingEvidence, renderMarkdown, validatePart1 } from "../skill/agent-readiness/scripts/lib/render.ts";
+import { allowedNumbers, danglingEvidence, renderMarkdown, scaleLine, validatePart1 } from "../skill/agent-readiness/scripts/lib/render.ts";
 import { loadRubric } from "../skill/agent-readiness/scripts/lib/rubric.ts";
 import { sealStatusFor } from "../skill/agent-readiness/scripts/lib/seal.ts";
 import { skillDigest } from "../skill/agent-readiness/scripts/lib/workspace.ts";
@@ -194,6 +194,23 @@ describe("part 1 rules", () => {
     assert.match(unpinned, /Not yet: toolchain versions are pinned/);
     const repoWide = reportFor(makeAudit({ goal: "repo_wide", toolchainPinned: false, components: [{ id: "app", share: 1, faults: "pass" }] })).executive.numbers[0];
     assert.equal(repoWide.value, "0 of 1");
+  });
+
+  test("with no assessable component, part 1 says so instead of Met, 0 of 0 or no open actions", () => {
+    const r = reportFor(makeAudit({ components: [{ id: "services", share: 1, assessed: false }] }));
+    const ex = r.executive;
+    assert.equal(r.maturity.assessedComponents, 0);
+    assert.equal(ex.heading, "Not assessed for bug fixes: no component could be assessed");
+    assert.equal(ex.headline, "No component could be assessed for bug fixes, so this audit can't give a level yet: it skipped services (100% of changes) because Terraform isn't supported by this rubric.");
+    assert.equal(ex.nextLine, "Next: Level 1, bootable, once a component can be assessed. No condition has been checked yet.");
+    assert.deepEqual(ex.numbers.map((n) => n.value), ["none assessed", "not measured", "100%"]);
+    assert.doesNotMatch(JSON.stringify(ex), /Met:|0 of 0/);
+    assert.match(ex.ask, /^Decision needed: which component this audit should cover, since it can't assess services\./);
+    assert.doesNotMatch(scaleLine(r), /\[/);
+    const md = renderMarkdown(r, rubric);
+    assert.match(md, /No actions can be planned yet: no component could be assessed/);
+    assert.doesNotMatch(md, /No actions are open/);
+    assert.deepEqual(validatePart1(r, rubric, null), []);
   });
 
   test("activity labels keep their acronyms", () => {

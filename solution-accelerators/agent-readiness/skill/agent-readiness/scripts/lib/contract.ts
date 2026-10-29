@@ -14,11 +14,11 @@ const SCRIPT_ALIASES: Record<"build" | "lint" | "typecheck" | "test", string[]> 
   test: ["test"],
 };
 
-function frozenInstall(profile: Profile, tree: string, ignoreScripts: boolean): { command: string; reason: string } {
+function frozenInstall(pm: Profile["packageManager"], dir: string, ignoreScripts: boolean): { command: string; reason: string } {
   const flag = ignoreScripts ? " --ignore-scripts" : "";
-  switch (profile.packageManager) {
+  switch (pm) {
     case "npm":
-      return exists(join(tree, "package-lock.json"))
+      return exists(join(dir, "package-lock.json"))
         ? { command: `npm ci${flag}`, reason: "frozen install from package-lock.json" }
         : { command: `npm install${flag}`, reason: "no lockfile, so the install can't be frozen" };
     case "pnpm":
@@ -30,7 +30,7 @@ function frozenInstall(profile: Profile, tree: string, ignoreScripts: boolean): 
     case "poetry":
       return { command: "poetry install --no-interaction --sync", reason: "install from poetry.lock" };
     case "pip": {
-      const req = exists(join(tree, "requirements.txt")) ? " -r requirements.txt" : exists(join(tree, "pyproject.toml")) ? " -e ." : "";
+      const req = exists(join(dir, "requirements.txt")) ? " -r requirements.txt" : exists(join(dir, "pyproject.toml")) ? " -e ." : "";
       return { command: `python3 -m venv ${VENV} && ${VENV}/bin/pip install -q --disable-pip-version-check${req}`, reason: "virtualenv install from requirements" };
     }
     default:
@@ -63,11 +63,19 @@ export function discoverContract(profile: Profile, tree: string, rubric: Rubric,
   const isPy = pm === "pip" || pm === "uv" || pm === "poetry";
   cmds.push({ id: "cmd-repo-doctor", kind: "doctor", component: "*", cwd: ".", command: isPy ? "python3 --version" : pm && pm !== "npm" ? `node --version && corepack ${pm} --version` : "node --version && npm --version", source: "readiness", reason: "toolchain present", timeoutSec: 60 });
   const ignoreScripts = hasNetworkPipedHook(safety);
+  const hookNote = ignoreScripts ? "; install hooks skipped because one pipes the network into a shell" : "";
   if (profile.environmentJson?.install) {
     cmds.push({ id: "cmd-repo-install", kind: "install", component: "*", cwd: ".", command: profile.environmentJson.install, source: ".cursor/environment.json install", reason: "the repo's declared install", timeoutSec: timeout });
   } else {
-    const install = frozenInstall(profile, tree, ignoreScripts);
-    cmds.push({ id: "cmd-repo-install", kind: "install", component: "*", cwd: ".", command: install.command, source: "readiness", reason: install.reason + (ignoreScripts ? "; install hooks skipped because one pipes the network into a shell" : ""), timeoutSec: timeout });
+    const standalone = profile.components.filter((c) => c.assessed && c.packageManager && c.path !== ".");
+    if (pm || standalone.length === 0) {
+      const install = frozenInstall(pm, tree, ignoreScripts);
+      cmds.push({ id: "cmd-repo-install", kind: "install", component: "*", cwd: ".", command: install.command, source: "readiness", reason: install.reason + hookNote, timeoutSec: timeout });
+    }
+    for (const c of standalone) {
+      const install = frozenInstall(c.packageManager ?? null, join(tree, c.path), ignoreScripts);
+      cmds.push({ id: `cmd-${c.id}-install`, kind: "install", component: c.id, cwd: c.path, command: install.command, source: "readiness", reason: `${install.reason} in ${c.path}${hookNote}`, timeoutSec: timeout });
+    }
   }
   if (profile.environmentJson?.start) {
     cmds.push({ id: "cmd-repo-start", kind: "start", component: "*", cwd: ".", command: profile.environmentJson.start, source: ".cursor/environment.json start", reason: "the repo's declared services", timeoutSec: 180 });
@@ -81,13 +89,25 @@ export function discoverContract(profile: Profile, tree: string, rubric: Rubric,
     for (const kind of ["build", "lint", "typecheck", "test"] as const) {
       const script = SCRIPT_ALIASES[kind].find((s) => c.scripts[s] && !(kind === "test" && PLACEHOLDER_TEST.test(c.scripts[s])));
       if (!script) continue;
-      cmds.push({ id: `cmd-${c.id}-${kind}`, kind, component: c.id, cwd: c.path, command: runScript(pm, script), source: `${c.manifest} scripts.${script}`, reason: `discovered ${kind} script`, timeoutSec: timeout });
+      cmds.push({ id: `cmd-${c.id}-${kind}`, kind, component: c.id, cwd: c.path, command: runScript(c.packageManager ?? pm, script), source: `${c.manifest} scripts.${script}`, reason: `discovered ${kind} script`, timeoutSec: timeout });
     }
   }
   return cmds;
 }
 
-export function addContractCommand(cmds: ContractCommand[], input: { kind: CommandKind; component: string; cwd: string; command: string; source: string; reason: string; timeoutSec?: number }): ContractCommand {
+// Replay runs only commands for "*" and assessed components, so anything else would be dropped silently.
+export function checkComponent(profile: Profile | null, component: string): void {
+  if (!profile) fail("Run `readiness scan` first: commands are added to the components it found.");
+  if (component === "*") return;
+  const c = profile.components.find((x) => x.id === component);
+  const assessed = profile.components.filter((x) => x.assessed).map((x) => x.id);
+  const choices = `Use * for a repo-wide command${assessed.length ? ` or one of: ${assessed.join(", ")}` : ""}.`;
+  if (!c) fail(`No component named ${component}. ${choices}`);
+  if (!c.assessed) fail(`${component} isn't assessed (${c.notAssessedReason ?? "not supported"}), so replay wouldn't run its commands. ${choices}`);
+}
+
+export function addContractCommand(cmds: ContractCommand[], input: { kind: CommandKind; component: string; cwd: string; command: string; source: string; reason: string; timeoutSec?: number }, profile: Profile | null): ContractCommand {
+  checkComponent(profile, input.component);
   if (!input.reason.trim()) fail("contract add needs --reason");
   if (!/^(agent|[^:]+:\d+|readiness|[^\s]+ scripts\.[\w:-]+)$/.test(input.source)) fail("--source must be `agent` or a file:line where the command was found");
   const base = `cmd-${input.component === "*" ? "repo" : input.component}-${input.kind}`;
@@ -105,18 +125,23 @@ export function containerImage(profile: Profile, tree: string): string {
     const pv = exists(join(tree, ".python-version")) ? readText(join(tree, ".python-version")).trim().match(/^(\d+\.\d+)/)?.[1] : null;
     return `python:${pv ?? "3.12"}-slim`;
   }
+  const standalone = profile.components.filter((c) => c.packageManager && c.path !== ".");
+  if (!profile.packageManager && standalone.length > 0 && standalone.every((c) => c.language === "py")) return "python:3.12-slim";
   let major: string | null = null;
-  for (const f of [".nvmrc", ".node-version"]) {
-    if (exists(join(tree, f))) major = readText(join(tree, f)).trim().replace(/^v/, "").match(/^(\d+)/)?.[1] ?? null;
-    if (major) break;
-  }
-  if (!major && exists(join(tree, "package.json"))) {
-    try {
-      const engines = (JSON.parse(readText(join(tree, "package.json"))) as { engines?: { node?: string } }).engines?.node ?? "";
-      major = engines.match(/(\d+)/)?.[1] ?? null;
-    } catch {
-      major = null;
+  for (const dir of [".", ...standalone.filter((c) => c.language !== "py").map((c) => c.path)]) {
+    for (const f of [".nvmrc", ".node-version"]) {
+      if (exists(join(tree, dir, f))) major = readText(join(tree, dir, f)).trim().replace(/^v/, "").match(/^(\d+)/)?.[1] ?? null;
+      if (major) break;
     }
+    if (!major && exists(join(tree, dir, "package.json"))) {
+      try {
+        const engines = (JSON.parse(readText(join(tree, dir, "package.json"))) as { engines?: { node?: string } }).engines?.node ?? "";
+        major = engines.match(/(\d+)/)?.[1] ?? null;
+      } catch {
+        major = null;
+      }
+    }
+    if (major) break;
   }
   return `node:${major ?? "22"}-bookworm-slim`;
 }

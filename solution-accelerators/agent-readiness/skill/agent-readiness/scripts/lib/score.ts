@@ -22,8 +22,15 @@ function needsContainer(rubric: Rubric, check: string): boolean {
   return c?.minStrengthForPass === "clean_replay";
 }
 
+// A host fallback runs on whatever this machine has installed. A missing tool there is an
+// environment limit: only a clean container from the repo's own setup can show a repo defect.
+export function hostToolMissing(ev: Evidence): boolean {
+  return ev.result === "fail" && ev.where !== "container" && ev.where !== "static" && ev.diagnosis?.cause === "missing_tool";
+}
+
 function fromEvidence(rubric: Rubric, ev: Evidence | undefined, check: string, missingReason: string): CondDetail {
   if (!ev) return { state: "unknown", reason: missingReason, evidence: [] };
+  if (hostToolMissing(ev)) return { state: "unknown", reason: `${ev.diagnosis!.detail} on this machine, an environment limit rather than a repo defect; Level 1 needs a clean container`, evidence: [ev.id] };
   if (ev.result === "fail") return { state: "not_met", reason: ev.summary, evidence: [ev.id] };
   if (ev.result === "not_run") return { state: "unknown", reason: ev.summary, evidence: [ev.id] };
   const min = rubric.checks.find((c) => c.id === check)?.minStrengthForPass ?? "executed";
@@ -37,7 +44,9 @@ export function componentStates(audit: Audit, rubric: Rubric, componentId: strin
   const evs = audit.evidence;
   const contract = audit.contract;
   const states = {} as CompStates;
-  const install = latest(evs.filter((e) => e.kind === "install"));
+  const repoInstall = latest(evs.filter((e) => e.kind === "install" && (e.component === "*" || !e.component)));
+  const ownInstall = latest(evs.filter((e) => e.kind === "install" && e.component === componentId));
+  const install = ownInstall && !(repoInstall && repoInstall.result !== "pass") ? ownInstall : (repoInstall ?? ownInstall);
   states["clean.install"] = fromEvidence(rubric, install, "bootstrap.cold_replay", "the clean install hasn't run");
   const hasBuild = contract.some((c) => c.component === componentId && c.kind === "build");
   if (!hasBuild) {

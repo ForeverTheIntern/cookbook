@@ -98,6 +98,29 @@ function sanitizeId(name: string): string {
   return name.replace(/^@[^/]+\//, "").replace(/[^A-Za-z0-9._-]/g, "-") || "root";
 }
 
+const NODE_LOCKFILES = ["package-lock.json", "pnpm-lock.yaml", "yarn.lock"];
+const PY_LOCKFILES = ["uv.lock", "poetry.lock"];
+const SKIP_SEGMENT = /^(\.|node_modules$|fixtures?$|__fixtures__$|testdata$|vendor$|dist$|build$)/;
+
+// Packages outside any workspace, such as apps/web next to a .NET services/ folder.
+// With a root package, only nested packages that pin their own lockfile count.
+function standalonePackages(tree: string, files: string[], hasRoot: boolean): { dir: string; language: "js" | "py"; manifest: string }[] {
+  const found: { dir: string; language: "js" | "py"; manifest: string }[] = [];
+  const dirs = [...new Set(files.map((f) => dirname(f)).filter((d) => d !== "." && d.split("/").length <= 3 && !d.split("/").some((s) => SKIP_SEGMENT.test(s))))];
+  for (const dir of dirs.sort((a, b) => a.split("/").length - b.split("/").length || a.localeCompare(b))) {
+    if (found.some((f) => dir.startsWith(f.dir + "/"))) continue;
+    const has = (name: string) => exists(join(tree, dir, name));
+    if (has("package.json")) {
+      if (hasRoot && !NODE_LOCKFILES.some(has)) continue;
+      found.push({ dir, language: "js", manifest: `${dir}/package.json` });
+    } else if (has("pyproject.toml") || has("setup.py") || (has("requirements.txt") && files.some((f) => f.startsWith(dir + "/") && f.endsWith(".py")))) {
+      if (hasRoot && !PY_LOCKFILES.some(has) && !has("requirements.txt")) continue;
+      found.push({ dir, language: "py", manifest: `${dir}/${has("pyproject.toml") ? "pyproject.toml" : has("setup.py") ? "setup.py" : "requirements.txt"}` });
+    }
+  }
+  return found;
+}
+
 export function discoverComponents(tree: string, files: string[]): Component[] {
   const comps: Component[] = [];
   const patterns = workspacePatterns(tree);
@@ -123,6 +146,14 @@ export function discoverComponents(tree: string, files: string[]): Component[] {
     const manifest = exists(join(tree, "pyproject.toml")) ? "pyproject.toml" : exists(join(tree, "setup.py")) ? "setup.py" : "requirements.txt";
     const pyName = exists(join(tree, "pyproject.toml")) ? readText(join(tree, "pyproject.toml")).match(/^name\s*=\s*["']([^"']+)["']/m)?.[1] : undefined;
     comps.push({ id: sanitizeId(pyName ?? "app"), path: ".", language: "py", manifest, scripts: {}, changes: 0, changeShare: 0, assessed: false });
+  }
+  if (patterns.length === 0) {
+    for (const s of standalonePackages(tree, files, comps.length > 0)) {
+      const pkg = s.language === "js" ? readPackageJson(join(tree, s.dir)) : null;
+      let id = sanitizeId(basename(s.dir));
+      if (comps.some((c) => c.id === id)) id = sanitizeId(s.dir.replace(/\//g, "-"));
+      comps.push({ id, path: s.dir, language: s.language === "js" ? languageOf(tree, s.dir, files) : "py", manifest: s.manifest, scripts: pkg?.scripts ?? {}, changes: 0, changeShare: 0, assessed: false, packageManager: detectPackageManager(join(tree, s.dir)) });
+    }
   }
   if (comps.length === 1 && comps[0].path === ".") return comps;
   const claimed = new Set(comps.map((c) => c.path.split("/")[0]));
@@ -190,28 +221,36 @@ export function computeChangeShares(repo: string, comps: Component[], rubric: Ru
   return total;
 }
 
-function toolchain(tree: string, files: string[], pm: PackageManager | null) {
+function nodePins(tree: string, dir: string, pm: PackageManager | null, label: string, found: string[], missing: string[]): void {
+  const pkg = readPackageJson(join(tree, dir));
+  const prefix = dir === "." ? "" : `${dir}/`;
+  const nodePin = [".nvmrc", ".node-version", ".tool-versions"].find((f) => exists(join(tree, dir, f)) || exists(join(tree, f)));
+  if (nodePin) found.push(exists(join(tree, dir, nodePin)) ? `${prefix}${nodePin}` : nodePin);
+  else if (pkg?.engines?.node) found.push(`${prefix}package.json engines.node`);
+  else if (pkg?.volta?.node) found.push(`${prefix}package.json volta`);
+  else missing.push(`the Node version${label} (.nvmrc or engines.node)`);
+  if (pm === "pnpm" || pm === "yarn") {
+    if (pkg?.packageManager) found.push(`${prefix}package.json packageManager`);
+    else missing.push(`the ${pm} version${label} (packageManager in package.json)`);
+  }
+}
+
+function toolchain(tree: string, files: string[], pm: PackageManager | null, components: Component[]) {
   const found: string[] = [];
   const missing: string[] = [];
-  const pkg = readPackageJson(tree);
   const isNode = exists(join(tree, "package.json"));
   const isPy = files.some((f) => f.endsWith(".py"));
-  if (isNode) {
-    const nodePin = [".nvmrc", ".node-version", ".tool-versions"].find((f) => exists(join(tree, f)));
-    if (nodePin) found.push(nodePin);
-    else if (pkg?.engines?.node) found.push("package.json engines.node");
-    else if (pkg?.volta?.node) found.push("package.json volta");
-    else missing.push("the Node version (.nvmrc or engines.node)");
-    if (pm === "pnpm" || pm === "yarn") {
-      if (pkg?.packageManager) found.push("package.json packageManager");
-      else missing.push(`the ${pm} version (packageManager in package.json)`);
-    }
+  if (isNode) nodePins(tree, ".", pm, "", found, missing);
+  for (const c of components.filter((x) => x.packageManager && x.path !== ".")) {
+    if (c.language !== "py") nodePins(tree, c.path, c.packageManager ?? null, ` for ${c.id}`, found, missing);
   }
-  if (isPy && !isNode) {
+  const nodeAnywhere = isNode || components.some((c) => c.packageManager && c.language !== "py");
+  if (isPy && !nodeAnywhere) {
     if (exists(join(tree, ".python-version"))) found.push(".python-version");
     else missing.push("the Python version (.python-version)");
   }
-  return { pinned: missing.length === 0 && found.length > 0, files: found, missing };
+  if (found.length === 0 && missing.length === 0) missing.push("a toolchain version this rubric can read (.nvmrc, engines.node or .python-version)");
+  return { pinned: missing.length === 0 && found.length > 0, files: [...new Set(found)], missing };
 }
 
 const INSTRUCTION_PATTERNS: RegExp[] = [
@@ -255,10 +294,10 @@ export function buildProfile(repo: string, tree: string, rubric: Rubric): Profil
     repoType: components.filter((c) => c.manifest).length > 1 ? "monorepo" : "single",
     packageManager: pm,
     manifests: files.filter((f) => /(^|\/)(package\.json|pyproject\.toml|setup\.py|requirements[^/]*\.txt|go\.mod|Cargo\.toml)$/.test(f)),
-    lockfiles: files.filter((f) => rubric.components.lockfiles.includes(basename(f)) && dirname(f) === "."),
+    lockfiles: files.filter((f) => rubric.components.lockfiles.includes(basename(f)) && (dirname(f) === "." || components.some((c) => c.packageManager && c.path === dirname(f)))),
     ciFiles: files.filter((f) => /^\.github\/workflows\/.+\.ya?ml$/.test(f) || f === ".gitlab-ci.yml" || f === ".circleci/config.yml" || f.startsWith(".buildkite/")),
     instructionFiles: instructionFiles(files),
-    toolchain: toolchain(tree, files, pm),
+    toolchain: toolchain(tree, files, pm, components),
     environmentJson,
     components,
     historyDays: rubric.components.historyDays,

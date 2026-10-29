@@ -29,7 +29,7 @@ export function diagnose(output: string, timedOut: boolean, phase: string): Diag
   if ((phase === "install" || phase === "doctor") && (/\b(E?401|Unauthorized|authentication required|no auth token)\b/i.test(output) || /Failed to replace env in config: \$\{[A-Z_]+\}/.test(output))) {
     return { cause: "registry", detail: "registry credentials not provided" };
   }
-  const tool = output.match(/(?:^|\n)(?:bash: |sh: \d+: |\/bin\/sh: \d+: )?([\w.-]+): (?:command )?not found/);
+  const tool = output.match(/(?:^|\n)(?:[^\n:]*: line \d+: |bash: |sh: \d+: |\/bin\/sh: \d+: )?([\w.+-]+): (?:command )?not found/);
   if (tool) return { cause: "missing_tool", detail: `${tool[1]} is not installed` };
   const mod = output.match(/Cannot find module '([^']+)'|ModuleNotFoundError: No module named '([^']+)'|ERR_MODULE_NOT_FOUND[^\n]*'([^']+)'/);
   if (mod) return { cause: "missing_module", detail: `module ${mod[1] ?? mod[2] ?? mod[3]} is missing` };

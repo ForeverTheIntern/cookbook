@@ -1,11 +1,12 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, test } from "node:test";
 import { orgSkillBuilders } from "../skill/agent-readiness/scripts/lib/assets.ts";
 import { disconnectArgs, execArgs, startArgs } from "../skill/agent-readiness/scripts/lib/container.ts";
+import { discoverContract } from "../skill/agent-readiness/scripts/lib/contract.ts";
 import { diagnose } from "../skill/agent-readiness/scripts/lib/diagnose.ts";
 import { weakening, weakeningFlags } from "../skill/agent-readiness/scripts/lib/diff.ts";
 import { recordObservation } from "../skill/agent-readiness/scripts/lib/evidence.ts";
@@ -14,7 +15,9 @@ import { allSites, applySite, chooseSites, sitesForLine, targetFiles } from "../
 import { computeOutcomes, fetchPrs, isAgentPr } from "../skill/agent-readiness/scripts/lib/outcomes.ts";
 import { buildProfile } from "../skill/agent-readiness/scripts/lib/profile.ts";
 import { redact, scanText } from "../skill/agent-readiness/scripts/lib/redact.ts";
+import { SUDO_REFUSED, hostExecutor, newBudget, runContract } from "../skill/agent-readiness/scripts/lib/replay.ts";
 import { runCommand, scrubbedEnv } from "../skill/agent-readiness/scripts/lib/run.ts";
+import { componentStates } from "../skill/agent-readiness/scripts/lib/score.ts";
 import { loadRubric } from "../skill/agent-readiness/scripts/lib/rubric.ts";
 import { ENV_KEYS, renderEnvFiles, renderVerifySkill } from "../skill/agent-readiness/scripts/lib/skill.ts";
 import { extractFromMarkdown, instructionItems, safetyScan } from "../skill/agent-readiness/scripts/lib/static.ts";
@@ -116,6 +119,46 @@ describe("diagnosis", () => {
     assert.equal(diagnose("bash: pnpm: command not found", false, "test").cause, "missing_tool");
     assert.equal(diagnose("", true, "test").cause, "timeout");
   });
+
+  test("a script's missing tool is found, and on a host fallback it's an environment limit, not a repo defect", () => {
+    const d = diagnose(".cursor/install.sh: line 7: dotnet: command not found", false, "install");
+    assert.deepEqual([d.cause, d.detail], ["missing_tool", "dotnet is not installed"]);
+    assert.equal(diagnose("bash: line 1: sudo: command not found", false, "start").detail, "sudo is not installed");
+    const audit = makeAudit({ components: [{ id: "app", share: 1, test: "not_run" }] });
+    const install = audit.evidence.find((e) => e.kind === "install")!;
+    Object.assign(install, { result: "fail", where: "fresh_copy", strength: "executed", diagnosis: d, summary: "install failed: dotnet is not installed" });
+    const s = componentStates(audit, rubric, "app")["clean.install"];
+    assert.equal(s.state, "unknown");
+    assert.match(s.reason, /dotnet is not installed on this machine, an environment limit rather than a repo defect/);
+    install.where = "container";
+    assert.equal(componentStates(audit, rubric, "app")["clean.install"].state, "not_met", "in a clean container it is the repo's problem");
+  });
+});
+
+describe("sudo", () => {
+  test("the safety scan lists sudo in the environment setup, and instructions that use it aren't replayed", () => {
+    const repo = materialize("nested-apps-dotnet");
+    const profile = buildProfile(repo, repo, rubric);
+    const elevated = safetyScan(repo, profile).filter((f) => f.kind === "elevated");
+    assert.deepEqual(elevated.map((f) => [f.file, f.blocking]), [[".cursor/environment.json", false]]);
+    assert.match(elevated[0].detail, /start runs sudo .*only inside a container, never on the host/);
+    const node = materialize("healthy-node");
+    writeFileSync(join(node, "AGENTS.md"), "- Publish locally: `npm run build && sudo cp -r dist /srv/www`\n");
+    const items = instructionItems(node, { ...buildProfile(node, node, rubric), instructionFiles: ["AGENTS.md"] });
+    assert.deepEqual(items.map((i) => [i.result, i.reason]), [["not_run", "not replayed: it uses sudo"]]);
+  });
+
+  test("a host fallback never runs a sudo command", async () => {
+    const dir = tmp();
+    const marker = join(dir, "ran-with-sudo");
+    const ex = hostExecutor(dir, [], false);
+    const direct = await ex.exec(`sudo touch ${marker}`, ".", 10);
+    assert.notEqual(direct.exitCode, 0);
+    assert.match(direct.output, /uses sudo/);
+    const [start] = await runContract(ex, [{ id: "cmd-repo-start", kind: "start", component: "*", cwd: ".", command: `true && sudo touch ${marker}`, source: ".cursor/environment.json start", reason: "the repo's declared services", timeoutSec: 10 }], { components: new Set(), budget: newBudget(1, 1), registryValues: [] });
+    assert.deepEqual([start.status, start.note], ["not_run", SUDO_REFUSED]);
+    assert.equal(existsSync(marker), false);
+  });
 });
 
 describe("static checks", () => {
@@ -200,6 +243,37 @@ describe("profile", () => {
     assert.equal(buildProfile(pinned, pinned, rubric).toolchain.pinned, true);
     const loose = gitRepo({ "package.json": JSON.stringify({ name: "x" }), "pnpm-lock.yaml": "" });
     assert.deepEqual(buildProfile(loose, loose, rubric).toolchain.missing.length, 2);
+  });
+
+  test("standalone packages under apps/ are found with no root workspace, each with its own install", () => {
+    const repo = gitRepo({
+      "apps/web/package.json": JSON.stringify({ name: "@shop/web", engines: { node: ">=22" }, scripts: { test: "node --test" } }),
+      "apps/web/package-lock.json": "{}",
+      "apps/tool/package.json": JSON.stringify({ name: "tool", scripts: { test: "node --test" } }),
+      "services/core/Core.csproj": "<Project />",
+      "services/core/Orders.cs": "",
+    });
+    const profile = buildProfile(repo, repo, rubric);
+    const byId = Object.fromEntries(profile.components.map((c) => [c.id, c]));
+    assert.deepEqual(Object.keys(byId).sort(), ["services", "tool", "web"]);
+    assert.equal(byId.web.path, "apps/web");
+    assert.equal(byId.web.assessed, true);
+    assert.equal(byId.tool.assessed, true);
+    assert.equal(byId.services.assessed, false);
+    assert.match(byId.services.notAssessedReason!, /\.NET/);
+    assert.deepEqual(profile.lockfiles, ["apps/web/package-lock.json"]);
+    const installs = discoverContract(profile, repo, rubric, []).filter((c) => c.kind === "install");
+    assert.deepEqual(installs.map((c) => [c.component, c.cwd, c.command]), [["tool", "apps/tool", "npm install"], ["web", "apps/web", "npm ci"]]);
+    assert.ok(profile.toolchain.missing.some((m) => m.includes("for tool")), JSON.stringify(profile.toolchain));
+  });
+
+  test("next to a root package, only nested packages with their own lockfile count, and an unreadable toolchain still gets a reason", () => {
+    const repo = gitRepo({ "package.json": JSON.stringify({ name: "root" }), "package-lock.json": "{}", "site/package.json": JSON.stringify({ name: "site" }), "site/package-lock.json": "{}", "examples/demo/package.json": JSON.stringify({ name: "demo" }) });
+    assert.deepEqual(buildProfile(repo, repo, rubric).components.map((c) => c.path).sort(), [".", "site"]);
+    const dotnetOnly = gitRepo({ "src/Core.csproj": "<Project />", "src/Orders.cs": "" });
+    const tc = buildProfile(dotnetOnly, dotnetOnly, rubric).toolchain;
+    assert.equal(tc.pinned, false);
+    assert.ok(tc.missing.length > 0 && tc.missing.every((m) => m.trim().length > 0));
   });
 });
 

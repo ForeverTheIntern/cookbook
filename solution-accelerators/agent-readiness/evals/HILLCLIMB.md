@@ -106,3 +106,48 @@ All twelve runs in this round also failed the seal gate for a reason outside the
 
 - **Verdict:** kept. The jargon is gone and the numbers now follow the plan's rule, but the page score didn't move: judges now say the unmeasured pull-request number has no comparison, which is true whenever outcomes aren't read.
 - **Next failure mode:** in 29 of 48 runs the agent skipped narration, and the default headline scores 0.61 against 0.81 for narrated ones.
+
+## Round 3: the agent skips narration
+
+- **Fixture:** the smoke set (agents-md-drift, healthy-node, hidden-service, tautological-tests), 3 repeats, new agent runs.
+- **Failure mode:** SKILL.md called narration optional ("Skip narration if the default wording already reads well"), and agents skipped it in 29 of 48 baseline runs, 6 of 12 in the smoke set.
+- **Lever:** wording in SKILL.md (lever 1).
+- **Change:** step 6.2 now says to always write the headline and the ask, and spells out the headline: name the component that sets the level, say why in plain words from the failing condition's reason, say what already works, and drop the always-100% share in a one-component repo. The ask names the change to approve and leaves the owner request to the report.
+- **Fix in the same commit:** a narrated ask replaced the whole default ask, including "Also name an owner", so narrated reports dropped the owner request the plan requires. The report now appends it to a narrated ask unless the ask already mentions an owner. Test: `tests/render.test.ts` "a narrated ask still asks for an owner".
+
+| Measure (smoke set, 12 runs) | Before | After |
+| --- | --- | --- |
+| Runs with a narrated headline | 6/12 | 12/12 |
+| Headline judge | 0.716 | 0.839 |
+| Page judge | 0.652 | 0.743 |
+| All hard gates | 9/12 (agents-md-drift 0/3, fixed in round 1) | 12/12 |
+
+healthy-node went from 0.40 to 0.92. agents-md-drift went from 0.94 to 0.73: two of its three headlines added "bug fixes are ready", true but about another activity, and all three restated "Level 1", which the judge read as a level without its meaning.
+
+- **Verdict:** kept.
+- **Next failure mode:** the default headline is still what every scripted audit (`readiness audit` in CI, the weekly recheck) shows, and it scores 0.61.
+
+## Round 4: the default headline names no component and no cause
+
+- **Fixture:** the 29 baseline runs whose agent didn't narrate, re-rendered offline. Their headlines are the script's defaults, so the before and after differ only in this change.
+- **Failure mode:** with nothing blocking, the default was "Nothing in the repo blocks agents from bug fixes. Start delegating", which names no component and says nothing about what was proved (healthy-node 0.40, registry-token 0.45). Elsewhere it never said why: "Agents can't pass the tests in hidden-service from a clean checkout, and 100% of recent changes land there". At Level 1 it always blamed the tests ("its checks can't yet catch wrong features") even when the instructions were the problem.
+- **Lever:** script text (lever 3).
+- **Change:** the no-blocker default names the component and what the audit proved. A failed install, build or test says why from the replay's diagnosis ("because its tests need Postgres running, which the setup doesn't start"; "because private registry credentials weren't provided"). Level 1 names the failing conditions, including which command kinds fail. The share of changes is left out when there is one component, and a headline that would pass 40 words falls back to the version without the cause, so `seal` never refuses a default.
+- **New test:** `tests/render.test.ts` "default headlines name the component and what works". It fails on the old text.
+
+| Measure (29 default headlines) | Before | After |
+| --- | --- | --- |
+| Headline judge | 0.613 | 0.866 |
+| healthy-node, registry-token, make-it-level-2, remediation | 0.40 to 0.55 | 0.93 to 0.95 |
+
+The weakest default left is needs-prod-secret at 0.70: "because it needs PAYMENTS_LIVE_KEY" gives the cause as a bare variable name.
+
+- **Verdict:** kept.
+- **Next failure mode:** narrated headlines drift to other activities and restate the level (round 3's agents-md-drift runs).
+
+## Round 5: narrated headlines drift to other activities
+
+- **Fixture:** all cases; measured by the final run.
+- **Failure mode:** in round 3, two of three agents-md-drift headlines added "bug fixes are ready" to a features audit, and all three restated "Level 1".
+- **Lever:** wording in SKILL.md (lever 1).
+- **Change:** the headline bullet now says to keep to the audited activity and not restate the level the heading already shows.

@@ -1,0 +1,394 @@
+export type Strength = "asserted" | "static" | "executed" | "clean_replay" | "outcome_validated";
+export type Tier = "read-only" | "local-exec" | "external-systems";
+export type ActivityId = "first_pr" | "bug_fixes" | "features" | "repo_wide";
+export type CondId =
+  | "clean.install"
+  | "clean.build"
+  | "clean.test"
+  | "commands"
+  | "faults"
+  | "instructions"
+  | "safety"
+  | "toolchain"
+  | "lockfile";
+export type CondState = "met" | "not_met" | "unknown";
+export type Level = 0 | 1 | 2 | 3 | 4;
+export type CommandKind = "doctor" | "install" | "build" | "lint" | "typecheck" | "test" | "start";
+export type Where = "static" | "host" | "fresh_copy" | "container";
+export type Result = "pass" | "fail" | "not_run";
+export type Language = "ts" | "js" | "py" | "other";
+export type PackageManager = "npm" | "pnpm" | "yarn" | "pip" | "uv" | "poetry";
+export type Effort = "small" | "medium" | "large";
+
+export interface Component {
+  id: string;
+  path: string;
+  language: Language;
+  manifest: string | null;
+  scripts: Record<string, string>;
+  changes: number;
+  changeShare: number;
+  assessed: boolean;
+  notAssessedReason?: string;
+}
+
+export interface Profile {
+  repoType: "single" | "monorepo";
+  packageManager: PackageManager | null;
+  manifests: string[];
+  lockfiles: string[];
+  ciFiles: string[];
+  instructionFiles: string[];
+  toolchain: { pinned: boolean; files: string[]; missing: string[] };
+  environmentJson: { path: string; install?: string; start?: string } | null;
+  components: Component[];
+  historyDays: number;
+  totalChanges: number;
+}
+
+export interface ContractCommand {
+  id: string;
+  kind: CommandKind;
+  component: string;
+  cwd: string;
+  command: string;
+  source: string;
+  reason: string;
+  timeoutSec: number;
+}
+
+export interface Evidence {
+  id: string;
+  checkId: string;
+  condition?: CondId;
+  component?: string;
+  strength: Strength;
+  where: Where;
+  result: Result;
+  command?: string;
+  cwd?: string;
+  image?: string;
+  exitCode?: number | null;
+  timedOut?: boolean;
+  durationMs?: number;
+  outputTail?: string;
+  outputDigest?: string;
+  summary: string;
+  diagnosis?: Diagnosis;
+  at: string;
+}
+
+export interface Diagnosis {
+  cause: "service" | "credential" | "registry" | "missing_tool" | "missing_module" | "network" | "timeout" | "compile" | "unknown";
+  detail: string;
+  service?: string;
+}
+
+export interface InstructionItem {
+  id: string;
+  source: string;
+  line: number;
+  kind: "command" | "path";
+  text: string;
+  category: "replay" | "install" | "long_running" | "risky" | "path";
+  staticResult: Result;
+  staticReason?: string;
+  result: Result;
+  reason?: string;
+  evidenceId?: string;
+}
+
+export interface SafetyFinding {
+  id: string;
+  kind: "secret" | "lifecycle_hook" | "network_piped" | "destructive" | "deploy_publish" | "credential_needed";
+  file: string;
+  line?: number;
+  detail: string;
+  blocking: boolean;
+}
+
+export interface Mutant {
+  id: string;
+  component: string;
+  file: string;
+  line: number;
+  operator: string;
+  before: string;
+  after: string;
+  result: "caught" | "survived" | "discarded" | "not_run";
+  exitCodes: number[];
+}
+
+export interface Asset {
+  kind: "agents_md" | "skill" | "rules" | "hooks" | "environment" | "mcp" | "instructions";
+  path: string;
+  authors: { name: string; commits: number }[];
+  lastChanged: string | null;
+  status: string;
+  ok: boolean;
+  frontmatterOk?: boolean;
+}
+
+export interface PrRecord {
+  number: number;
+  headRefName: string;
+  author: string;
+  labels: string[];
+  createdAt: string;
+  mergedAt: string | null;
+  state: string;
+  files: string[];
+  firstCheck: "success" | "failure" | null;
+  changesRequested: boolean;
+  coAuthors?: string[];
+}
+
+export interface OutcomeStats {
+  opened: number;
+  merged: number;
+  firstTimeCiPass: number;
+  firstTimeCiKnown: number;
+  changesRequested: number;
+  medianDaysToMerge: number | null;
+  addingPaths: Record<string, number>;
+  mergedByActivity: Record<string, number>;
+}
+
+export interface OutcomesSnapshot {
+  source: "gh" | "file";
+  window: { from: string; to: string; days: number };
+  filter: { branchPrefixes: string[]; labels: string[]; authors: string[]; coAuthorTrailers: string[] };
+  agent: OutcomeStats;
+  control: OutcomeStats;
+  byComponent: Record<string, OutcomeStats>;
+  matchedAgentPrs: number[];
+  multiComponentPrs: number;
+}
+
+export interface AuditSkillInfo {
+  version: string;
+  scriptsDigest: string;
+  rubricDigest: string;
+  release: string | null;
+}
+
+export interface Audit {
+  schema: "agent-readiness/audit@1";
+  id: string;
+  kind: "audit";
+  createdAt: string;
+  state: "draft" | "sealed";
+  repo: { name: string; commit: string; dirtyTree: boolean };
+  goal: ActivityId;
+  tier: Tier;
+  rubric: string;
+  skill: AuditSkillInfo;
+  seed: { value: string; pinned: boolean };
+  environment: { containerRuntime: string | null; image: string | null; registryEnv: string[]; inheritEnv: boolean };
+  profile: Profile | null;
+  assets: Asset[];
+  contract: ContractCommand[];
+  instructions: InstructionItem[];
+  safety: SafetyFinding[];
+  evidence: Evidence[];
+  mutants: Mutant[];
+  outcomes: OutcomesSnapshot | null;
+  narration: Narration | null;
+  sealed?: { at: string; digest: string; reportJsonDigest: string; reportMdDigest: string };
+}
+
+export interface Narration {
+  headline?: string;
+  gaps?: Record<string, string>;
+  ask?: string;
+  titles?: Record<string, string>;
+}
+
+export interface Watch {
+  metric: string;
+  scope: string;
+  baseline: string;
+  n: number | null;
+  window: string | null;
+}
+
+export interface Fix {
+  condition: CondId;
+  component: string;
+}
+
+export type RoadmapStatus = "done" | "in_progress" | "next" | "start_now" | "waiting" | "later";
+
+export interface RoadmapItem {
+  id: string;
+  order: number;
+  kind: "fix" | "decision" | "rollout";
+  template: string;
+  title: string;
+  status: RoadmapStatus;
+  fixes: Fix[];
+  unlocks: string;
+  impact: number;
+  effort: Effort;
+  size: string;
+  ownerRole: string;
+  decision: string | null;
+  dependsOn: string[];
+  why: string;
+  doneWhen: string;
+  steps: { title: string; detail: string }[];
+  expected: { outcome: string; watch: Watch };
+  evidence: string[];
+  createdAt: string;
+  createdBy: string;
+  closedAt: string | null;
+  closedBy: string | null;
+  observed: { value: string; sharedWith: string[] } | null;
+}
+
+export interface Targets {
+  mergeRate: number;
+  firstPass: number;
+  maxChangesRequested: number;
+  minAgentPrs: number;
+}
+
+export interface Roadmap {
+  schema: "agent-readiness/roadmap@1";
+  owner: string | null;
+  targets: Targets | null;
+  items: RoadmapItem[];
+  updatedBy: string;
+  updatedAt: string;
+}
+
+export interface HistoryLine {
+  id: string;
+  kind: "audit" | "recheck";
+  date: string;
+  commit: string;
+  rubric: string;
+  scriptsDigest: string;
+  result: "sealed" | "passed" | "failed";
+  note?: string;
+  goal: ActivityId;
+  levels: Record<string, Partial<Record<ActivityId, Level>>>;
+  repoLevels: Partial<Record<ActivityId, Level>>;
+  shares: Record<string, number>;
+  active: string[];
+  outcomes?: { window: string; agent: OutcomeStats; control: OutcomeStats; byComponent: Record<string, OutcomeStats> } | null;
+  seedPinned: boolean;
+}
+
+export interface RateValue {
+  count: number;
+  n: number;
+  rate: number | null;
+  window: string;
+}
+
+export interface ReportJson {
+  schema: "agent-readiness/report@1";
+  repo: string;
+  audit: {
+    id: string;
+    date: string;
+    commit: string;
+    dirtyTree: boolean;
+    rubric: string;
+    tier: Tier;
+    scriptsDigest: string;
+    seedPinned: boolean;
+    sealStatus: string;
+    staleCopy: string | null;
+    previous: string | null;
+    storedAt: string;
+  };
+  goal: ActivityId;
+  goalLabel: string;
+  scale: { level: Level; name: string; plain: string; meaning: string; measuredBy: string }[];
+  maturity: {
+    level: Level;
+    couldBe: Level | null;
+    couldBeReason: string | null;
+    setBy: string[];
+    partialCoverage: boolean;
+    next: { level: Level; name: string; met: string[]; unmet: string[] } | null;
+  };
+  executive: {
+    heading: string;
+    headline: string;
+    numbers: { label: string; value: string; comparison: string }[];
+    nextLine: string;
+    gaps: { rank: number; text: string; blocks: string; itemId: string }[];
+    ask: string;
+    coverage: string;
+    noBlocker: boolean;
+  };
+  actions: ReportAction[];
+  matrix: { quadrants: string[]; points: { label: string; x: number; y: number; itemId: string }[] };
+  roadmap: { owner: string | null; doneCount: number; total: number; items: ReportRoadmapItem[] };
+  progress: ReportProgress | null;
+  details: ReportDetails;
+}
+
+export interface ReportAction {
+  rank: number;
+  itemId: string;
+  title: string;
+  startNow: boolean;
+  why: string;
+  movesTheNeedle: string;
+  watch: string;
+  research: string | null;
+  effortAndOwner: string;
+  decision: string | null;
+  doneWhen: string;
+  dependsOn: string[];
+  impact: number;
+  effort: Effort;
+}
+
+export interface ReportRoadmapItem {
+  id: string;
+  order: number;
+  title: string;
+  status: RoadmapStatus;
+  statusText: string;
+  unlocks: string;
+  decision: string | null;
+}
+
+export interface ReportProgress {
+  history: { date: string; kind: string; result: string; note: string | null; levels: Record<string, Level>; repoLevel: Level; rubric: string }[];
+  closed: { title: string; closed: string; expected: string; observed: string }[];
+  weakening: string | null;
+  rubricChanges: { date: string; from: string; to: string }[];
+}
+
+export interface ReportDetails {
+  steps: { itemId: string; title: string; steps: { title: string; detail: string }[] }[];
+  checks: { id: string; name: string; why: string; sources: { claim: string; caveat: string; url: string }[]; result: string; ok: boolean | null; counts: { passed: number; failed: number; notRun: number }; evidence: string[] }[];
+  notAssessed: string[];
+  levels: {
+    activities: { id: ActivityId; label: string; bar: string }[];
+    components: { id: string; changeShare: number; active: boolean; levels: Partial<Record<ActivityId, Level>>; couldBe: Partial<Record<ActivityId, Level>> }[];
+    repoLevels: Partial<Record<ActivityId, Level>>;
+    repoLevelRule: string;
+    unassessed: { id: string; changeShare: number; reason: string }[];
+  };
+  outcomes: {
+    window: string;
+    filter: string;
+    source: string;
+    series: { label: string; opened: number; merged: RateValue; firstTimeCi: RateValue; changesRequested: RateValue; medianDaysToMerge: number | null }[];
+    byComponent: { component: string; prs: number; firstTimeCi: RateValue; changesRequested: RateValue }[];
+    multiComponentNote: string;
+    matchedPrs: number[];
+    caveat: string;
+  } | null;
+  assets: { kind: string; path: string; authors: string[]; lastChanged: string | null; status: string; ok: boolean }[];
+  missingAssets: string[];
+  evidence: { id: string; check: string; component: string | null; ran: string; where: string; result: string; summary: string }[];
+  record: { label: string; value: string }[];
+}

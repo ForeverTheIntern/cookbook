@@ -1,5 +1,6 @@
 import type { LevelResult } from "./levels.ts";
 import { describeRate, rate, windowLabel } from "./outcomes.ts";
+import { watchFor } from "./roadmap.ts";
 import type { Rubric } from "./rubric.ts";
 import type { CompStates } from "./score.ts";
 import { checkCounts } from "./score.ts";
@@ -56,7 +57,8 @@ function statusText(item: RoadmapItem, roadmap: Roadmap): string {
 function researchFor(rubric: Rubric, item: RoadmapItem): string | null {
   const cond = item.fixes[0]?.condition;
   if (!cond) return null;
-  const check = rubric.checks.find((c) => c.id === rubric.conditions[cond].check);
+  const checkId = rubric.templates[item.template]?.researchCheck ?? rubric.conditions[cond].check;
+  const check = rubric.checks.find((c) => c.id === checkId);
   const src = check?.sources[0];
   return src ? `${src.claim} ${src.caveat} ${src.url}` : null;
 }
@@ -70,7 +72,17 @@ function metricLabel(metric: string, scope = "repo"): string {
   return `Merged ${prs}`;
 }
 
-function action(item: RoadmapItem, rank: number, rubric: Rubric, roadmap: Roadmap, startNow: boolean): ReportAction {
+function watchLine(item: RoadmapItem, rubric: Rubric, outcomes: OutcomesSnapshot | null): string {
+  const w = item.expected.watch;
+  const label = metricLabel(w.metric, w.scope);
+  const [metric, pattern] = w.metric.split(":");
+  const now = outcomes ? watchFor(metric, w.scope, outcomes, rubric, pattern) : null;
+  const baseline = `${w.baseline}${w.window ? `, ${w.window}` : ""}`;
+  if (!now || (now.window === w.window && now.baseline === w.baseline)) return `${label}. Now: ${baseline}.`;
+  return `${label}. Baseline: ${baseline}. Now: ${now.baseline}, ${now.window}.`;
+}
+
+function action(item: RoadmapItem, rank: number, rubric: Rubric, roadmap: Roadmap, startNow: boolean, outcomes: OutcomesSnapshot | null): ReportAction {
   return {
     rank,
     itemId: item.id,
@@ -81,7 +93,7 @@ function action(item: RoadmapItem, rank: number, rubric: Rubric, roadmap: Roadma
       item.kind === "fix"
         ? `${item.impact > 0 ? `Takes ${item.unlocks}, covering ${pct(item.impact, 1)}% of recent changes` : `Changes no level on its own: ${item.unlocks}`}. ${item.expected.outcome}`
         : `Unlocks ${item.unlocks}. ${item.expected.outcome}`,
-    watch: `${metricLabel(item.expected.watch.metric, item.expected.watch.scope)}. Now: ${item.expected.watch.baseline}${item.expected.watch.window ? `, ${item.expected.watch.window}` : ""}.`,
+    watch: watchLine(item, rubric, outcomes),
     research: researchFor(rubric, item),
     effortAndOwner: `${item.size}. ${item.ownerRole}.`,
     decision: item.decision,
@@ -97,7 +109,8 @@ function compLevel(input: RenderInput, id: string, act: ActivityId): LevelResult
 }
 
 function headlineFor(input: RenderInput, ready: string[], setByShare: number): string {
-  const { goalLevel, rubric, goal, top } = input;
+  const { goalLevel, rubric, goal } = input;
+  const top = input.top;
   const label = goalLabel(rubric, goal);
   if (top.length === 0 || top.every((t) => t.kind !== "fix")) {
     if (goalLevel.level >= 3) return `Agent PRs meet your Level 3 targets for ${label}. Keep the weekly recheck running and widen the work agents take.`;
@@ -111,7 +124,14 @@ function headlineFor(input: RenderInput, ready: string[], setByShare: number): s
   const names = list(goalLevel.setBy);
   const share = `${pct(setByShare, 1)}% of recent changes land there`;
   const readyLine = ready.length ? ` ${list(ready)} ${ready.length > 1 ? "are" : "is"} already ready for ${label}.` : "";
-  if (goalLevel.level === 0) return `Agents can't pass the tests in ${names} from a clean checkout, and ${share}.${readyLine}`;
+  if (goalLevel.level === 0) {
+    const blockers = new Set(top.filter((t) => t.kind === "fix" && t.fixes.some((f) => goalLevel.setBy.includes(f.component) || f.component === "*")).map((t) => t.template));
+    const many = goalLevel.setBy.length > 1;
+    if (blockers.has("clean.install")) return `The repo doesn't install from a clean checkout, so agents can't build or test anything yet.${readyLine}`;
+    if (blockers.has("clean.test:missing")) return `${names} ${many ? "have" : "has"} no tests, so agents can't check their own changes, and ${share}.${readyLine}`;
+    if (blockers.has("clean.build")) return `${names} ${many ? "don't" : "doesn't"} build from a clean checkout, and ${share}.${readyLine}`;
+    return `Agents can't pass the tests in ${names} from a clean checkout, and ${share}.${readyLine}`;
+  }
   return `Agents can build and test ${names}, but its checks can't yet catch wrong ${label}, and ${share}.${readyLine}`;
 }
 
@@ -138,7 +158,7 @@ function stats3(input: RenderInput): ReportJson["executive"]["numbers"] {
   const ciComparison = o ? `${describeRate(rate(o.control.firstTimeCiPass, o.control.firstTimeCiKnown, rubric, windowLabel(o)))}, ${windowLabel(o)}` : "";
   return [
     { label: `Active components ready for ${label}`, value: `${ready} of ${activeIds.length}`, comparison: "Active means at least 10% of recent changes" },
-    { label: "Agent PRs that pass CI the first time", value: ciValue, comparison: o ? `Other PRs: ${ciComparison}` : "Not measured: outcomes need the external-systems tier" },
+    { label: "Agent PRs that pass CI the first time", value: ciValue, comparison: o ? `Other PRs: ${ciComparison}` : "Outcomes need the external-systems tier" },
     { label: `Recent changes in components below Level ${nextLevel}`, value: `${pct(below, 1)}%`, comparison: `Changes in the last ${audit.profile?.historyDays ?? 90} days` },
   ];
 }
@@ -251,8 +271,8 @@ export function buildReport(input: RenderInput): ReportJson {
   const lower = (s: string) => s.charAt(0).toLowerCase() + s.slice(1);
   let ask = first?.decision ? `Decision needed: ${lower(first.decision)}.` : noBlocker ? `Decision needed: which ${label} go to agents first.` : `Approve the agent's fix for "${gapText(first)}".`;
   if (!roadmap.owner) ask += " Also name an owner for agent readiness.";
-  const actions: ReportAction[] = top.map((t, i) => action(t, i + 1, rubric, roadmap, false));
-  if (startNow) actions.push(action(startNow, actions.length + 1, rubric, roadmap, true));
+  const actions: ReportAction[] = top.map((t, i) => action(t, i + 1, rubric, roadmap, false, audit.outcomes));
+  if (startNow) actions.push(action(startNow, actions.length + 1, rubric, roadmap, true, audit.outcomes));
   const points = actions.map((a, i) => ({ label: `${a.rank}. ${a.title}`, x: Math.min(0.95, rubric.effortX[a.effort] + i * 0.04), y: Math.max(0, Math.min(1, a.impact)), itemId: a.itemId }));
   const o = audit.outcomes;
   const w = o ? windowLabel(o) : "";

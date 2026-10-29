@@ -281,6 +281,7 @@ export function makeExecutor(audit: Audit, copyDir: string, runtimePref: string,
     const session = new ContainerSession(runtime, `readiness-${audit.id}-${randomHex(3)}`, image, copyDir, audit.environment.registryEnv);
     const started = session.start();
     if (started.ok) {
+      session.enableCorepack();
       audit.environment.containerRuntime = runtime.bin;
       audit.environment.image = image;
       log(`Replaying in a clean ${runtime.bin} container (${image}).`);
@@ -354,6 +355,13 @@ export async function replay(audit: Audit, repo: string, tree: string, rubric: R
         const out = await ex.exec(item.text, exists(join(copyDir, cwd)) ? cwd : ".", 300);
         const ok = out.exitCode === 0 && !out.timedOut;
         const redacted = redact(out.output, registryValues);
+        const why = ok ? null : diagnose(out.output, out.timedOut, "instruction");
+        if (why && (why.cause === "credential" || why.cause === "network" || why.cause === "service" || why.cause === "registry")) {
+          item.category = "needs_access";
+          item.result = "not_run";
+          item.reason = `not replayed: it ${why.cause === "network" ? "needs the network" : why.detail}, which the replay doesn't provide`;
+          continue;
+        }
         const ev = addEvidence(audit, {
           checkId: "context.instructions_verified",
           condition: "instructions",

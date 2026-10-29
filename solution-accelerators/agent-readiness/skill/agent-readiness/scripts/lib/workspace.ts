@@ -112,7 +112,7 @@ export function initAudit(opts: InitOptions): { audit: Audit; local: LocalInfo; 
   if (current && !opts.force) fail(`A draft audit is already open: ${current}. Seal it, or pass --force to abandon it.`);
   const commit = gitOrThrow(["rev-parse", "HEAD"], opts.repo).trim();
   const seedEnv = process.env.READINESS_EVAL_SEED;
-  const id = `aud-${today()}-${commit.slice(0, 7)}-${randomHex(2)}`;
+  const id = `aud-${today()}-${commit.slice(0, 7)}-${seedEnv ? sha256(`${seedEnv}:${commit}:${nowIso()}`).slice(0, 4) : randomHex(2)}`;
   const tree = join(mkdtempSync(join(tmpdir(), `readiness-${id}-`)), "tree");
   exportTree(opts.repo, commit, tree);
   const rubric = latestRubricVersion();

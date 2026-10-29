@@ -215,6 +215,21 @@
         { "title": "Prove it", "detail": "Rerun `readiness replay --component {component}` with no credentials set." }
       ]
     },
+    "clean.test:missing": {
+      "title": "Add tests and a test command to {component}",
+      "effort": "medium",
+      "size": "Medium: a test runner and first tests in {component}",
+      "ownerRole": "Component owner",
+      "decision": "Which behavior the first tests should pin down",
+      "why": "{component} has no test command, so neither agents nor reviewers can check a change automatically.",
+      "doneWhen": "`readiness replay --component {component}` runs the new tests and they pass.",
+      "researchCheck": "verify.behavioral_oracle",
+      "steps": [
+        { "title": "Pick a runner the repo can install", "detail": "For example `node --test`, Vitest or pytest, added as the `test` script." },
+        { "title": "Test the most changed code first", "detail": "Assert results and edge cases for the files that change most often." },
+        { "title": "Prove it", "detail": "Run a new audit. It runs the tests in a clean container and plants faults they should catch." }
+      ]
+    },
     "clean.test": {
       "title": "Make {component}'s tests pass from a clean checkout",
       "effort": "medium",

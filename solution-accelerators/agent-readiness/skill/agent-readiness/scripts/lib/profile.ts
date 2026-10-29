@@ -106,10 +106,10 @@ export function discoverComponents(tree: string, files: string[]): Component[] {
     for (const dir of dirs) {
       const pkg = readPackageJson(join(tree, dir));
       comps.push({
-        id: sanitizeId(basename(dir)),
+        id: dir === "." ? sanitizeId(pkg?.name ?? "root") : sanitizeId(basename(dir)),
         path: dir,
         language: languageOf(tree, dir, files),
-        manifest: `${dir}/package.json`,
+        manifest: dir === "." ? "package.json" : `${dir}/package.json`,
         scripts: pkg?.scripts ?? {},
         changes: 0,
         changeShare: 0,

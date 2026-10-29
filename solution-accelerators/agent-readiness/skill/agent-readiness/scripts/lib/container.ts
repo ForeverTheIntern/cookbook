@@ -63,6 +63,10 @@ export class ContainerSession {
     return runCommand(argv, process.cwd(), process.env as Record<string, string>, timeoutSec);
   }
 
+  enableCorepack(): void {
+    spawnSync(this.runtime.bin, ["exec", this.name, "bash", "-lc", "command -v corepack >/dev/null && corepack enable >/dev/null 2>&1 || true"], { encoding: "utf8", timeout: 60000 });
+  }
+
   disconnectNetwork(): boolean {
     const r = spawnSync(this.runtime.bin, disconnectArgs(this.name), { encoding: "utf8" });
     return r.status === 0;

@@ -24,6 +24,7 @@ interface Extracted {
   kind: "command" | "path";
   text: string;
   line: number;
+  via: "fence" | "code" | "link";
 }
 
 export function extractFromMarkdown(text: string): Extracted[] {
@@ -32,6 +33,7 @@ export function extractFromMarkdown(text: string): Extracted[] {
   let inFence = false;
   let fenceLang = "";
   let inFrontmatter = lines[0]?.trim() === "---";
+  let pending: { text: string; line: number } | null = null;
   lines.forEach((raw, i) => {
     const lineNo = i + 1;
     if (inFrontmatter) {
@@ -44,23 +46,31 @@ export function extractFromMarkdown(text: string): Extracted[] {
         inFence = true;
         fenceLang = fence[1].toLowerCase();
       } else inFence = false;
+      pending = null;
       return;
     }
     if (inFence) {
       if (!SHELL_LANGS.has(fenceLang)) return;
-      const cmd = raw.trim().replace(/^\$\s+/, "");
-      if (cmd && !cmd.startsWith("#") && COMMAND_START.test(cmd)) out.push({ kind: "command", text: cmd, line: lineNo });
+      const part = raw.trim().replace(/^\$\s+/, "");
+      const joined: { text: string; line: number } = pending ? { text: `${pending.text} ${part}`, line: pending.line } : { text: part, line: lineNo };
+      if (part.endsWith("\\")) {
+        pending = { text: joined.text.slice(0, -1).trim(), line: joined.line };
+        return;
+      }
+      pending = null;
+      const cmd = joined.text;
+      if (cmd && !cmd.startsWith("#") && COMMAND_START.test(cmd)) out.push({ kind: "command", text: cmd, line: joined.line, via: "fence" });
       return;
     }
     for (const m of raw.matchAll(/`([^`]+)`/g)) {
       const span = m[1].trim();
-      if (COMMAND_START.test(span) && span.includes(" ")) out.push({ kind: "command", text: span, line: lineNo });
-      else if (PATH_LIKE.test(span) && !span.startsWith("http") && !span.includes("<")) out.push({ kind: "path", text: span, line: lineNo });
+      if (COMMAND_START.test(span) && span.includes(" ")) out.push({ kind: "command", text: span, line: lineNo, via: "code" });
+      else if (PATH_LIKE.test(span) && !span.startsWith("http") && !span.includes("<")) out.push({ kind: "path", text: span, line: lineNo, via: "code" });
     }
     for (const m of raw.matchAll(/\[[^\]]*\]\(([^)\s#]+)(?:#[^)]*)?\)/g)) {
       const target = m[1];
       if (/^(https?:|mailto:|#)/.test(target)) continue;
-      out.push({ kind: "path", text: target, line: lineNo });
+      out.push({ kind: "path", text: target, line: lineNo, via: "link" });
     }
   });
   const seen = new Set<string>();
@@ -126,23 +136,36 @@ function staticCheckCommand(cmd: string, tree: string, profile: Profile, fileDir
   return { result: "pass" };
 }
 
+const MACHINE_PATH = /(^|\s|=)(~\/|\$HOME\b|\/Users\/|\/home\/[a-z])/;
+
 function categorize(cmd: string): InstructionItem["category"] {
   if (isRisky(cmd)) return "risky";
   if (INSTALL.test(cmd)) return "install";
   if (LONG_RUNNING.test(cmd)) return "long_running";
+  if (MACHINE_PATH.test(cmd)) return "needs_access";
   return "replay";
 }
 
 export function instructionItems(tree: string, profile: Profile): InstructionItem[] {
   const items: InstructionItem[] = [];
   let n = 1;
+  let basenames: Set<string> | null = null;
   for (const file of profile.instructionFiles) {
     const fileDir = dirname(file) === "" ? "." : dirname(file);
     for (const e of extractFromMarkdown(readText(join(tree, file)))) {
+      if (e.kind === "path") {
+        const rel = e.text.replace(/\/$/, "");
+        const fromFile = normalize(join(fileDir, rel));
+        if (fromFile.startsWith("..") && normalize(rel).startsWith("..")) continue;
+        if (e.via === "code" && !rel.includes("/")) {
+          basenames ??= new Set(listFiles(tree, { includeHidden: true }).map((f) => f.split("/").pop()!));
+          if (!basenames.has(rel) && !exists(join(tree, rel))) continue;
+        }
+      }
       const id = `ins-${String(n++).padStart(3, "0")}`;
       if (e.kind === "path") {
         const rel = e.text.replace(/\/$/, "");
-        const ok = exists(join(tree, normalize(join(fileDir, rel)))) || exists(join(tree, rel));
+        const ok = exists(join(tree, normalize(join(fileDir, rel)))) || exists(join(tree, rel)) || (e.via === "code" && !rel.includes("/"));
         items.push({ id, source: file, line: e.line, kind: "path", text: e.text, category: "path", staticResult: ok ? "pass" : "fail", staticReason: ok ? undefined : `${e.text} doesn't exist`, result: ok ? "pass" : "fail", reason: ok ? undefined : `${e.text} doesn't exist` });
         continue;
       }
@@ -156,9 +179,9 @@ export function instructionItems(tree: string, profile: Profile): InstructionIte
       } else if (category === "install") {
         result = "pass";
         reason = "install commands are checked statically; the clean replay runs the frozen install";
-      } else if (category === "risky" || category === "long_running") {
+      } else if (category === "risky" || category === "long_running" || category === "needs_access") {
         result = "not_run";
-        reason = category === "risky" ? "not replayed: it deploys, publishes, deletes or pipes the network into a shell" : "not replayed: it starts a long-running process";
+        reason = category === "risky" ? "not replayed: it deploys, publishes, deletes or pipes the network into a shell" : category === "long_running" ? "not replayed: it starts a long-running process" : "not replayed: it refers to a path on the author's machine";
       } else {
         result = "not_run";
         reason = "waiting for replay";

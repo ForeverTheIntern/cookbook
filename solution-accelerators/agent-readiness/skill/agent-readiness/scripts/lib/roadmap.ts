@@ -91,7 +91,8 @@ export function candidates(ctx: RoadmapContext): Candidate[] {
     if (s["clean.test"].state === "not_met" && s["clean.install"].state !== "not_met") {
       const ev = latestEvidence(audit, (e) => e.kind === "test" && e.component === c.id && e.result === "fail");
       const d = ev?.diagnosis;
-      const template = d?.cause === "service" ? "clean.test:service" : d?.cause === "credential" ? "clean.test:credential" : "clean.test";
+      const missing = !audit.contract.some((k) => k.component === c.id && k.kind === "test");
+      const template = missing ? "clean.test:missing" : d?.cause === "service" ? "clean.test:service" : d?.cause === "credential" ? "clean.test:credential" : "clean.test";
       const fixes: Fix[] = [{ condition: "clean.test", component: c.id }];
       if (failedKinds.filter((k) => k !== "test").length === 0) fixes.push({ condition: "commands", component: c.id });
       if (template === "clean.test:credential") credentialComps.push(c.id);
@@ -383,7 +384,7 @@ function fillObserved(roadmap: Roadmap, ctx: RoadmapContext): void {
     const [metric, pattern] = item.expected.watch.metric.split(":");
     const now = watchFor(metric, item.expected.watch.scope, o, ctx.rubric, pattern);
     const shared = roadmap.items
-      .filter((x) => x.id !== item.id && x.status === "done" && x.closedBy === item.closedBy && (x.expected.watch.scope === item.expected.watch.scope || x.expected.watch.scope === "repo" || item.expected.watch.scope === "repo"))
+      .filter((x) => x.id !== item.id && x.kind === "fix" && x.status === "done" && x.closedBy === item.closedBy && (x.expected.watch.scope === item.expected.watch.scope || x.expected.watch.scope === "repo" || item.expected.watch.scope === "repo"))
       .map((x) => x.id);
     item.observed = { value: `${item.expected.watch.baseline} to ${now.baseline}`, sharedWith: shared };
   }

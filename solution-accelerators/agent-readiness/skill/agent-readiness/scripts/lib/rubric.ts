@@ -23,6 +23,7 @@ export interface RubricTemplate {
   why: string;
   doneWhen: string;
   steps: { title: string; detail: string }[];
+  researchCheck?: string;
 }
 
 export interface Rubric {

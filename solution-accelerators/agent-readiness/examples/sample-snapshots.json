@@ -1,0 +1,1916 @@
+{
+  "generatedFrom": "fixtures/monorepo-mixed via npm run sample",
+  "snapshots": [
+    {
+      "schema": "agent-readiness/report@1",
+      "repo": "monorepo-mixed",
+      "audit": {
+        "id": "aud-2026-10-27-9f2ed83-33c1",
+        "date": "2026-10-27",
+        "commit": "9f2ed83",
+        "dirtyTree": false,
+        "rubric": "2026-10-alpha",
+        "tier": "local-exec",
+        "scriptsDigest": "86495f7765bdd5d62fb76960e16793ef262b3b559c8aff3131ab55c70d1f2080",
+        "seedPinned": true,
+        "sealStatus": "Seal verified against release agent-readiness-v0.1.0",
+        "staleCopy": null,
+        "previous": null,
+        "storedAt": ".agent-readiness/history/audits/aud-2026-10-27-9f2ed83-33c1"
+      },
+      "goal": "bug_fixes",
+      "goalLabel": "bug fixes",
+      "scale": [
+        {
+          "level": 0,
+          "name": "Not bootable",
+          "plain": "not bootable",
+          "meaning": "A clean checkout can't install, build and pass its tests.",
+          "measuredBy": "audit"
+        },
+        {
+          "level": 1,
+          "name": "Bootable",
+          "plain": "bootable",
+          "meaning": "A clean checkout installs, builds and passes every test.",
+          "measuredBy": "audit"
+        },
+        {
+          "level": 2,
+          "name": "Verifiable",
+          "plain": "verifiable",
+          "meaning": "Everything this activity needs to check an agent's work passes.",
+          "measuredBy": "audit"
+        },
+        {
+          "level": 3,
+          "name": "Delegable",
+          "plain": "delegable",
+          "meaning": "Agent PRs meet the outcome targets your team set.",
+          "measuredBy": "outcomes"
+        },
+        {
+          "level": 4,
+          "name": "Scalable",
+          "plain": "scalable",
+          "meaning": "Those targets held while agent PR volume at least doubled.",
+          "measuredBy": "outcomes"
+        }
+      ],
+      "maturity": {
+        "level": 0,
+        "couldBe": null,
+        "couldBeReason": null,
+        "setBy": [
+          "api"
+        ],
+        "partialCoverage": false,
+        "next": {
+          "level": 1,
+          "name": "Bootable",
+          "met": [],
+          "unmet": []
+        }
+      },
+      "executive": {
+        "heading": "Level 0 of 4, not bootable, for bug fixes",
+        "headline": "Agents can't pass the tests in api from a clean checkout, and 56% of recent changes land there. shared is already ready for bug fixes.",
+        "numbers": [
+          {
+            "label": "Active components ready for bug fixes",
+            "value": "1 of 3",
+            "comparison": "Active means at least 10% of recent changes"
+          },
+          {
+            "label": "Agent PRs that pass CI the first time",
+            "value": "33% (3 of 9)",
+            "comparison": "Other PRs: 71% (29 of 41), Sep 27 to Oct 27, 2026"
+          },
+          {
+            "label": "Recent changes in components below Level 1",
+            "value": "56%",
+            "comparison": "Changes in the last 90 days"
+          }
+        ],
+        "nextLine": "Next: Level 1, bootable. Met: installs from the lockfile in a clean container and builds in a clean container. Not yet: api passes every test in a clean container.",
+        "gaps": [
+          {
+            "rank": 1,
+            "text": "Set up Postgres for agents in api",
+            "blocks": "Blocks Level 1 for api",
+            "itemId": "clean.test:api"
+          },
+          {
+            "rank": 2,
+            "text": "Make worker's tests catch wrong behavior",
+            "blocks": "Blocks Level 2 for worker",
+            "itemId": "faults:worker"
+          }
+        ],
+        "ask": "Decision needed: approve committing the setup files. Also name an owner for agent readiness.",
+        "coverage": "The level covers 3 components and ignores infra (2% of changes, Terraform isn't supported by this rubric). Agent PRs are matched by head branch starting with cursor/.",
+        "noBlocker": false
+      },
+      "actions": [
+        {
+          "rank": 1,
+          "itemId": "clean.test:api",
+          "title": "Set up Postgres for agents in api",
+          "startNow": false,
+          "why": "In a clean container, api's tests fail because nothing starts Postgres: connection refused on port 5432.",
+          "movesTheNeedle": "Takes api to Level 1 for bug fixes, covering 56% of recent changes. Agents can run api's checks before they push, so fewer agent PRs fail CI the first time.",
+          "watch": "Share of agent PRs touching api that pass CI the first time. Now: 20% (1 of 5), Sep 27 to Oct 27, 2026.",
+          "research": "In the BootstrapAgent study, a reusable, verified setup cut later agents' token use by 25.9% and build time by 22.3%. Measured on the study's benchmark repositories. https://arxiv.org/abs/2605.15815",
+          "effortAndOwner": "Small: setup scripts and environment config, no source changes. Repo maintainer.",
+          "decision": "Approve committing the setup files",
+          "doneWhen": "`readiness replay --component api` passes every test.",
+          "dependsOn": [],
+          "impact": 0.56,
+          "effort": "small"
+        },
+        {
+          "rank": 2,
+          "itemId": "faults:worker",
+          "title": "Make worker's tests catch wrong behavior",
+          "startNow": false,
+          "why": "The audit planted 5 faults in worker in a throwaway copy, and the tests caught 0.",
+          "movesTheNeedle": "Takes worker to Level 2 for bug fixes, covering 27% of recent changes. Changes in worker get a real pass-or-fail signal, so reviewers catch less by hand.",
+          "watch": "Share of agent PRs touching worker where a reviewer requested changes. Now: 2 of 3 (too few for a rate), Sep 27 to Oct 27, 2026.",
+          "research": "In DeployBench, 53.9% of failed runs passed generic checks and failed only task-specific ones. 51 research-artifact deployment tasks. https://deploybench.vercel.app/",
+          "effortAndOwner": "Medium: tests in worker only. Component owner.",
+          "decision": "What the untested behavior in packages/worker/src/retry.js should be",
+          "doneWhen": "A new audit's fresh planted faults in worker are all caught.",
+          "dependsOn": [],
+          "impact": 0.27,
+          "effort": "medium"
+        },
+        {
+          "rank": 3,
+          "itemId": "delegate:bug_fixes:shared",
+          "title": "Give agents bug fixes in shared",
+          "startNow": true,
+          "why": "shared is already at Level 2 for bug fixes, so agents can check their own work there.",
+          "movesTheNeedle": "Unlocks measured agent work in shared. The next report has real agent PR numbers for shared, which Level 3 is measured on.",
+          "watch": "Merged agent PRs touching shared. Now: 2 of 2 (too few for a rate), Sep 27 to Oct 27, 2026.",
+          "research": null,
+          "effortAndOwner": "Small: pick the work. Component owner.",
+          "decision": "Which tasks go to agents first, and who reviews them",
+          "doneWhen": "Agent PRs in shared appear in the outcome numbers.",
+          "dependsOn": [],
+          "impact": 0,
+          "effort": "small"
+        }
+      ],
+      "matrix": {
+        "quadrants": [
+          "Do first",
+          "Big unlocks",
+          "Quick fills",
+          "Later"
+        ],
+        "points": [
+          {
+            "label": "1. Set up Postgres for agents in api",
+            "x": 0.2,
+            "y": 0.56,
+            "itemId": "clean.test:api"
+          },
+          {
+            "label": "2. Make worker's tests catch wrong behavior",
+            "x": 0.5900000000000001,
+            "y": 0.27,
+            "itemId": "faults:worker"
+          },
+          {
+            "label": "3. Give agents bug fixes in shared",
+            "x": 0.28,
+            "y": 0,
+            "itemId": "delegate:bug_fixes:shared"
+          }
+        ]
+      },
+      "roadmap": {
+        "owner": null,
+        "doneCount": 0,
+        "total": 7,
+        "items": [
+          {
+            "id": "owner",
+            "order": 1,
+            "title": "Name an owner for agent readiness",
+            "status": "next",
+            "statusText": "next",
+            "unlocks": "a named owner for approvals, targets and the weekly recheck",
+            "decision": "Who owns agent readiness for this repo"
+          },
+          {
+            "id": "clean.test:api",
+            "order": 2,
+            "title": "Set up Postgres for agents in api",
+            "status": "next",
+            "statusText": "next",
+            "unlocks": "api to Level 1 for bug fixes",
+            "decision": "Approve committing the setup files"
+          },
+          {
+            "id": "faults:worker",
+            "order": 3,
+            "title": "Make worker's tests catch wrong behavior",
+            "status": "next",
+            "statusText": "next",
+            "unlocks": "worker to Level 2 for bug fixes",
+            "decision": "What the untested behavior in packages/worker/src/retry.js should be"
+          },
+          {
+            "id": "instructions:repo",
+            "order": 4,
+            "title": "Fix the stale agent instructions",
+            "status": "later",
+            "statusText": "later",
+            "unlocks": "no level change for bug fixes yet",
+            "decision": null
+          },
+          {
+            "id": "faults:api",
+            "order": 5,
+            "title": "Check api's tests with planted faults",
+            "status": "waiting",
+            "statusText": "waiting on step 2",
+            "unlocks": "nothing on its own; first needs Set up Postgres for agents in api",
+            "decision": "What the untested behavior in packages/api should be"
+          },
+          {
+            "id": "delegate:bug_fixes:shared",
+            "order": 6,
+            "title": "Give agents bug fixes in shared",
+            "status": "start_now",
+            "statusText": "can start now",
+            "unlocks": "measured agent work in shared",
+            "decision": "Which tasks go to agents first, and who reviews them"
+          },
+          {
+            "id": "targets:bug_fixes",
+            "order": 7,
+            "title": "Set your Level 3 targets",
+            "status": "later",
+            "statusText": "later",
+            "unlocks": "a definition of Level 3 for bug fixes",
+            "decision": "The merge rate, first-time CI pass rate and review load that mean agents handle bug fixes here"
+          }
+        ]
+      },
+      "progress": null,
+      "details": {
+        "steps": [
+          {
+            "itemId": "clean.test:api",
+            "title": "Set up Postgres for agents in api",
+            "steps": [
+              {
+                "title": "Ask the agent to fix it",
+                "detail": "Say \"fix the primary blocker\". It drafts install and start scripts and a `.cursor/environment.json` with `readiness draft-env`."
+              },
+              {
+                "title": "The agent proves it",
+                "detail": "`readiness replay --component api` must pass every test before the fix is offered."
+              },
+              {
+                "title": "Review and merge",
+                "detail": "Check that the start script only starts local services and names no production URLs."
+              },
+              {
+                "title": "Point Cloud Agents at it",
+                "detail": "A team admin sets the Cloud Agent environment to read `.cursor/environment.json`; committing the file alone changes no environment."
+              },
+              {
+                "title": "Re-audit",
+                "detail": "The next audit confirms Level 1 and can now plant faults in api."
+              }
+            ]
+          },
+          {
+            "itemId": "faults:worker",
+            "title": "Make worker's tests catch wrong behavior",
+            "steps": [
+              {
+                "title": "Decide the intended behavior",
+                "detail": "For the files named here, write down what correct behavior is, including edge cases."
+              },
+              {
+                "title": "Write tests that pin it down",
+                "detail": "Assert results and edge cases, not just that code runs."
+              },
+              {
+                "title": "Prove it with fresh faults",
+                "detail": "Run a new audit. It plants different faults than this one, so tests aimed at one audit's faults don't help."
+              },
+              {
+                "title": "Review",
+                "detail": "`readiness diff` flags any deleted test or new skip marker, so nothing was weakened to pass."
+              }
+            ]
+          },
+          {
+            "itemId": "delegate:bug_fixes:shared",
+            "title": "Give agents bug fixes in shared",
+            "steps": [
+              {
+                "title": "Pick 3 to 5 real tasks",
+                "detail": "Well-scoped bug fixes that touch only shared."
+              },
+              {
+                "title": "Hand them to agents",
+                "detail": "Agents run the verify skill before they push."
+              },
+              {
+                "title": "Review as usual",
+                "detail": "The next audit counts these PRs by component."
+              }
+            ]
+          }
+        ],
+        "checks": [
+          {
+            "id": "scope.profile",
+            "name": "Components and where changes land",
+            "why": "Levels follow the work, so the audit finds each package and its share of recent changes.",
+            "sources": [],
+            "result": "4 components found, 3 assessed",
+            "ok": null,
+            "counts": {
+              "passed": 0,
+              "failed": 0,
+              "notRun": 0
+            },
+            "evidence": []
+          },
+          {
+            "id": "scope.agent_assets",
+            "name": "Agent assets in the repo",
+            "why": "Shows what agent setup already exists and who maintains it. Not scored.",
+            "sources": [],
+            "result": "3 assets, 3 authors",
+            "ok": null,
+            "counts": {
+              "passed": 0,
+              "failed": 0,
+              "notRun": 0
+            },
+            "evidence": []
+          },
+          {
+            "id": "bootstrap.cold_replay",
+            "name": "Setup works from a clean checkout",
+            "why": "Every agent starts from a clean checkout, so setup that only works on a prepared machine breaks every agent run.",
+            "sources": [
+              {
+                "claim": "In the BootstrapAgent study, a reusable, verified setup cut later agents' token use by 25.9% and build time by 22.3%.",
+                "caveat": "Measured on the study's benchmark repositories.",
+                "url": "https://arxiv.org/abs/2605.15815"
+              }
+            ],
+            "result": "failed: api; passed: shared and worker",
+            "ok": false,
+            "counts": {
+              "passed": 6,
+              "failed": 1,
+              "notRun": 0
+            },
+            "evidence": [
+              "ev-005",
+              "ev-006",
+              "ev-007",
+              "ev-009",
+              "ev-011",
+              "ev-013",
+              "ev-014"
+            ]
+          },
+          {
+            "id": "verify.canonical_interface",
+            "name": "Build, lint, type-check and test commands pass",
+            "why": "Agents need one known way to check their own work.",
+            "sources": [],
+            "result": "failed: api; passed: shared and worker",
+            "ok": false,
+            "counts": {
+              "passed": 3,
+              "failed": 0,
+              "notRun": 0
+            },
+            "evidence": [
+              "ev-008",
+              "ev-010",
+              "ev-012"
+            ]
+          },
+          {
+            "id": "verify.behavioral_oracle",
+            "name": "Tests catch planted faults",
+            "why": "Green tests aren't proof that a change is right.",
+            "sources": [
+              {
+                "claim": "In DeployBench, 53.9% of failed runs passed generic checks and failed only task-specific ones.",
+                "caveat": "51 research-artifact deployment tasks.",
+                "url": "https://deploybench.vercel.app/"
+              },
+              {
+                "claim": "OpenAI estimated about 30% of SWE-Bench Pro's 731 public tasks were broken, including low-coverage tests that let incomplete fixes pass.",
+                "caveat": "An audit of one benchmark, not of customer repositories.",
+                "url": "https://openai.com/index/separating-signal-from-noise-coding-evaluations"
+              }
+            ],
+            "result": "api: tests must pass before faults can be planted; shared: caught 5 of 5 planted faults; worker: caught 0 of 5 planted faults",
+            "ok": false,
+            "counts": {
+              "passed": 1,
+              "failed": 1,
+              "notRun": 1
+            },
+            "evidence": [
+              "ev-015",
+              "ev-016",
+              "ev-017"
+            ]
+          },
+          {
+            "id": "context.instructions_verified",
+            "name": "Agent instructions are accurate",
+            "why": "Agents follow AGENTS.md, rules and skills literally, so a stale command costs more than a missing one. No outcome study yet measures how much these files help.",
+            "sources": [],
+            "result": "4 passed, 3 failed, 0 not run",
+            "ok": false,
+            "counts": {
+              "passed": 4,
+              "failed": 3,
+              "notRun": 0
+            },
+            "evidence": [
+              "ev-001",
+              "ev-002",
+              "ev-003",
+              "ev-018",
+              "ev-019"
+            ]
+          },
+          {
+            "id": "safety.execution_boundary",
+            "name": "Normal work needs no production access",
+            "why": "Agents run with whatever access setup gives them, so normal work must never need production credentials.",
+            "sources": [],
+            "result": "passed",
+            "ok": true,
+            "counts": {
+              "passed": 1,
+              "failed": 0,
+              "notRun": 0
+            },
+            "evidence": [
+              "ev-004"
+            ]
+          }
+        ],
+        "notAssessed": [
+          "Whether CI matches the local commands",
+          "Flaky tests",
+          "The quality of error messages",
+          "How easily code can be found",
+          "Outcome checks on held-out tasks"
+        ],
+        "levels": {
+          "activities": [
+            {
+              "id": "first_pr",
+              "label": "First PR",
+              "bar": "Level 2 needs: build, lint, type-check and test commands pass, agent instructions are accurate and normal work needs no production access"
+            },
+            {
+              "id": "bug_fixes",
+              "label": "Bug fixes",
+              "bar": "Level 2 needs: build, lint, type-check and test commands pass, tests catch planted faults and normal work needs no production access"
+            },
+            {
+              "id": "features",
+              "label": "Features and refactors",
+              "bar": "Level 2 needs: build, lint, type-check and test commands pass, tests catch planted faults, normal work needs no production access and agent instructions are accurate"
+            },
+            {
+              "id": "repo_wide",
+              "label": "Repo-wide changes",
+              "bar": "Level 2 needs: build, lint, type-check and test commands pass, tests catch planted faults, normal work needs no production access, toolchain versions are pinned and a frozen install reproduces the lockfile"
+            }
+          ],
+          "components": [
+            {
+              "id": "api",
+              "changeShare": 0.56,
+              "active": true,
+              "levels": {
+                "first_pr": 0,
+                "bug_fixes": 0,
+                "features": 0
+              },
+              "couldBe": {}
+            },
+            {
+              "id": "shared",
+              "changeShare": 0.15,
+              "active": true,
+              "levels": {
+                "first_pr": 1,
+                "bug_fixes": 2,
+                "features": 1
+              },
+              "couldBe": {}
+            },
+            {
+              "id": "worker",
+              "changeShare": 0.27,
+              "active": true,
+              "levels": {
+                "first_pr": 1,
+                "bug_fixes": 1,
+                "features": 1
+              },
+              "couldBe": {}
+            }
+          ],
+          "repoLevels": {
+            "first_pr": 0,
+            "bug_fixes": 0,
+            "features": 0,
+            "repo_wide": 0
+          },
+          "repoLevelRule": "the lowest level among components that get at least 10% of changes over 90 days; a component joins or leaves that set only after two audits on the same side of the line",
+          "unassessed": [
+            {
+              "id": "infra",
+              "changeShare": 0.02,
+              "reason": "Terraform isn't supported by this rubric"
+            }
+          ]
+        },
+        "outcomes": {
+          "window": "Sep 27 to Oct 27, 2026",
+          "filter": "head branch starting with cursor/",
+          "source": "a recorded PR file",
+          "series": [
+            {
+              "label": "Agent PRs",
+              "opened": 9,
+              "merged": {
+                "count": 7,
+                "n": 9,
+                "rate": 0.778,
+                "window": "Sep 27 to Oct 27, 2026"
+              },
+              "firstTimeCi": {
+                "count": 3,
+                "n": 9,
+                "rate": 0.333,
+                "window": "Sep 27 to Oct 27, 2026"
+              },
+              "changesRequested": {
+                "count": 4,
+                "n": 9,
+                "rate": 0.444,
+                "window": "Sep 27 to Oct 27, 2026"
+              },
+              "medianDaysToMerge": 2
+            },
+            {
+              "label": "Other PRs",
+              "opened": 41,
+              "merged": {
+                "count": 35,
+                "n": 41,
+                "rate": 0.854,
+                "window": "Sep 27 to Oct 27, 2026"
+              },
+              "firstTimeCi": {
+                "count": 29,
+                "n": 41,
+                "rate": 0.707,
+                "window": "Sep 27 to Oct 27, 2026"
+              },
+              "changesRequested": {
+                "count": 7,
+                "n": 41,
+                "rate": 0.171,
+                "window": "Sep 27 to Oct 27, 2026"
+              },
+              "medianDaysToMerge": 2
+            }
+          ],
+          "byComponent": [
+            {
+              "component": "api",
+              "prs": 5,
+              "firstTimeCi": {
+                "count": 1,
+                "n": 5,
+                "rate": 0.2,
+                "window": "Sep 27 to Oct 27, 2026"
+              },
+              "changesRequested": {
+                "count": 2,
+                "n": 5,
+                "rate": 0.4,
+                "window": "Sep 27 to Oct 27, 2026"
+              }
+            },
+            {
+              "component": "shared",
+              "prs": 2,
+              "firstTimeCi": {
+                "count": 2,
+                "n": 2,
+                "rate": null,
+                "window": "Sep 27 to Oct 27, 2026"
+              },
+              "changesRequested": {
+                "count": 0,
+                "n": 2,
+                "rate": null,
+                "window": "Sep 27 to Oct 27, 2026"
+              }
+            },
+            {
+              "component": "worker",
+              "prs": 3,
+              "firstTimeCi": {
+                "count": 1,
+                "n": 3,
+                "rate": null,
+                "window": "Sep 27 to Oct 27, 2026"
+              },
+              "changesRequested": {
+                "count": 2,
+                "n": 3,
+                "rate": null,
+                "window": "Sep 27 to Oct 27, 2026"
+              }
+            }
+          ],
+          "multiComponentNote": "1 agent PR touched more than one component, so the component rows can add up to more than the total.",
+          "matchedPrs": [
+            201,
+            203,
+            206,
+            209,
+            212,
+            214,
+            217,
+            219,
+            221
+          ],
+          "caveat": "A baseline, not proof that readiness explains these numbers. Model updates and the mix of tasks move them too."
+        },
+        "assets": [
+          {
+            "kind": "rules",
+            "path": ".cursor/rules/style.mdc",
+            "authors": [
+              "Contributor A"
+            ],
+            "lastChanged": "2026-06-29",
+            "status": "Replays",
+            "ok": true
+          },
+          {
+            "kind": "skill",
+            "path": ".cursor/skills/release-notes/SKILL.md",
+            "authors": [
+              "Contributor A",
+              "Contributor C"
+            ],
+            "lastChanged": "2026-09-17",
+            "status": "1 stale item",
+            "ok": false
+          },
+          {
+            "kind": "agents_md",
+            "path": "AGENTS.md",
+            "authors": [
+              "Contributor A",
+              "Contributor B"
+            ],
+            "lastChanged": "2026-09-27",
+            "status": "2 stale items",
+            "ok": false
+          }
+        ],
+        "missingAssets": [
+          "an environment setup",
+          "hooks"
+        ],
+        "evidence": [
+          {
+            "id": "ev-001",
+            "check": "context.instructions_verified",
+            "component": null,
+            "ran": ".cursor/skills/release-notes/SKILL.md:8 `npm run changelog`: no \"changelog\" script in package.json",
+            "where": "read from files",
+            "result": "fail",
+            "summary": ".cursor/skills/release-notes/SKILL.md:8 `npm run changelog`: no \"changelog\" script in package.json"
+          },
+          {
+            "id": "ev-002",
+            "check": "context.instructions_verified",
+            "component": null,
+            "ran": "AGENTS.md:7 `pnpm test`: uses pnpm, but the repo uses npm",
+            "where": "read from files",
+            "result": "fail",
+            "summary": "AGENTS.md:7 `pnpm test`: uses pnpm, but the repo uses npm"
+          },
+          {
+            "id": "ev-003",
+            "check": "context.instructions_verified",
+            "component": null,
+            "ran": "AGENTS.md:8 `docs/architecture.md`: docs/architecture.md doesn't exist",
+            "where": "read from files",
+            "result": "fail",
+            "summary": "AGENTS.md:8 `docs/architecture.md`: docs/architecture.md doesn't exist"
+          },
+          {
+            "id": "ev-004",
+            "check": "safety.execution_boundary",
+            "component": null,
+            "ran": "no blocking findings; 0 items listed for review",
+            "where": "read from files",
+            "result": "pass",
+            "summary": "no blocking findings; 0 items listed for review"
+          },
+          {
+            "id": "ev-005",
+            "check": "bootstrap.cold_replay",
+            "component": null,
+            "ran": "toolchain pinned in .nvmrc",
+            "where": "read from files",
+            "result": "pass",
+            "summary": "toolchain pinned in .nvmrc"
+          },
+          {
+            "id": "ev-006",
+            "check": "bootstrap.cold_replay",
+            "component": null,
+            "ran": "node --version && npm --version",
+            "where": "ran in a clean container",
+            "result": "pass",
+            "summary": "doctor passed"
+          },
+          {
+            "id": "ev-007",
+            "check": "bootstrap.cold_replay",
+            "component": null,
+            "ran": "npm ci",
+            "where": "ran in a clean container",
+            "result": "pass",
+            "summary": "install passed"
+          },
+          {
+            "id": "ev-008",
+            "check": "verify.canonical_interface",
+            "component": "api",
+            "ran": "npm run lint",
+            "where": "ran in a clean container",
+            "result": "pass",
+            "summary": "lint passed"
+          },
+          {
+            "id": "ev-009",
+            "check": "bootstrap.cold_replay",
+            "component": "api",
+            "ran": "npm run test",
+            "where": "ran in a clean container",
+            "result": "fail",
+            "summary": "test failed: connection refused on port 5432"
+          },
+          {
+            "id": "ev-010",
+            "check": "verify.canonical_interface",
+            "component": "shared",
+            "ran": "npm run lint",
+            "where": "ran in a clean container",
+            "result": "pass",
+            "summary": "lint passed"
+          },
+          {
+            "id": "ev-011",
+            "check": "bootstrap.cold_replay",
+            "component": "shared",
+            "ran": "npm run test",
+            "where": "ran in a clean container",
+            "result": "pass",
+            "summary": "test passed"
+          },
+          {
+            "id": "ev-012",
+            "check": "verify.canonical_interface",
+            "component": "worker",
+            "ran": "npm run lint",
+            "where": "ran in a clean container",
+            "result": "pass",
+            "summary": "lint passed"
+          },
+          {
+            "id": "ev-013",
+            "check": "bootstrap.cold_replay",
+            "component": "worker",
+            "ran": "npm run test",
+            "where": "ran in a clean container",
+            "result": "pass",
+            "summary": "test passed"
+          },
+          {
+            "id": "ev-014",
+            "check": "bootstrap.cold_replay",
+            "component": null,
+            "ran": "frozen install reproduced the lockfile",
+            "where": "ran in a clean container",
+            "result": "pass",
+            "summary": "frozen install reproduced the lockfile"
+          },
+          {
+            "id": "ev-015",
+            "check": "verify.behavioral_oracle",
+            "component": "api",
+            "ran": "tests must pass before faults can be planted",
+            "where": "ran in a clean container",
+            "result": "not_run",
+            "summary": "tests must pass before faults can be planted"
+          },
+          {
+            "id": "ev-016",
+            "check": "verify.behavioral_oracle",
+            "component": "shared",
+            "ran": "caught 5 of 5 planted faults (change_constant, drop_throw_or_return, negate_condition)",
+            "where": "ran in a clean container",
+            "result": "pass",
+            "summary": "caught 5 of 5 planted faults (change_constant, drop_throw_or_return, negate_condition)"
+          },
+          {
+            "id": "ev-017",
+            "check": "verify.behavioral_oracle",
+            "component": "worker",
+            "ran": "caught 0 of 5 planted faults (negate_condition, swap_return, boundary_flip, change_constant); uncaught in packages/worker/src/retry.js",
+            "where": "ran in a clean container",
+            "result": "fail",
+            "summary": "caught 0 of 5 planted faults (negate_condition, swap_return, boundary_flip, change_constant); uncaught in packages/worker/src/retry.js"
+          },
+          {
+            "id": "ev-018",
+            "check": "context.instructions_verified",
+            "component": null,
+            "ran": "npm run lint -w api",
+            "where": "ran in a clean container",
+            "result": "pass",
+            "summary": ".cursor/rules/style.mdc:6 `npm run lint -w api` replays"
+          },
+          {
+            "id": "ev-019",
+            "check": "context.instructions_verified",
+            "component": null,
+            "ran": "npm run test -w shared",
+            "where": "ran in a clean container",
+            "result": "pass",
+            "summary": "AGENTS.md:6 `npm run test -w shared` replays"
+          }
+        ],
+        "record": [
+          {
+            "label": "Audit",
+            "value": "aud-2026-10-27-9f2ed83-33c1"
+          },
+          {
+            "label": "Commit",
+            "value": "9f2ed83 (clean tree)"
+          },
+          {
+            "label": "Rubric",
+            "value": "2026-10-alpha"
+          },
+          {
+            "label": "Permission tier",
+            "value": "local-exec"
+          },
+          {
+            "label": "Seal",
+            "value": "Seal verified against release agent-readiness-v0.1.0"
+          },
+          {
+            "label": "Skill digest",
+            "value": "86495f7765bd"
+          },
+          {
+            "label": "Planted-fault seed",
+            "value": "pinned (eval run; not a production result)"
+          },
+          {
+            "label": "Replay environment",
+            "value": "docker container, readiness-ubuntu-node22"
+          },
+          {
+            "label": "Stored in",
+            "value": ".agent-readiness/history/audits/aud-2026-10-27-9f2ed83-33c1"
+          }
+        ]
+      }
+    },
+    {
+      "schema": "agent-readiness/report@1",
+      "repo": "monorepo-mixed",
+      "audit": {
+        "id": "aud-2026-11-30-9b5563d-467f",
+        "date": "2026-11-30",
+        "commit": "9b5563d",
+        "dirtyTree": false,
+        "rubric": "2026-10-alpha",
+        "tier": "local-exec",
+        "scriptsDigest": "86495f7765bdd5d62fb76960e16793ef262b3b559c8aff3131ab55c70d1f2080",
+        "seedPinned": true,
+        "sealStatus": "Seal verified against release agent-readiness-v0.1.0",
+        "staleCopy": null,
+        "previous": "aud-2026-10-30-fceaef2-3194",
+        "storedAt": ".agent-readiness/history/audits/aud-2026-11-30-9b5563d-467f"
+      },
+      "goal": "bug_fixes",
+      "goalLabel": "bug fixes",
+      "scale": [
+        {
+          "level": 0,
+          "name": "Not bootable",
+          "plain": "not bootable",
+          "meaning": "A clean checkout can't install, build and pass its tests.",
+          "measuredBy": "audit"
+        },
+        {
+          "level": 1,
+          "name": "Bootable",
+          "plain": "bootable",
+          "meaning": "A clean checkout installs, builds and passes every test.",
+          "measuredBy": "audit"
+        },
+        {
+          "level": 2,
+          "name": "Verifiable",
+          "plain": "verifiable",
+          "meaning": "Everything this activity needs to check an agent's work passes.",
+          "measuredBy": "audit"
+        },
+        {
+          "level": 3,
+          "name": "Delegable",
+          "plain": "delegable",
+          "meaning": "Agent PRs meet the outcome targets your team set.",
+          "measuredBy": "outcomes"
+        },
+        {
+          "level": 4,
+          "name": "Scalable",
+          "plain": "scalable",
+          "meaning": "Those targets held while agent PR volume at least doubled.",
+          "measuredBy": "outcomes"
+        }
+      ],
+      "maturity": {
+        "level": 1,
+        "couldBe": null,
+        "couldBeReason": null,
+        "setBy": [
+          "worker"
+        ],
+        "partialCoverage": false,
+        "next": {
+          "level": 2,
+          "name": "Verifiable",
+          "met": [],
+          "unmet": []
+        }
+      },
+      "executive": {
+        "heading": "Level 1 of 4, bootable, for bug fixes",
+        "headline": "Agents can build and test worker, but its checks can't yet catch wrong bug fixes, and 59% of recent changes land there. api and shared are already ready for bug fixes.",
+        "numbers": [
+          {
+            "label": "Active components ready for bug fixes",
+            "value": "2 of 3",
+            "comparison": "Active means at least 10% of recent changes"
+          },
+          {
+            "label": "Agent PRs that pass CI the first time",
+            "value": "65% (11 of 17)",
+            "comparison": "Other PRs: 71% (27 of 38), Oct 31 to Nov 30, 2026"
+          },
+          {
+            "label": "Recent changes in components below Level 2",
+            "value": "59%",
+            "comparison": "Changes in the last 90 days"
+          }
+        ],
+        "nextLine": "Next: Level 2, verifiable. Met: build, lint, type-check and test commands pass and normal work needs no production access. Not yet: worker tests catch planted faults.",
+        "gaps": [
+          {
+            "rank": 1,
+            "text": "Make worker's tests catch wrong behavior",
+            "blocks": "Blocks Level 2 for worker",
+            "itemId": "faults:worker"
+          }
+        ],
+        "ask": "Decision needed: what the untested behavior in packages/worker/src/retry.js should be.",
+        "coverage": "The level covers 3 components and ignores infra (4% of changes, Terraform isn't supported by this rubric). Agent PRs are matched by head branch starting with cursor/.",
+        "noBlocker": false
+      },
+      "actions": [
+        {
+          "rank": 1,
+          "itemId": "faults:worker",
+          "title": "Make worker's tests catch wrong behavior",
+          "startNow": false,
+          "why": "The audit planted 5 faults in worker in a throwaway copy, and the tests caught 0.",
+          "movesTheNeedle": "Takes worker to Level 2 for bug fixes, covering 59% of recent changes. Changes in worker get a real pass-or-fail signal, so reviewers catch less by hand.",
+          "watch": "Share of agent PRs touching worker where a reviewer requested changes. Now: 2 of 3 (too few for a rate), Sep 27 to Oct 27, 2026.",
+          "research": "In DeployBench, 53.9% of failed runs passed generic checks and failed only task-specific ones. 51 research-artifact deployment tasks. https://deploybench.vercel.app/",
+          "effortAndOwner": "Medium: tests in worker only. Component owner.",
+          "decision": "What the untested behavior in packages/worker/src/retry.js should be",
+          "doneWhen": "A new audit's fresh planted faults in worker are all caught.",
+          "dependsOn": [],
+          "impact": 0.587,
+          "effort": "medium"
+        }
+      ],
+      "matrix": {
+        "quadrants": [
+          "Do first",
+          "Big unlocks",
+          "Quick fills",
+          "Later"
+        ],
+        "points": [
+          {
+            "label": "1. Make worker's tests catch wrong behavior",
+            "x": 0.55,
+            "y": 0.587,
+            "itemId": "faults:worker"
+          }
+        ]
+      },
+      "roadmap": {
+        "owner": "Platform team",
+        "doneCount": 4,
+        "total": 8,
+        "items": [
+          {
+            "id": "owner",
+            "order": 1,
+            "title": "Name an owner for agent readiness",
+            "status": "done",
+            "statusText": "done Oct 30",
+            "unlocks": "a named owner for approvals, targets and the weekly recheck",
+            "decision": "Who owns agent readiness for this repo"
+          },
+          {
+            "id": "clean.test:api",
+            "order": 2,
+            "title": "Set up Postgres for agents in api",
+            "status": "done",
+            "statusText": "done Oct 30",
+            "unlocks": "api to Level 1 for bug fixes",
+            "decision": "Approve committing the setup files"
+          },
+          {
+            "id": "faults:worker",
+            "order": 3,
+            "title": "Make worker's tests catch wrong behavior",
+            "status": "next",
+            "statusText": "next",
+            "unlocks": "worker to Level 2 for bug fixes",
+            "decision": "What the untested behavior in packages/worker/src/retry.js should be"
+          },
+          {
+            "id": "instructions:repo",
+            "order": 4,
+            "title": "Fix the stale agent instructions",
+            "status": "done",
+            "statusText": "done Oct 30",
+            "unlocks": "no level change for bug fixes yet",
+            "decision": null
+          },
+          {
+            "id": "faults:api",
+            "order": 5,
+            "title": "Check api's tests with planted faults",
+            "status": "done",
+            "statusText": "done Oct 30",
+            "unlocks": "nothing on its own; first needs Set up Postgres for agents in api",
+            "decision": "What the untested behavior in packages/api should be"
+          },
+          {
+            "id": "delegate:bug_fixes:shared",
+            "order": 6,
+            "title": "Give agents bug fixes in shared",
+            "status": "in_progress",
+            "statusText": "in progress",
+            "unlocks": "measured agent work in shared",
+            "decision": "Which tasks go to agents first, and who reviews them"
+          },
+          {
+            "id": "targets:bug_fixes",
+            "order": 7,
+            "title": "Set your Level 3 targets",
+            "status": "later",
+            "statusText": "later",
+            "unlocks": "a definition of Level 3 for bug fixes",
+            "decision": "The merge rate, first-time CI pass rate and review load that mean agents handle bug fixes here"
+          },
+          {
+            "id": "delegate:bug_fixes:api",
+            "order": 8,
+            "title": "Give agents bug fixes in api",
+            "status": "in_progress",
+            "statusText": "in progress",
+            "unlocks": "measured agent work in api",
+            "decision": "Which tasks go to agents first, and who reviews them"
+          }
+        ]
+      },
+      "progress": {
+        "history": [
+          {
+            "date": "2026-10-27",
+            "kind": "audit",
+            "result": "sealed",
+            "note": null,
+            "levels": {
+              "api": 0,
+              "shared": 2,
+              "worker": 1
+            },
+            "repoLevel": 0,
+            "rubric": "2026-10-alpha"
+          },
+          {
+            "date": "2026-10-30",
+            "kind": "audit",
+            "result": "sealed",
+            "note": null,
+            "levels": {
+              "api": 2,
+              "shared": 2,
+              "worker": 1
+            },
+            "repoLevel": 1,
+            "rubric": "2026-10-alpha"
+          },
+          {
+            "date": "2026-11-06",
+            "kind": "recheck",
+            "result": "passed",
+            "note": null,
+            "levels": {
+              "api": 2,
+              "shared": 2,
+              "worker": 1
+            },
+            "repoLevel": 1,
+            "rubric": "2026-10-alpha"
+          },
+          {
+            "date": "2026-11-13",
+            "kind": "recheck",
+            "result": "failed",
+            "note": "npm run lint failed: npm error command sh -c node ../../scripts/lint.mjs src",
+            "levels": {
+              "api": 2,
+              "shared": 1,
+              "worker": 1
+            },
+            "repoLevel": 1,
+            "rubric": "2026-10-alpha"
+          },
+          {
+            "date": "2026-11-20",
+            "kind": "recheck",
+            "result": "passed",
+            "note": null,
+            "levels": {
+              "api": 2,
+              "shared": 2,
+              "worker": 1
+            },
+            "repoLevel": 1,
+            "rubric": "2026-10-alpha"
+          },
+          {
+            "date": "2026-11-30",
+            "kind": "audit",
+            "result": "sealed",
+            "note": null,
+            "levels": {
+              "api": 2,
+              "shared": 2,
+              "worker": 1
+            },
+            "repoLevel": 1,
+            "rubric": "2026-10-alpha"
+          }
+        ],
+        "closed": [
+          {
+            "title": "2. Set up Postgres for agents in api",
+            "closed": "2026-10-30",
+            "expected": "Agents can run api's checks before they push, so fewer agent PRs fail CI the first time. Watch: Share of agent PRs touching api that pass CI the first time, 20% (1 of 5).",
+            "observed": "20% (1 of 5) to 78% (7 of 9) (shared with step 1, step 4 and step 5)"
+          },
+          {
+            "title": "4. Fix the stale agent instructions",
+            "closed": "2026-10-30",
+            "expected": "Agents stop following stale steps, such as running pnpm in a repo that doesn't use it. Watch: Agent PRs that add a stray pnpm-lock.yaml, 11% (1 of 9).",
+            "observed": "11% (1 of 9) to 0% (0 of 17) (shared with step 1, step 2 and step 5)"
+          },
+          {
+            "title": "5. Check api's tests with planted faults",
+            "closed": "2026-10-30",
+            "expected": "Changes in api get a real pass-or-fail signal, so reviewers catch less by hand. Watch: Share of agent PRs touching api where a reviewer requested changes, 40% (2 of 5).",
+            "observed": "40% (2 of 5) to 11% (1 of 9) (shared with step 1, step 2 and step 4)"
+          }
+        ],
+        "weakening": "No test files changed since the last audit. No test files were deleted. No test cases were removed overall. No skip markers were added. The CI workflow is unchanged. The lockfile is unchanged.",
+        "rubricChanges": []
+      },
+      "details": {
+        "steps": [
+          {
+            "itemId": "faults:worker",
+            "title": "Make worker's tests catch wrong behavior",
+            "steps": [
+              {
+                "title": "Decide the intended behavior",
+                "detail": "For the files named here, write down what correct behavior is, including edge cases."
+              },
+              {
+                "title": "Write tests that pin it down",
+                "detail": "Assert results and edge cases, not just that code runs."
+              },
+              {
+                "title": "Prove it with fresh faults",
+                "detail": "Run a new audit. It plants different faults than this one, so tests aimed at one audit's faults don't help."
+              },
+              {
+                "title": "Review",
+                "detail": "`readiness diff` flags any deleted test or new skip marker, so nothing was weakened to pass."
+              }
+            ]
+          }
+        ],
+        "checks": [
+          {
+            "id": "scope.profile",
+            "name": "Components and where changes land",
+            "why": "Levels follow the work, so the audit finds each package and its share of recent changes.",
+            "sources": [],
+            "result": "4 components found, 3 assessed",
+            "ok": null,
+            "counts": {
+              "passed": 0,
+              "failed": 0,
+              "notRun": 0
+            },
+            "evidence": []
+          },
+          {
+            "id": "scope.agent_assets",
+            "name": "Agent assets in the repo",
+            "why": "Shows what agent setup already exists and who maintains it. Not scored.",
+            "sources": [],
+            "result": "5 assets, 3 authors",
+            "ok": null,
+            "counts": {
+              "passed": 0,
+              "failed": 0,
+              "notRun": 0
+            },
+            "evidence": []
+          },
+          {
+            "id": "bootstrap.cold_replay",
+            "name": "Setup works from a clean checkout",
+            "why": "Every agent starts from a clean checkout, so setup that only works on a prepared machine breaks every agent run.",
+            "sources": [
+              {
+                "claim": "In the BootstrapAgent study, a reusable, verified setup cut later agents' token use by 25.9% and build time by 22.3%.",
+                "caveat": "Measured on the study's benchmark repositories.",
+                "url": "https://arxiv.org/abs/2605.15815"
+              }
+            ],
+            "result": "passed: api, shared and worker",
+            "ok": true,
+            "counts": {
+              "passed": 8,
+              "failed": 0,
+              "notRun": 0
+            },
+            "evidence": [
+              "ev-002",
+              "ev-003",
+              "ev-004",
+              "ev-005",
+              "ev-007",
+              "ev-009",
+              "ev-011",
+              "ev-012"
+            ]
+          },
+          {
+            "id": "verify.canonical_interface",
+            "name": "Build, lint, type-check and test commands pass",
+            "why": "Agents need one known way to check their own work.",
+            "sources": [],
+            "result": "passed: api, shared and worker",
+            "ok": true,
+            "counts": {
+              "passed": 3,
+              "failed": 0,
+              "notRun": 0
+            },
+            "evidence": [
+              "ev-006",
+              "ev-008",
+              "ev-010"
+            ]
+          },
+          {
+            "id": "verify.behavioral_oracle",
+            "name": "Tests catch planted faults",
+            "why": "Green tests aren't proof that a change is right.",
+            "sources": [
+              {
+                "claim": "In DeployBench, 53.9% of failed runs passed generic checks and failed only task-specific ones.",
+                "caveat": "51 research-artifact deployment tasks.",
+                "url": "https://deploybench.vercel.app/"
+              },
+              {
+                "claim": "OpenAI estimated about 30% of SWE-Bench Pro's 731 public tasks were broken, including low-coverage tests that let incomplete fixes pass.",
+                "caveat": "An audit of one benchmark, not of customer repositories.",
+                "url": "https://openai.com/index/separating-signal-from-noise-coding-evaluations"
+              }
+            ],
+            "result": "api: caught 5 of 5 planted faults; shared: caught 5 of 5 planted faults; worker: caught 0 of 5 planted faults",
+            "ok": false,
+            "counts": {
+              "passed": 2,
+              "failed": 1,
+              "notRun": 0
+            },
+            "evidence": [
+              "ev-013",
+              "ev-014",
+              "ev-015"
+            ]
+          },
+          {
+            "id": "context.instructions_verified",
+            "name": "Agent instructions are accurate",
+            "why": "Agents follow AGENTS.md, rules and skills literally, so a stale command costs more than a missing one. No outcome study yet measures how much these files help.",
+            "sources": [],
+            "result": "7 passed, 0 failed, 0 not run",
+            "ok": true,
+            "counts": {
+              "passed": 7,
+              "failed": 0,
+              "notRun": 0
+            },
+            "evidence": [
+              "ev-016",
+              "ev-017",
+              "ev-018",
+              "ev-019",
+              "ev-020"
+            ]
+          },
+          {
+            "id": "safety.execution_boundary",
+            "name": "Normal work needs no production access",
+            "why": "Agents run with whatever access setup gives them, so normal work must never need production credentials.",
+            "sources": [],
+            "result": "passed",
+            "ok": true,
+            "counts": {
+              "passed": 1,
+              "failed": 0,
+              "notRun": 0
+            },
+            "evidence": [
+              "ev-001"
+            ]
+          }
+        ],
+        "notAssessed": [
+          "Whether CI matches the local commands",
+          "Flaky tests",
+          "The quality of error messages",
+          "How easily code can be found",
+          "Outcome checks on held-out tasks"
+        ],
+        "levels": {
+          "activities": [
+            {
+              "id": "first_pr",
+              "label": "First PR",
+              "bar": "Level 2 needs: build, lint, type-check and test commands pass, agent instructions are accurate and normal work needs no production access"
+            },
+            {
+              "id": "bug_fixes",
+              "label": "Bug fixes",
+              "bar": "Level 2 needs: build, lint, type-check and test commands pass, tests catch planted faults and normal work needs no production access"
+            },
+            {
+              "id": "features",
+              "label": "Features and refactors",
+              "bar": "Level 2 needs: build, lint, type-check and test commands pass, tests catch planted faults, normal work needs no production access and agent instructions are accurate"
+            },
+            {
+              "id": "repo_wide",
+              "label": "Repo-wide changes",
+              "bar": "Level 2 needs: build, lint, type-check and test commands pass, tests catch planted faults, normal work needs no production access, toolchain versions are pinned and a frozen install reproduces the lockfile"
+            }
+          ],
+          "components": [
+            {
+              "id": "api",
+              "changeShare": 0,
+              "active": true,
+              "levels": {
+                "first_pr": 2,
+                "bug_fixes": 2,
+                "features": 2
+              },
+              "couldBe": {}
+            },
+            {
+              "id": "shared",
+              "changeShare": 0.37,
+              "active": true,
+              "levels": {
+                "first_pr": 2,
+                "bug_fixes": 2,
+                "features": 2
+              },
+              "couldBe": {}
+            },
+            {
+              "id": "worker",
+              "changeShare": 0.587,
+              "active": true,
+              "levels": {
+                "first_pr": 2,
+                "bug_fixes": 1,
+                "features": 1
+              },
+              "couldBe": {}
+            }
+          ],
+          "repoLevels": {
+            "first_pr": 2,
+            "bug_fixes": 1,
+            "features": 1,
+            "repo_wide": 1
+          },
+          "repoLevelRule": "the lowest level among components that get at least 10% of changes over 90 days; a component joins or leaves that set only after two audits on the same side of the line",
+          "unassessed": [
+            {
+              "id": "infra",
+              "changeShare": 0.043,
+              "reason": "Terraform isn't supported by this rubric"
+            }
+          ]
+        },
+        "outcomes": {
+          "window": "Oct 31 to Nov 30, 2026",
+          "filter": "head branch starting with cursor/",
+          "source": "a recorded PR file",
+          "series": [
+            {
+              "label": "Agent PRs",
+              "opened": 17,
+              "merged": {
+                "count": 13,
+                "n": 17,
+                "rate": 0.765,
+                "window": "Oct 31 to Nov 30, 2026"
+              },
+              "firstTimeCi": {
+                "count": 11,
+                "n": 17,
+                "rate": 0.647,
+                "window": "Oct 31 to Nov 30, 2026"
+              },
+              "changesRequested": {
+                "count": 4,
+                "n": 17,
+                "rate": 0.235,
+                "window": "Oct 31 to Nov 30, 2026"
+              },
+              "medianDaysToMerge": 1
+            },
+            {
+              "label": "Other PRs",
+              "opened": 38,
+              "merged": {
+                "count": 33,
+                "n": 38,
+                "rate": 0.868,
+                "window": "Oct 31 to Nov 30, 2026"
+              },
+              "firstTimeCi": {
+                "count": 27,
+                "n": 38,
+                "rate": 0.711,
+                "window": "Oct 31 to Nov 30, 2026"
+              },
+              "changesRequested": {
+                "count": 6,
+                "n": 38,
+                "rate": 0.158,
+                "window": "Oct 31 to Nov 30, 2026"
+              },
+              "medianDaysToMerge": 2
+            },
+            {
+              "label": "Agent PRs, Sep 27 to Oct 27, 2026",
+              "opened": 9,
+              "merged": {
+                "count": 7,
+                "n": 9,
+                "rate": 0.778,
+                "window": "Sep 27 to Oct 27, 2026"
+              },
+              "firstTimeCi": {
+                "count": 3,
+                "n": 9,
+                "rate": 0.333,
+                "window": "Sep 27 to Oct 27, 2026"
+              },
+              "changesRequested": {
+                "count": 4,
+                "n": 9,
+                "rate": 0.444,
+                "window": "Sep 27 to Oct 27, 2026"
+              },
+              "medianDaysToMerge": 2
+            }
+          ],
+          "byComponent": [
+            {
+              "component": "api",
+              "prs": 9,
+              "firstTimeCi": {
+                "count": 7,
+                "n": 9,
+                "rate": 0.778,
+                "window": "Oct 31 to Nov 30, 2026"
+              },
+              "changesRequested": {
+                "count": 1,
+                "n": 9,
+                "rate": 0.111,
+                "window": "Oct 31 to Nov 30, 2026"
+              }
+            },
+            {
+              "component": "shared",
+              "prs": 3,
+              "firstTimeCi": {
+                "count": 3,
+                "n": 3,
+                "rate": null,
+                "window": "Oct 31 to Nov 30, 2026"
+              },
+              "changesRequested": {
+                "count": 0,
+                "n": 3,
+                "rate": null,
+                "window": "Oct 31 to Nov 30, 2026"
+              }
+            },
+            {
+              "component": "worker",
+              "prs": 6,
+              "firstTimeCi": {
+                "count": 2,
+                "n": 6,
+                "rate": 0.333,
+                "window": "Oct 31 to Nov 30, 2026"
+              },
+              "changesRequested": {
+                "count": 3,
+                "n": 6,
+                "rate": 0.5,
+                "window": "Oct 31 to Nov 30, 2026"
+              }
+            }
+          ],
+          "multiComponentNote": "1 agent PR touched more than one component, so the component rows can add up to more than the total.",
+          "matchedPrs": [
+            500,
+            501,
+            502,
+            503,
+            504,
+            505,
+            506,
+            507,
+            508,
+            509,
+            510,
+            511,
+            512,
+            513,
+            514,
+            515,
+            516
+          ],
+          "caveat": "A trend, not attribution. Model updates or a different mix of tasks could account for part of the change."
+        },
+        "assets": [
+          {
+            "kind": "environment",
+            "path": ".cursor/environment.json",
+            "authors": [
+              "Contributor B"
+            ],
+            "lastChanged": "2026-10-29",
+            "status": "Present",
+            "ok": true
+          },
+          {
+            "kind": "rules",
+            "path": ".cursor/rules/style.mdc",
+            "authors": [
+              "Contributor A"
+            ],
+            "lastChanged": "2026-06-29",
+            "status": "Replays",
+            "ok": true
+          },
+          {
+            "kind": "skill",
+            "path": ".cursor/skills/release-notes/SKILL.md",
+            "authors": [
+              "Contributor A",
+              "Contributor B",
+              "Contributor C"
+            ],
+            "lastChanged": "2026-10-29",
+            "status": "Present",
+            "ok": true
+          },
+          {
+            "kind": "skill",
+            "path": ".cursor/skills/verify/SKILL.md",
+            "authors": [
+              "Contributor B"
+            ],
+            "lastChanged": "2026-10-30",
+            "status": "Replays",
+            "ok": true
+          },
+          {
+            "kind": "agents_md",
+            "path": "AGENTS.md",
+            "authors": [
+              "Contributor B",
+              "Contributor A"
+            ],
+            "lastChanged": "2026-10-29",
+            "status": "Replays",
+            "ok": true
+          }
+        ],
+        "missingAssets": [
+          "hooks"
+        ],
+        "evidence": [
+          {
+            "id": "ev-001",
+            "check": "safety.execution_boundary",
+            "component": null,
+            "ran": "no blocking findings; 0 items listed for review",
+            "where": "read from files",
+            "result": "pass",
+            "summary": "no blocking findings; 0 items listed for review"
+          },
+          {
+            "id": "ev-002",
+            "check": "bootstrap.cold_replay",
+            "component": null,
+            "ran": "toolchain pinned in .nvmrc",
+            "where": "read from files",
+            "result": "pass",
+            "summary": "toolchain pinned in .nvmrc"
+          },
+          {
+            "id": "ev-003",
+            "check": "bootstrap.cold_replay",
+            "component": null,
+            "ran": "node --version && npm --version",
+            "where": "ran in a clean container",
+            "result": "pass",
+            "summary": "doctor passed"
+          },
+          {
+            "id": "ev-004",
+            "check": "bootstrap.cold_replay",
+            "component": null,
+            "ran": "bash scripts/agent-install.sh",
+            "where": "ran in a clean container",
+            "result": "pass",
+            "summary": "install passed"
+          },
+          {
+            "id": "ev-005",
+            "check": "bootstrap.cold_replay",
+            "component": null,
+            "ran": "bash scripts/agent-start.sh",
+            "where": "ran in a clean container",
+            "result": "pass",
+            "summary": "start passed"
+          },
+          {
+            "id": "ev-006",
+            "check": "verify.canonical_interface",
+            "component": "api",
+            "ran": "npm run lint",
+            "where": "ran in a clean container",
+            "result": "pass",
+            "summary": "lint passed"
+          },
+          {
+            "id": "ev-007",
+            "check": "bootstrap.cold_replay",
+            "component": "api",
+            "ran": "npm run test",
+            "where": "ran in a clean container",
+            "result": "pass",
+            "summary": "test passed"
+          },
+          {
+            "id": "ev-008",
+            "check": "verify.canonical_interface",
+            "component": "shared",
+            "ran": "npm run lint",
+            "where": "ran in a clean container",
+            "result": "pass",
+            "summary": "lint passed"
+          },
+          {
+            "id": "ev-009",
+            "check": "bootstrap.cold_replay",
+            "component": "shared",
+            "ran": "npm run test",
+            "where": "ran in a clean container",
+            "result": "pass",
+            "summary": "test passed"
+          },
+          {
+            "id": "ev-010",
+            "check": "verify.canonical_interface",
+            "component": "worker",
+            "ran": "npm run lint",
+            "where": "ran in a clean container",
+            "result": "pass",
+            "summary": "lint passed"
+          },
+          {
+            "id": "ev-011",
+            "check": "bootstrap.cold_replay",
+            "component": "worker",
+            "ran": "npm run test",
+            "where": "ran in a clean container",
+            "result": "pass",
+            "summary": "test passed"
+          },
+          {
+            "id": "ev-012",
+            "check": "bootstrap.cold_replay",
+            "component": null,
+            "ran": "frozen install reproduced the lockfile",
+            "where": "ran in a clean container",
+            "result": "pass",
+            "summary": "frozen install reproduced the lockfile"
+          },
+          {
+            "id": "ev-013",
+            "check": "verify.behavioral_oracle",
+            "component": "api",
+            "ran": "caught 5 of 5 planted faults (change_constant, drop_throw_or_return, boundary_flip, negate_condition)",
+            "where": "ran in a clean container",
+            "result": "pass",
+            "summary": "caught 5 of 5 planted faults (change_constant, drop_throw_or_return, boundary_flip, negate_condition)"
+          },
+          {
+            "id": "ev-014",
+            "check": "verify.behavioral_oracle",
+            "component": "shared",
+            "ran": "caught 5 of 5 planted faults (change_constant, drop_throw_or_return, negate_condition)",
+            "where": "ran in a clean container",
+            "result": "pass",
+            "summary": "caught 5 of 5 planted faults (change_constant, drop_throw_or_return, negate_condition)"
+          },
+          {
+            "id": "ev-015",
+            "check": "verify.behavioral_oracle",
+            "component": "worker",
+            "ran": "caught 0 of 5 planted faults (negate_condition, swap_return, boundary_flip, change_constant); uncaught in packages/worker/src/retry.js",
+            "where": "ran in a clean container",
+            "result": "fail",
+            "summary": "caught 0 of 5 planted faults (negate_condition, swap_return, boundary_flip, change_constant); uncaught in packages/worker/src/retry.js"
+          },
+          {
+            "id": "ev-016",
+            "check": "context.instructions_verified",
+            "component": null,
+            "ran": "npm run lint -w api",
+            "where": "ran in a clean container",
+            "result": "pass",
+            "summary": ".cursor/rules/style.mdc:6 `npm run lint -w api` replays"
+          },
+          {
+            "id": "ev-017",
+            "check": "context.instructions_verified",
+            "component": null,
+            "ran": "node --version && npm --version",
+            "where": "ran in a clean container",
+            "result": "pass",
+            "summary": ".cursor/skills/verify/SKILL.md:15 `node --version && npm --version` replays"
+          },
+          {
+            "id": "ev-018",
+            "check": "context.instructions_verified",
+            "component": null,
+            "ran": "npm run test",
+            "where": "ran in a clean container",
+            "result": "pass",
+            "summary": ".cursor/skills/verify/SKILL.md:56 `npm run test` replays"
+          },
+          {
+            "id": "ev-019",
+            "check": "context.instructions_verified",
+            "component": null,
+            "ran": "npm run test -w shared",
+            "where": "ran in a clean container",
+            "result": "pass",
+            "summary": "AGENTS.md:6 `npm run test -w shared` replays"
+          },
+          {
+            "id": "ev-020",
+            "check": "context.instructions_verified",
+            "component": null,
+            "ran": "npm test",
+            "where": "ran in a clean container",
+            "result": "pass",
+            "summary": "AGENTS.md:7 `npm test` replays"
+          }
+        ],
+        "record": [
+          {
+            "label": "Audit",
+            "value": "aud-2026-11-30-9b5563d-467f"
+          },
+          {
+            "label": "Commit",
+            "value": "9b5563d (clean tree)"
+          },
+          {
+            "label": "Rubric",
+            "value": "2026-10-alpha"
+          },
+          {
+            "label": "Permission tier",
+            "value": "local-exec"
+          },
+          {
+            "label": "Seal",
+            "value": "Seal verified against release agent-readiness-v0.1.0"
+          },
+          {
+            "label": "Skill digest",
+            "value": "86495f7765bd"
+          },
+          {
+            "label": "Planted-fault seed",
+            "value": "pinned (eval run; not a production result)"
+          },
+          {
+            "label": "Replay environment",
+            "value": "docker container, readiness-ubuntu-node22"
+          },
+          {
+            "label": "Stored in",
+            "value": ".agent-readiness/history/audits/aud-2026-11-30-9b5563d-467f"
+          }
+        ]
+      }
+    }
+  ]
+}

@@ -125,6 +125,21 @@ describe("static checks", () => {
     assert.deepEqual(items.map((i) => `${i.kind}:${i.text}:${i.line}`), ["command:npm ci:4", "command:npm test:5", "command:npm run build:8", "path:src/index.ts:8", "path:docs/setup.md:8"]);
   });
 
+  test("continued lines join, and commands with paths on the author's machine aren't replayed", () => {
+    const md = "```bash\npnpm --dir ~/Code/repo \\\n  example\n```\n";
+    assert.deepEqual(extractFromMarkdown(md).map((i) => `${i.text}:${i.line}`), ["pnpm --dir ~/Code/repo example:2"]);
+    const repo = gitRepo({ "package.json": JSON.stringify({ name: "x", scripts: { example: "node x.js" } }), "pnpm-lock.yaml": "", "README.md": md });
+    const items = instructionItems(repo, buildProfile(repo, repo, rubric));
+    assert.equal(items[0].category, "needs_access");
+    assert.equal(items[0].result, "not_run");
+  });
+
+  test("paths outside the repo and ambiguous bare filenames aren't flagged", () => {
+    const repo = gitRepo({ "package.json": JSON.stringify({ name: "x" }), "skill/SKILL.md": "x", "README.md": "Writes a `.canvas.tsx` file; see `SKILL.md` and [quickstart](../quickstart) and [docs](docs/missing.md).\n" });
+    const items = instructionItems(repo, buildProfile(repo, repo, rubric));
+    assert.deepEqual(items.map((i) => `${i.text}:${i.result}`), ["SKILL.md:pass", "docs/missing.md:fail"]);
+  });
+
   test("the pre-pass flags the wrong package manager, missing scripts, Make targets and paths by file and line", () => {
     const repo = gitRepo({ "package.json": JSON.stringify({ name: "x", scripts: { test: "node --test" } }), "package-lock.json": "{}", "AGENTS.md": "- `pnpm test`\n- `npm run typecheck`\n- `make bootstrap`\n- `docs/missing.md`\n- `npm test`\n- `npm publish`\n" });
     const profile = buildProfile(repo, repo, rubric);

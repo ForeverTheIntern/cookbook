@@ -38,6 +38,8 @@ export function diagnose(output: string, timedOut: boolean, phase: string): Diag
   }
   if (/SyntaxError|error TS\d{4}|IndentationError/.test(output)) return { cause: "compile", detail: "the code doesn't compile" };
   const lines = output.split("\n").map((l) => l.trim()).filter(Boolean);
-  const errLine = [...lines].reverse().find((l) => /error|fail|assert|exception/i.test(l)) ?? lines[lines.length - 1] ?? "no output";
+  const noise = /^(npm (error|ERR!|warn)|ELIFECYCLE|error Command failed|>\s|\$ |command failed|at |# )/i;
+  const meaningful = lines.filter((l) => !noise.test(l));
+  const errLine = [...meaningful].reverse().find((l) => /error|fail|assert|exception|remove|missing|expected/i.test(l)) ?? meaningful[meaningful.length - 1] ?? lines[lines.length - 1] ?? "no output";
   return { cause: "unknown", detail: errLine.slice(0, 160) };
 }

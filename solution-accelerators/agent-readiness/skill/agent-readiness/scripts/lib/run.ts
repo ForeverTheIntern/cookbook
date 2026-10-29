@@ -1,5 +1,5 @@
 import { spawn } from "node:child_process";
-import { mkdtempSync } from "node:fs";
+import { chmodSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { ensureDir } from "./util.ts";
@@ -36,6 +36,13 @@ export function scrubbedEnv(opts: EnvOptions = {}): Record<string, string> {
     if (v !== undefined) env[key] = v;
   }
   ensureDir(join(home, "cache"));
+  const bin = join(home, "bin");
+  ensureDir(bin);
+  for (const pm of ["pnpm", "yarn"]) {
+    writeFileSync(join(bin, pm), `#!/usr/bin/env bash\nexec corepack ${pm} "$@"\n`);
+    chmodSync(join(bin, pm), 0o755);
+  }
+  env.PATH = `${bin}:${env.PATH ?? "/usr/bin:/bin"}`;
   Object.assign(env, {
     HOME: home,
     TMPDIR: join(home, "tmp"),

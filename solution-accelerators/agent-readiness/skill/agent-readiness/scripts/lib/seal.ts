@@ -16,7 +16,7 @@ import { validateAgainst } from "./schema.ts";
 import type { CompStates } from "./score.ts";
 import { componentStates } from "./score.ts";
 import type { ActivityId, Audit, CondId, CondState, HistoryLine, Level, OutcomeStats, ReportJson } from "./types.ts";
-import { exists, fail, gitOrThrow, nowIso, randomHex, readText, sha256, stableStringify, today } from "./util.ts";
+import { exists, fail, fmtShortDate, gitOrThrow, nowIso, randomHex, readText, sha256, stableStringify, today } from "./util.ts";
 import type { LocalInfo, Paths } from "./workspace.ts";
 import { clearCurrent, exportTree, releaseManifest, skillDigest } from "./workspace.ts";
 
@@ -89,9 +89,11 @@ export function seal(audit: Audit, local: LocalInfo, p: Paths, log: (s: string) 
   const prevAuditLine = [...history].reverse().find((h) => h.kind === "audit");
   let weak: string | null = null;
   let previousOutcomes: { window: string; agent: OutcomeStats } | null = null;
-  if (prevAuditLine) {
-    weak = weakeningText(weakening(p.repo, prevAuditLine.commit, audit.repo.commit));
-    if (prevAuditLine.outcomes) previousOutcomes = { window: prevAuditLine.outcomes.window, agent: prevAuditLine.outcomes.agent };
+  if (prevAuditLine) weak = weakeningText(weakening(p.repo, prevAuditLine.commit, audit.repo.commit));
+  const prevWithOutcomes = [...history].reverse().find((h) => h.kind === "audit" && h.outcomes);
+  if (prevWithOutcomes?.outcomes && audit.outcomes) {
+    const [from, to] = prevWithOutcomes.outcomes.window.split(" to ");
+    previousOutcomes = { window: `${fmtShortDate(from)} to ${fmtShortDate(to)}, ${to.slice(0, 4)}`, agent: prevWithOutcomes.outcomes.agent };
   }
   const levelsRecord: HistoryLine["levels"] = {};
   for (const [id, m] of c.levels) levelsRecord[id] = Object.fromEntries([...m.entries()].map(([k, v]) => [k, v.level]));
@@ -258,7 +260,7 @@ export async function recheck(p: Paths, opts: RecheckOptions): Promise<{ line: H
     const vals = [...active].map((id) => levels[id]?.[a.id] ?? 0);
     repoLevels[a.id] = (vals.length ? Math.min(...vals) : 0) as Level;
   }
-  const id = `rck-${today()}-${randomHex(2)}`;
+  const id = `rck-${today()}-${audit.seed.pinned ? sha256(`${audit.id}:${nowIso()}`).slice(0, 4) : randomHex(2)}`;
   const firstFail = failed[0];
   const line: HistoryLine = {
     id,

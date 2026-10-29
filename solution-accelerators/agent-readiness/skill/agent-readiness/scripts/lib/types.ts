@@ -92,7 +92,7 @@ export interface InstructionItem {
   line: number;
   kind: "command" | "path";
   text: string;
-  category: "replay" | "install" | "long_running" | "risky" | "path";
+  category: "replay" | "install" | "long_running" | "risky" | "needs_access" | "path";
   staticResult: Result;
   staticReason?: string;
   result: Result;

@@ -318,6 +318,13 @@ function cmdNarrate(a: Args): void {
   log("Narration saved. `readiness seal` checks it against the part 1 rules and the computed numbers.");
 }
 
+// One wording for a level wherever status prints it, matching part 4 of the report.
+function levelText(row: { level: number | null; couldBe: number | null; unproven: boolean } | undefined): string {
+  if (!row || row.level === null) return "not assessed";
+  if (row.unproven) return "Level 1 unproven on this machine (could be 1)";
+  return `Level ${row.level}${row.couldBe !== null ? ` (could be ${row.couldBe})` : ""}`;
+}
+
 function cmdStatus(a: Args): void {
   const repo = repoOf(a);
   const { audit, paths: p } = loadDraft(repo);
@@ -332,7 +339,7 @@ function cmdStatus(a: Args): void {
     tier: audit.tier,
     commit: audit.repo.commit.slice(0, 7),
     environment: audit.environment,
-    repoLevel: preview ? (preview.report.maturity.outcome === "not_assessed" ? "not assessed" : preview.report.maturity.unproven ? "Level 1 unproven on this machine (could be 1)" : preview.report.maturity.level) : null,
+    repoLevel: preview ? (preview.report.maturity.outcome === "not_assessed" ? "not assessed" : levelText(preview.report.maturity)) : null,
     scenarios: audit.scenarios ?? [],
     components: comps.map((c) => {
       const s = componentStates(audit, rubric, c.id);
@@ -341,8 +348,8 @@ function cmdStatus(a: Args): void {
         id: c.id,
         changeShare: c.changeShare,
         conditions: Object.fromEntries(Object.entries(s).map(([k, v]) => [k, `${v.state}: ${v.reason}`])),
-        level: row?.unproven ? "Level 1 unproven on this machine (could be 1)" : (row?.level ?? "not assessed"),
-        scenarios: Object.fromEntries((row?.scenarios ?? []).map((x) => [x.id, x.unproven ? "Level 1 unproven on this machine" : (x.level ?? "not assessed")])),
+        level: levelText(row),
+        scenarios: Object.fromEntries((row?.scenarios ?? []).map((x) => [x.id, levelText(x)])),
       };
     }),
     contract: audit.contract.map((c) => `${c.id}: ${c.command}`),
@@ -355,7 +362,7 @@ function cmdStatus(a: Args): void {
   if (a.flags.json) log(JSON.stringify(summary, null, 2));
   else {
     log(`${summary.id} (${summary.tier}) at ${summary.commit}. Repo level: ${summary.repoLevel ?? "not computed"}`);
-    for (const c of summary.components) log(`  ${c.id}: level ${c.level}${Object.keys(c.scenarios).length ? `; scenarios ${Object.entries(c.scenarios).map(([k, v]) => `${k} ${v}`).join(", ")}` : ""}\n    ${Object.entries(c.conditions).map(([k, v]) => `${k} ${v}`).join("\n    ")}`);
+    for (const c of summary.components) log(`  ${c.id}: ${c.level}${Object.keys(c.scenarios).length ? `; scenarios ${Object.entries(c.scenarios).map(([k, v]) => `${k} ${v}`).join(", ")}` : ""}\n    ${Object.entries(c.conditions).map(([k, v]) => `${k} ${v}`).join("\n    ")}`);
     if (summary.instructionsWrong.length) log(`Wrong instructions:\n  ${summary.instructionsWrong.join("\n  ")}`);
     if (summary.safety.length) log(`Safety:\n  ${summary.safety.join("\n  ")}`);
     if (part1) {

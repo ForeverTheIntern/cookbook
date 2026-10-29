@@ -131,8 +131,8 @@ describe("part 1 rules", () => {
 
   test("narrated text may contain only numbers the audit computed", () => {
     const r = base();
-    r.executive.headline = "Failures dropped from 5 to 1 after the fix.";
-    assert.ok(validatePart1(r, rubric, allowedNumbers(r)).some((e) => e.includes('"5" in the narrated text')));
+    r.executive.headline = "Failures dropped from 17 to 1 after the fix.";
+    assert.ok(validatePart1(r, rubric, allowedNumbers(r)).some((e) => e.includes('"17" in the narrated text')));
     r.executive.headline = "Agents can't pass api's tests from a clean checkout, and 56% of recent changes land there.";
     assert.deepEqual(validatePart1(r, rubric, allowedNumbers(r)), []);
   });
@@ -162,6 +162,17 @@ describe("part 1 rules", () => {
     assert.equal(reportFor(registry).executive.headline, "app doesn't install from a clean checkout because private registry credentials weren't provided, so agents can't build or test it yet.");
     const drift = reportFor(makeAudit({ components: [{ id: "app", share: 1, faults: "pass" }], instructions: [instruction("fail", "npm run typecheck", 'no "typecheck" script')] })).executive.headline;
     assert.equal(drift, "Agents can build and test app, but its agent instructions don't match the repo.");
+  });
+
+  test("narration may use every number the audit reports, and no other", () => {
+    const audit = makeAudit({ components: [{ id: "app", share: 1, faults: "fail" }] });
+    audit.evidence.find((e) => e.condition === "faults")!.summary = "caught 4 of 5 planted faults; missed: change_constant at src/a.js:47";
+    audit.narration = { headline: "Agents can build and test app, but its tests caught 4 of 5 planted faults." };
+    const r = reportFor(audit);
+    assert.deepEqual(validatePart1(r, rubric, allowedNumbers(r)), []);
+    audit.narration = { headline: "Agents can build and test app, but its tests caught 17 of 23 planted faults." };
+    const wrong = reportFor(audit);
+    assert.deepEqual(validatePart1(wrong, rubric, allowedNumbers(wrong)), ['"17" in the narrated text isn\'t a number the audit computed', '"23" in the narrated text isn\'t a number the audit computed']);
   });
 
   test("a narrated ask still asks for an owner when none is recorded, once", () => {
@@ -203,13 +214,37 @@ describe("part 1 rules", () => {
     assert.match(md, /Repo level: Level 1 unproven on this machine \(could be 1\)\./);
     assert.doesNotMatch(md, /Not bootable \(could be/);
     assert.match(md, /No actions are open: nothing in the repo blocks Level 1\./);
-    const failing = reportFor(makeAudit({ components: [{ id: "app", share: 1, where: "fresh_copy", test: "fail", faults: "not_run" }] }));
-    assert.equal(failing.maturity.unproven, false, "a failing test is a real Level 0");
     assert.equal(ex.noBlocker, false);
     assert.equal(ex.headline, "Level 1 couldn't be proved for app because this machine has no container runtime. A rerun where Docker or Podman is available, such as CI, can prove it.");
     assert.match(ex.ask, /^Decision needed: where to rerun this audit/);
     const stale = reportFor(makeAudit({ components: [{ id: "app", share: 1, faults: "pass" }], instructions: [instruction("fail", "pnpm test", "uses pnpm, but the repo uses npm")] })).executive.nextLine;
     assert.match(stale, /Not yet: agent instructions are accurate\./, "a repo-wide condition names no component");
+    const failing = reportFor(makeAudit({ components: [{ id: "app", share: 1, where: "fresh_copy", test: "fail", faults: "not_run" }] }));
+    assert.equal(failing.maturity.unproven, false, "a failing test is a real Level 0");
+    assert.equal(r.executive.numbers[2].label, "Recent changes in components not yet proven at Level 1");
+    assert.match(r.executive.numbers[2].comparison, /^Proving Level 1 needs a clean container/);
+  });
+
+  test("when only this machine blocks Level 1, a test gap is a part 1 gap and an action that can start now", () => {
+    const audit = makeAudit({ components: [{ id: "app", share: 1, where: "fresh_copy", faults: "fail" }] });
+    audit.environment.containerRuntime = null;
+    const r = reportFor(audit);
+    assert.equal(r.maturity.unproven, true);
+    assert.deepEqual(r.executive.gaps.map((g) => [g.itemId, g.blocks]), [["faults:app", "Can start now; blocks Level 2 for app"]]);
+    assert.deepEqual(r.actions.map((a) => [a.itemId, a.startNow]), [["faults:app", true]]);
+    assert.match(r.actions[0].movesTheNeedle, /^Takes app to Level 2 once Level 1 is proven in a clean container, covering 100% of recent changes/);
+    assert.match(r.executive.ask, /^Decision needed: where to rerun this audit so it can prove Level 1, for example a CI job\. Meanwhile, make app's tests catch wrong behavior can start now\./);
+    assert.match(r.executive.headline, /^Level 1 couldn't be proved for app because this machine has no container runtime/);
+    assert.ok(!r.actions.some((a) => a.itemId.startsWith("delegate:")), "delegation waits for a real Level 2");
+    assert.match(renderMarkdown(r, rubric), /### 1\. Make app's tests catch wrong behavior \(can start now\)/);
+  });
+
+  test("a level that couldn't be proved for a reason other than this machine says so, with no rerun advice", () => {
+    const audit = makeAudit({ components: [{ id: "app", share: 1, faults: "not_run" }] });
+    audit.evidence.find((e) => e.condition === "faults")!.summary = "no places to plant a fault were found in files the tests import";
+    const ex = reportFor(audit).executive;
+    assert.equal(ex.headline, "Level 2 couldn't be proved for app: no places to plant a fault were found in files the tests import.");
+    assert.doesNotMatch(ex.headline + ex.ask, /Docker|Podman|rerun/);
   });
 
   test("with no assessable component, part 1 says so instead of Met, 0 of 0 or no open actions", () => {

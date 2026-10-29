@@ -60,7 +60,7 @@ describe("CLI", { concurrency: 4 }, () => {
     const status = readiness(repo, ["status"]);
     assert.match(status.out, /Part 1 now: /, "status shows the part 1 the seal would build, so narration can use its ids");
     assert.match(status.out, /Repo level: not assessed/, "before anything ran, status gives no level");
-    assert.match(status.out, /buyer-web: level not assessed/);
+    assert.match(status.out, /buyer-web: not assessed/);
     const json = readiness(repo, ["status", "--json"]).out;
     assert.match(json, /no blocking findings; 1 item listed for review/);
     assert.doesNotMatch(json, /blocked: blocked:/);
@@ -68,6 +68,15 @@ describe("CLI", { concurrency: 4 }, () => {
     assert.notEqual(scenario.code, 0);
     assert.match(scenario.out, /commerce-core isn't assessed \(\.NET isn't supported by this rubric\), so it has no level for a scenario to break down\. Use one of: admin-web, buyer-web\./);
     assert.doesNotMatch(scenario.out, /replay/);
+  });
+
+  test("status words every tier as the report does", () => {
+    const repo = materialize("healthy-node");
+    for (const args of [["init", "--tier", "local-exec"], ["scan"], ["scenario", "add", "bug_fixes", "--components", "healthy-node"], ["replay", "--runtime", "none", "--no-mutants"]]) assert.equal(readiness(repo, args).code, 0, args.join(" "));
+    const status = readiness(repo, ["status"]).out;
+    assert.match(status, /Repo level: Level 1 unproven on this machine \(could be 1\)/);
+    assert.match(status, /healthy-node: Level 1 unproven on this machine \(could be 1\); scenarios bug_fixes Level 1 unproven on this machine \(could be 1\)/);
+    assert.doesNotMatch(status, /level Level/);
   });
 
   test("--no-mutants is disclosed with its own reason, not as a blocked check", () => {
@@ -88,7 +97,7 @@ describe("CLI", { concurrency: 4 }, () => {
     assert.equal(r.code, 0, r.out);
     const report = JSON.parse(readFileSync(join(repo, ".agent-readiness/latest/report.json"), "utf8"));
     const evidence = report.details.evidence as { summary: string; result: string }[];
-    assert.ok(evidence.some((e) => e.summary === "test passed"), "the test results are kept");
+    assert.ok(evidence.some((e) => e.summary.startsWith("test passed")), "the test results are kept");
     assert.ok(evidence.some((e) => /^planting faults failed: Line \d+ of src\/\S+ changed since the site was chosen$/.test(e.summary)), JSON.stringify(evidence.map((e) => e.summary)));
   });
 
@@ -141,7 +150,12 @@ describe("CLI", { concurrency: 4 }, () => {
       assert.ok(ev(app, "install passed").length > 0, `${app} installed on its own`);
       assert.ok(ev(app, "test passed").length > 0, `${app}'s tests ran`);
       assert.ok(ev(app, "planted faults").length > 0, `${app} got planted faults`);
+      assert.ok(ev(app, "test passed (").some((e: { summary: string }) => /^test passed \(\d+ of \d+ tests\)$/.test(e.summary)), `${app}'s test count is in the report`);
     }
+    assert.ok(report.details.evidence.some((e: { summary: string }) => /^caught 0 of \d+ planted faults; missed: \w+ at apps\/admin-web\/src\/roles\.js:\d+/.test(e.summary)), "the missed faults are named by operator and line");
+    assert.equal(report.actions[0].itemId, "faults:admin-web", "the test gap can start now, without the clean container");
+    assert.equal(report.actions[0].startNow, true);
+    assert.match(report.executive.gaps[0].blocks, /^Can start now; blocks Level 2 for admin-web/);
     assert.equal(report.maturity.outcome, "blocked", "real results exist, and Level 1 still needs a clean container");
     assert.equal(report.executive.heading, "Level 1 unproven on this machine: every Level 1 check that ran passed");
     assert.ok(report.components.included.every((c: { level: number; capReasons: { state: string }[] }) => c.level === 0 && c.capReasons.every((x) => x.state === "blocked")), JSON.stringify(report.components.included));

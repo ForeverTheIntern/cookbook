@@ -291,3 +291,15 @@ The rerun at `46bee96` found buyer-web really running (82 of 82 tests) and all f
 | The sample env file signal passed without the variables the code reads | It compares names and lists the missing ones | `tests/units.test.ts` "informational signals" |
 | A sudo start made environment.json "not a working setup" | The command is flagged; the setup still counts | `tests/units.test.ts` "a sudo command in the environment setup" |
 | "blocked: blocked:", "1 items", `ARG NODE_MAJOR`, "(added as decisions are made)", the narration file left at the root, `external-systems` never offered, the scenario refusal's contract wording | Fixed; `scan` prints an `external-systems` hint when the history shows agent work | `tests/units.test.ts`, `tests/cli.test.ts` |
+
+## The fourth field run (October 29, 2026)
+
+The rerun at `9220380` ran end to end through the documented path: the full replay, with planted faults, finished in under a minute, and it found one real test gap. These changes close the small items it left:
+
+| Finding | Fix | Test |
+| --- | --- | --- |
+| The seal refused "5" in "caught 4 of 5" | Narration may use every number from the parts of the report the audit computed | `tests/render.test.ts` "narration may use every number" |
+| The missed planted fault, a real test gap, was only a "later" roadmap step | When only this machine blocks Level 1, Level 2 work is planned anyway: it becomes a part 1 gap and an action that can start now. Delegation still waits for a real Level 2 | `tests/render.test.ts` "a test gap is a part 1 gap"; `tests/cli.test.ts` "when one app's toolchain blocks" |
+| `status` printed "level Level" and dropped "(could be 1)" on scenarios | One wording for every tier | `tests/cli.test.ts` "status words every tier" |
+| Test counts weren't in the report | The test evidence says "test passed (82 of 82 tests)" for node --test, vitest, jest, mocha, pytest and unittest | `tests/units.test.ts` "test counts" |
+| "Changes below Level 1" counted an unproven component; the fault summary's operator list read like the missed ones | "not yet proven at Level 1"; the summary names each missed fault's operator and line | `tests/render.test.ts`, `tests/cli.test.ts` |

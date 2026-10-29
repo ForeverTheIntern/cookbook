@@ -13,6 +13,38 @@ const PORTS: Record<string, string> = {
 
 const SECRET_NAME = /(KEY|SECRET|TOKEN|PASSWORD|CREDENTIAL)/;
 
+// The test totals a runner prints, so the report can say "82 of 82 tests" instead of "passed".
+// Covers node --test (tap and spec), vitest, jest, mocha, pytest and unittest; null when none match.
+export function testCounts(output: string): { passed: number; failed: number; total: number } | null {
+  const text = output.replace(/\x1b\[[0-9;]*m/g, "");
+  const num = (re: RegExp) => {
+    const all = [...text.matchAll(new RegExp(re.source, re.flags.includes("g") ? re.flags : re.flags + "g"))];
+    return all.length ? Number(all[all.length - 1][1]) : null;
+  };
+  const nodePass = num(/^\s*[#ℹ] pass (\d+)\s*$/m);
+  if (nodePass !== null) {
+    const failed = num(/^\s*[#ℹ] fail (\d+)\s*$/m) ?? 0;
+    return { passed: nodePass, failed, total: num(/^\s*[#ℹ] tests (\d+)\s*$/m) ?? nodePass + failed };
+  }
+  const vitest = [...text.matchAll(/Tests\s+(?:(\d+) failed \|\s*)?(\d+) passed[^(\n]*\((\d+)\)/g)].pop();
+  if (vitest) return { passed: Number(vitest[2]), failed: Number(vitest[1] ?? 0), total: Number(vitest[3]) };
+  const jest = [...text.matchAll(/Tests:\s+(?:(\d+) failed, )?(?:\d+ skipped, )?(?:\d+ todo, )?(\d+) passed, (\d+) total/g)].pop();
+  if (jest) return { passed: Number(jest[2]), failed: Number(jest[1] ?? 0), total: Number(jest[3]) };
+  const mochaPass = num(/^\s*(\d+) passing\b/m);
+  if (mochaPass !== null) {
+    const failed = num(/^\s*(\d+) failing\b/m) ?? 0;
+    return { passed: mochaPass, failed, total: mochaPass + failed };
+  }
+  const pytest = [...text.matchAll(/(?:(\d+) failed, )?(\d+) passed(?:, \d+ \w+)* in [\d.]+s/g)].pop();
+  if (pytest) return { passed: Number(pytest[2]), failed: Number(pytest[1] ?? 0), total: Number(pytest[2]) + Number(pytest[1] ?? 0) };
+  const ran = num(/^Ran (\d+) tests? in /m);
+  if (ran !== null) {
+    const failed = (num(/FAILED \((?:failures=(\d+))/m) ?? 0) + (num(/FAILED \([^)]*errors=(\d+)/m) ?? 0);
+    return { passed: ran - failed, failed, total: ran };
+  }
+  return null;
+}
+
 export function diagnose(output: string, timedOut: boolean, phase: string): Diagnosis {
   if (timedOut) return { cause: "timeout", detail: `the ${phase} step ran out of time` };
   const refused = output.match(/ECONNREFUSED (?:127\.0\.0\.1|::1|localhost|\[::1\]):(\d+)|connect(?:ion)? refused[^\n]*?:(\d{2,5})/i);

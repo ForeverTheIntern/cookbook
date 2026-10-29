@@ -8,7 +8,7 @@ import { inventory, orgSkillBuilders } from "../skill/agent-readiness/scripts/li
 import { staticSignals } from "../skill/agent-readiness/scripts/lib/signals.ts";
 import { disconnectArgs, execArgs, startArgs } from "../skill/agent-readiness/scripts/lib/container.ts";
 import { discoverContract } from "../skill/agent-readiness/scripts/lib/contract.ts";
-import { diagnose } from "../skill/agent-readiness/scripts/lib/diagnose.ts";
+import { diagnose, testCounts } from "../skill/agent-readiness/scripts/lib/diagnose.ts";
 import { weakening, weakeningFlags } from "../skill/agent-readiness/scripts/lib/diff.ts";
 import { recordObservation } from "../skill/agent-readiness/scripts/lib/evidence.ts";
 import { appendHistory, pushHistory, readHistory, storeAudit } from "../skill/agent-readiness/scripts/lib/history.ts";
@@ -441,6 +441,20 @@ describe("profile", () => {
     const onlySamples = gitRepo({ "examples/demo/package.json": JSON.stringify({ name: "demo", scripts: { test: "node --test" } }), "examples/demo/package-lock.json": "{}" });
     const p2 = buildProfile(onlySamples, onlySamples, rubric);
     assert.deepEqual([p2.components.map((c) => c.id), p2.satellites.length], [["demo"], 0], "with nothing else to assess, a deferred package is assessed");
+  });
+});
+
+describe("test counts", () => {
+  test("the totals each runner prints are read, and none is made up", () => {
+    assert.deepEqual(testCounts("TAP version 13\n# tests 82\n# suites 0\n# pass 82\n# fail 0\n"), { passed: 82, failed: 0, total: 82 });
+    assert.deepEqual(testCounts("\u2139 tests 12\n\u2139 pass 11\n\u2139 fail 1\n"), { passed: 11, failed: 1, total: 12 });
+    assert.deepEqual(testCounts(" Test Files  11 passed (11)\n      Tests  82 passed (82)\n"), { passed: 82, failed: 0, total: 82 });
+    assert.deepEqual(testCounts("      Tests  2 failed | 80 passed (82)\n"), { passed: 80, failed: 2, total: 82 });
+    assert.deepEqual(testCounts("Tests:       1 failed, 81 passed, 82 total\n"), { passed: 81, failed: 1, total: 82 });
+    assert.deepEqual(testCounts("  40 passing (2s)\n  2 failing\n"), { passed: 40, failed: 2, total: 42 });
+    assert.deepEqual(testCounts("===== 1 failed, 81 passed in 3.21s =====\n"), { passed: 81, failed: 1, total: 82 });
+    assert.deepEqual(testCounts("Ran 14 tests in 0.010s\n\nOK\n"), { passed: 14, failed: 0, total: 14 });
+    assert.equal(testCounts("all good\n"), null);
   });
 });
 

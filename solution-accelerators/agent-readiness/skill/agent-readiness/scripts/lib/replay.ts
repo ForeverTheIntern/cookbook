@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { ContainerSession, buildImage, detectRuntime } from "./container.ts";
 import { containerImage } from "./contract.ts";
-import { diagnose } from "./diagnose.ts";
+import { diagnose, testCounts } from "./diagnose.ts";
 import { addEvidence } from "./evidence.ts";
 import { applySite, chooseSites } from "./mutate.ts";
 import { redact, tail } from "./redact.ts";
@@ -164,9 +164,10 @@ export function evidenceFromPhase(audit: Audit, ex: Executor, r: PhaseResult, re
   const map = KIND_CHECK[r.cmd.kind];
   const redacted = r.outcome ? redact(r.outcome.output, registryValues) : "";
   let summary: string;
-  if (r.status === "pass") summary = `${r.cmd.kind} passed`;
+  const counts = r.cmd.kind === "test" && r.outcome ? testCounts(r.outcome.output) : null;
+  if (r.status === "pass") summary = `${r.cmd.kind} passed${counts ? ` (${counts.passed} of ${counts.total} tests)` : ""}`;
   else if (r.status === "not_run") summary = r.note.startsWith("not run") ? `${r.cmd.kind} ${r.note}` : `${r.cmd.kind} not run: ${r.note}`;
-  else summary = `${r.cmd.kind} failed: ${r.diagnosis?.detail ?? "non-zero exit"}`;
+  else summary = `${r.cmd.kind} failed: ${r.diagnosis?.detail ?? "non-zero exit"}${counts && counts.failed ? ` (${counts.failed} of ${counts.total} tests failed)` : ""}`;
   if (r.status === "fail" && r.diagnosis?.cause === "registry" && audit.environment.registryEnv.length === 0) summary = `${r.cmd.kind} failed: registry credentials not provided (pass them with --registry-env)`;
   return addEvidence(audit, {
     checkId: map.check,
@@ -293,7 +294,6 @@ async function plantFaults(audit: Audit, repo: string, tree: string, ex: Executo
   audit.mutants.push(...mutants);
   const counted = mutants.filter((m) => m.result === "caught" || m.result === "survived");
   const caught = counted.filter((m) => m.result === "caught").length;
-  const survivedFiles = [...new Set(mutants.filter((m) => m.result === "survived").map((m) => m.file))];
   const operators = [...new Set(mutants.map((m) => m.operator))].join(", ");
   let result: "pass" | "fail" | "not_run";
   let summary: string;
@@ -302,10 +302,11 @@ async function plantFaults(audit: Audit, repo: string, tree: string, ex: Executo
     summary = `only ${counted.length} planted faults gave a clear result; at least ${rubric.mutation.minForPass} are needed`;
   } else if (caught === counted.length) {
     result = "pass";
-    summary = `caught ${caught} of ${counted.length} planted faults (${operators})`;
+    summary = `caught ${caught} of ${counted.length} planted faults (tried: ${operators})`;
   } else {
     result = "fail";
-    summary = `caught ${caught} of ${counted.length} planted faults (${operators}); uncaught in ${survivedFiles.join(", ")}`;
+    const missed = mutants.filter((m) => m.result === "survived").map((m) => `${m.operator} at ${m.file}:${m.line}`);
+    summary = `caught ${caught} of ${counted.length} planted faults; missed: ${missed.join(", ")}`;
   }
   log(`  faults in ${comp.id}: ${summary}`);
   addEvidence(audit, { checkId: "verify.behavioral_oracle", condition: "faults", component: comp.id, strength: ex.strength, where: ex.where, result, summary, image: ex.image ?? undefined });

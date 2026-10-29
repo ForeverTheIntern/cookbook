@@ -208,6 +208,8 @@ function headlineFor(input: RenderInput, ready: string[], setByShare: number): s
     const causes = blockedCauses(input);
     const why = readOnly ? "the read-only tier runs no repo code" : !input.audit.environment.containerRuntime ? list(["this machine has no container runtime", ...causes]) : causes.length ? list(causes) : "a check that decides it couldn't run here";
     const rerun = readOnly ? "A local-exec audit" : "A rerun where Docker or Podman is available, such as CI,";
+    const other = notMachineCause(input);
+    if (other) return fit(`Level ${rollup.level + 1} couldn't be proved for ${where}: ${other}.`, `Level ${rollup.level + 1} couldn't be proved for ${where}.`);
     return fit(`Level ${rollup.level + 1} couldn't be proved for ${where} because ${why}. ${rerun} can prove it.`, `Level ${rollup.level + 1} couldn't be proved for ${where} on this machine. ${rerun} can prove it.`);
   }
   if (top.length === 0 || top.every((t) => t.kind !== "fix")) {
@@ -242,9 +244,22 @@ function headlineFor(input: RenderInput, ready: string[], setByShare: number): s
   return fit(`Agents can build and test ${names}, but ${failing.length ? list(failing) : `${their} checks can't yet catch wrong changes`}${share}.${readyLine}`, `Agents can build and test ${names}, but ${failing.length ? list(failing) : `${their} checks can't yet catch wrong changes`}${share}.`);
 }
 
-// Below Level 2 with no fix to offer means a deciding check couldn't run, not that nothing blocks.
+// Below Level 2 with no fix to offer, or with every condition of the next level blocked on this
+// machine, means a deciding check couldn't run, not that nothing blocks.
 function unproven(input: RenderInput): boolean {
-  return input.rollup.level < 2 && input.top.every((t) => t.kind !== "fix");
+  if (input.rollup.level >= 2) return false;
+  if (input.top.every((t) => t.kind !== "fix")) return true;
+  const caps = capReasons(input);
+  return caps.length > 0 && caps.every((c) => c.state === "blocked");
+}
+
+// Why the next level couldn't be proved when this machine isn't the reason, or null when it is.
+function notMachineCause(input: RenderInput): string | null {
+  if (input.audit.tier === "read-only" || !input.audit.environment.containerRuntime) return null;
+  const caps = capReasons(input);
+  if (caps.length === 0 || caps.some((c) => c.state === "blocked")) return null;
+  const reason = caps.find((c) => c.state === "unknown")?.reason;
+  return reason ? reason.replace(/^planted faults skipped by --no-mutants$/, "this run skipped planted faults") : null;
 }
 
 function because(input: RenderInput, cond: CondId, their: string): string {
@@ -274,7 +289,14 @@ function stats3(input: RenderInput): ReportJson["executive"]["numbers"] {
   const activeIds = [...input.active];
   const ready = activeIds.filter((id) => (compLevel(input, id)?.level ?? 0) >= 2).length;
   const nextLevel = Math.min(4, input.rollup.level + 1);
-  const below = input.components.filter((c) => c.assessed && input.active.has(c.id) && (compLevel(input, c.id)?.level ?? 0) < nextLevel).reduce((s, c) => s + c.changeShare, 0);
+  const isUnproven = (id: string) => {
+    const l = compLevel(input, id);
+    return Boolean(l) && unprovenLevel1(l!.level, l!.couldBe, componentCaps(input, id));
+  };
+  const belowComps = input.components.filter((c) => c.assessed && input.active.has(c.id) && (compLevel(input, c.id)?.level ?? 0) < nextLevel);
+  const below = belowComps.reduce((s, c) => s + c.changeShare, 0);
+  const unprovenOnly = belowComps.length > 0 && belowComps.every((c) => isUnproven(c.id));
+  const someUnproven = belowComps.some((c) => isUnproven(c.id));
   const prev = [...input.history].reverse().find((h) => h.kind === "audit" && !h.noLevel && typeof h.repoLevel === "number");
   const days = audit.profile?.historyDays ?? 90;
   let readyComparison = `Level 2 needs ${activeIds.length} of ${activeIds.length}`;
@@ -308,7 +330,11 @@ function stats3(input: RenderInput): ReportJson["executive"]["numbers"] {
   return [
     { label: "Components ready for agents", value: `${ready} of ${activeIds.length}`, comparison: readyComparison },
     ci,
-    { label: `Recent changes in components below Level ${nextLevel}`, value: `${pct(below, 1)}%`, comparison: belowComparison },
+    {
+      label: unprovenOnly ? `Recent changes in components not yet proven at Level ${nextLevel}` : someUnproven ? `Recent changes in components below or not yet proven at Level ${nextLevel}` : `Recent changes in components below Level ${nextLevel}`,
+      value: `${pct(below, 1)}%`,
+      comparison: unprovenOnly ? `Proving Level ${nextLevel} needs a clean container; counting the last ${days} days` : belowComparison,
+    },
   ];
 }
 
@@ -414,7 +440,7 @@ function checkResult(input: RenderInput, checkId: string): { result: string; ok:
   if (checkId === "verify.behavioral_oracle") {
     const parts = assessed.map((c) => {
       const ev = [...audit.evidence].reverse().find((e) => e.condition === "faults" && e.component === c.id);
-      return `${c.id}: ${ev ? ev.summary.replace(/ \(.*$/, "").replace(/; uncaught.*$/, "") : "not run"}`;
+      return `${c.id}: ${ev ? ev.summary.replace(/ \(.*$/, "").replace(/; missed.*$/, "") : "not run"}`;
     });
     const r = byComp(["faults"]);
     return { result: parts.join("; "), ok: r.ok };
@@ -442,9 +468,9 @@ export function buildReport(input: RenderInput): ReportJson {
   const caps = capReasons(input);
   const noBlocker = !none && !unproven(input) && top.every((t) => t.kind !== "fix");
   const narr = audit.narration ?? {};
-  const gaps = top.map((t, i) => ({ rank: i + 1, text: (narr.gaps?.[t.id] ?? gapText(t)).trim().replace(/\.+$/, ""), blocks: blocksText(t), itemId: t.id }));
-  const first = top[0];
   const lower = (s: string) => s.charAt(0).toLowerCase() + s.slice(1);
+  const gaps = top.map((t, i) => ({ rank: i + 1, text: (narr.gaps?.[t.id] ?? gapText(t)).trim().replace(/\.+$/, ""), blocks: t.status === "start_now" ? `Can start now; ${lower(blocksText(t))}` : blocksText(t), itemId: t.id }));
+  const first = top[0];
   const skippedIds = input.components.filter((c) => !c.assessed).map((c) => c.id);
   const defaultAsk = noneAssessed(input)
     ? `Decision needed: which component this audit should cover${skippedIds.length ? `, since it can't assess ${list(skippedIds)}` : ", since it found none it supports"}.`
@@ -452,8 +478,10 @@ export function buildReport(input: RenderInput): ReportJson {
     ? audit.tier === "read-only"
       ? "Decision needed: whether to allow a local-exec audit, which runs the repo's commands in a container."
       : "Decision needed: where to rerun this audit so its checks can run, for example a CI job with Docker or Podman."
+    : unproven(input) && notMachineCause(input)
+    ? `Decision needed: how the audit can check Level ${L + 1} in ${list(capComps(input))}, since ${lower(notMachineCause(input)!)}.`
     : unproven(input)
-    ? `Decision needed: where to rerun this audit so it can prove Level ${L + 1}, for example a CI job.`
+    ? `Decision needed: where to rerun this audit so it can prove Level ${L + 1}, for example a CI job.${top.some((t) => t.status === "start_now") ? ` Meanwhile, ${lower(gapText(top.find((t) => t.status === "start_now")!))} can start now.` : ""}`
     : first?.decision
       ? `Decision needed: ${lower(first.decision)}.`
       : noBlocker
@@ -462,7 +490,7 @@ export function buildReport(input: RenderInput): ReportJson {
   let ask = (narr.ask ?? defaultAsk).trim();
   if (!/[.!?]$/.test(ask)) ask += ".";
   if (!roadmap.owner && !/\bowner\b/i.test(ask)) ask += " Also name an owner for agent readiness.";
-  const actions: ReportAction[] = top.map((t, i) => action(t, i + 1, rubric, roadmap, false, audit.outcomes));
+  const actions: ReportAction[] = top.map((t, i) => action(t, i + 1, rubric, roadmap, t.status === "start_now", audit.outcomes));
   if (startNow) actions.push(action(startNow, actions.length + 1, rubric, roadmap, true, audit.outcomes));
   const points = actions.map((a, i) => ({ label: `${a.rank}. ${a.title}`, x: Math.min(0.95, rubric.effortX[a.effort] + i * 0.04), y: Math.max(0, Math.min(1, a.impact)), itemId: a.itemId }));
   const o = audit.outcomes;
@@ -728,10 +756,25 @@ export function danglingEvidence(report: ReportJson, audit: Audit): string[] {
   return [...cited].filter((id) => !known.has(id)).sort();
 }
 
+// Every number the audit itself reports, from the parts of the report narration doesn't write
+// (the headline, ask, gaps and titles are left out).
 export function allowedNumbers(report: ReportJson): Set<string> {
   const set = new Set<string>();
-  const page1 = report.executive.numbers.map((n) => `${n.value} ${n.comparison}`).join(" ");
-  for (const m of page1.matchAll(/\d+(?:\.\d+)?%?/g)) set.add(m[0]);
+  const ex = report.executive;
+  const computed = {
+    numbers: ex.numbers,
+    nextLine: ex.nextLine,
+    coverage: ex.coverage,
+    maturity: report.maturity,
+    components: report.components,
+    actions: report.actions.map(({ title: _title, ...rest }) => rest),
+    roadmap: report.roadmap.items.map((i) => [i.unlocks, i.statusText]),
+    progress: report.progress,
+    checks: report.details.checks.map((c) => [c.result, c.counts]),
+    evidence: report.details.evidence.map((e) => e.summary),
+    outcomes: report.details.outcomes,
+  };
+  for (const m of JSON.stringify(computed).matchAll(/\d+(?:\.\d+)?%?/g)) set.add(m[0]);
   for (const c of report.components.included) set.add(`${Math.round(c.changeShare * 100)}%`);
   for (const a of report.actions) if (a.impact > 0) set.add(`${Math.round(a.impact * 100)}%`);
   for (let i = 0; i <= 4; i++) set.add(String(i));

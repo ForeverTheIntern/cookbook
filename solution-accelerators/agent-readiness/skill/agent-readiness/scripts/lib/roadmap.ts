@@ -189,9 +189,24 @@ function sharesOf(ctx: RoadmapContext): Map<string, number> {
   return new Map(ctx.components.map((c) => [c.id, c.changeShare]));
 }
 
-function unlocksText(before: Map<string, Level>, after: Map<string, Level>): string {
+function unlocksText(before: Map<string, Level>, after: Map<string, Level>, unproven: Set<string> = new Set()): string {
   const rose = [...after.entries()].filter(([id, l]) => l > (before.get(id) ?? 0));
-  return rose.map(([id, l]) => `${id} to Level ${l}`).join(", ");
+  return rose.map(([id, l]) => `${id} to Level ${l}${unproven.has(id) ? " once Level 1 is proven in a clean container" : ""}`).join(", ");
+}
+
+// A component held at Level 0 only by limits of this machine is planned as if Level 1 held, so
+// work that doesn't depend on the machine, such as a test gap, can start now.
+function planningMaps(rubric: Rubric, maps: Map<string, StateMap>): { maps: Map<string, StateMap>; unproven: Set<string> } {
+  const out = new Map<string, StateMap>();
+  const unproven = new Set<string>();
+  for (const [id, m] of maps) {
+    const unmet = rubric.level1.filter((c) => m[c] !== "met");
+    if (unmet.length > 0 && unmet.every((c) => m[c] === "blocked")) {
+      unproven.add(id);
+      out.set(id, { ...m, ...Object.fromEntries(unmet.map((c) => [c, "met"])) });
+    } else out.set(id, m);
+  }
+  return { maps: out, unproven };
 }
 
 function fromTemplate(t: RubricTemplate, vars: Record<string, string | number>) {
@@ -218,13 +233,15 @@ export function updateRoadmap(prev: Roadmap | null, ctx: RoadmapContext): Roadma
   const roadmap: Roadmap = prev
     ? { ...prev, items: prev.items.map((i) => ({ ...i })), updatedBy: audit.id, updatedAt: nowIso() }
     : { schema: "agent-readiness/roadmap@1", owner: null, targets: null, items: [], updatedBy: audit.id, updatedAt: nowIso() };
-  const maps = stateMaps(ctx);
+  const real = stateMaps(ctx);
+  const provenLevels = standardLevels(rubric, real);
+  const { maps, unproven } = planningMaps(rubric, real);
   const levels = standardLevels(rubric, maps);
   const cands = ctx.decisionsOnly ? [] : candidates(ctx);
   const decisions: Candidate[] = [];
   decisions.push({ id: "owner", template: "owner", kind: "decision", component: "*", fixes: [], vars: {}, evidence: [] });
   if (!ctx.decisionsOnly) {
-    for (const c of ctx.components.filter((x) => ctx.active.has(x.id) && levels.get(x.id) === 2)) {
+    for (const c of ctx.components.filter((x) => ctx.active.has(x.id) && provenLevels.get(x.id) === 2)) {
       decisions.push({ id: `delegate:${c.id}`, template: "delegate", kind: "rollout", component: c.id, fixes: [], vars: { component: c.id }, evidence: [] });
     }
   }
@@ -294,7 +311,7 @@ export function updateRoadmap(prev: Roadmap | null, ctx: RoadmapContext): Roadma
     const after = standardLevels(rubric, flipFor(item, open, maps));
     const rose = [...after.entries()].filter(([id, l]) => l > (levels.get(id) ?? 0) && ctx.active.has(id));
     item.impact = Math.min(1, Math.round(rose.reduce((s, [id]) => s + (shares.get(id) ?? 0), 0) * 1000) / 1000);
-    const text = unlocksText(levels, after);
+    const text = unlocksText(levels, after, unproven);
     const prerequisites = new Set<string>();
     const coRequired = new Set<string>();
     const goalConds = new Set<CondId>([...rubric.level1, ...rubric.level2]);
@@ -321,7 +338,7 @@ export function updateRoadmap(prev: Roadmap | null, ctx: RoadmapContext): Roadma
       const together = [item, ...[...coRequired].map((d) => byId.get(d)!)];
       let joint = maps;
       for (const t of together) joint = flipFor(t, open.filter((o) => !together.includes(o) || o === t), joint);
-      const jointText = unlocksText(levels, standardLevels(rubric, joint));
+      const jointText = unlocksText(levels, standardLevels(rubric, joint), unproven);
       item.unlocks = `${jointText || "the next level"} together with ${[...coRequired].map((d) => byId.get(d)?.title ?? d).join(" and ")}`;
     } else item.unlocks = "no level change yet";
   }
@@ -343,8 +360,8 @@ export function updateRoadmap(prev: Roadmap | null, ctx: RoadmapContext): Roadma
   const blocking = open.filter((item) => item.status !== "waiting" && item.fixes.some((f) => (f.component === "*" ? [...ctx.active] : [f.component]).some((cid) => ctx.active.has(cid) && neededFor(cid).includes(f.condition))));
   blocking.sort((a, b) => b.impact - a.impact || EFFORT_ORDER[a.effort] - EFFORT_ORDER[b.effort] || a.order - b.order);
   const top = blocking.slice(0, rubric.part1.maxGaps);
-  for (const t of top) t.status = "next";
-  const activeLevels = [...ctx.active].map((id) => levels.get(id) ?? 0);
+  for (const t of top) t.status = t.fixes.some((f) => unproven.has(f.component)) ? "start_now" : "next";
+  const activeLevels = [...ctx.active].map((id) => provenLevels.get(id) ?? 0);
   const repoAt2 = activeLevels.length > 0 && Math.min(...activeLevels) === 2;
   if (top.length === 0 && repoAt2 && targets.status !== "done") {
     targets.status = "next";

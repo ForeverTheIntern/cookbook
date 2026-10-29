@@ -27,7 +27,9 @@ export function headlinePrompt(r: ReportJson): string {
     `Rules: one message in at most ${rubric.part1.maxHeadlineWords} words; it names the component that sets the level, and says what already works (elsewhere in the repo when another component is ready); no jargon, meaning this audit's internal terms (${rubric.part1.bannedTerms.join(", ")}), check or evidence IDs, or a level name without its plain meaning; it never pairs a level change with an outcome change in the same sentence.`,
     "",
     `Heading: ${r.executive.heading}`,
-    `Facts: component levels for ${r.goalLabel}: ${comps.map((c) => `${c.id} Level ${level(c)}`).join(", ")}. The lowest active component sets the repo level: ${r.maturity.setBy.join(", ") || "none; repo-wide checks set it"}. Ready for ${r.goalLabel} (Level 2 or above): ${ready.join(", ") || "none"}.`,
+    r.goal === "repo_wide"
+      ? `Facts: repo-wide changes are judged for the whole repo, at Level ${r.maturity.level}${r.maturity.setBy.length ? `, held there by ${r.maturity.setBy.join(", ")}` : ", held there by repo-wide checks such as pinned versions"}. Component levels for bug fixes: ${comps.map((c) => `${c.id} Level ${level(c)}`).join(", ")}.`
+      : `Facts: component levels for ${r.goalLabel}: ${comps.map((c) => `${c.id} Level ${level(c)}`).join(", ")}. The lowest active component sets the repo level: ${r.maturity.setBy.join(", ") || "none; repo-wide checks set it"}. Ready for ${r.goalLabel} (Level 2 or above): ${ready.join(", ") || "none"}.`,
     `Headline: ${r.executive.headline}`,
   ].join("\n");
 }

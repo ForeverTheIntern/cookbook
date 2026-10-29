@@ -194,8 +194,39 @@ One grader bug surfaced in this run: the fresh-faults gate read sealed audits in
 - Headline judge average at least 0.8: met at 0.88.
 - The baseline and this log are committed: met.
 
+## Round 6: the report claims what the evidence doesn't show (after the four-model review)
+
+Four models (Claude Opus 5.5, GPT-5.6 Sol, Gemini 4 Argon, Grok 4.7) reviewed the generated report and the implementation with the packet in `agent_readiness_review_packet_generated.md`. Their consensus findings that the scripts could fix without touching scoring or level rules became this round.
+
+- **Fixture:** the 51 final-run reports, re-rendered offline; the deterministic suite for everything else.
+- **Failure modes, all one kind (text the evidence doesn't back):**
+  - Part 1's next-level line said "builds in a clean container" and "build, lint, type-check and test commands pass" for packages with no build or type-check script (all four reviewers).
+  - The commands check could read "Failed" next to "3 passed, 0 failed", because test evidence was filed under the setup check (three reviewers).
+  - The report header said "Seal verified against release" when it had only matched the manifest shipped in the same copy (three reviewers).
+  - Part 3's table was titled "What the closed steps delivered" (three reviewers).
+  - Repo-wide conditions read as per-component ("python-unpinned a frozen install reproduces the lockfile"), and a repo-wide audit counted "1 of 1 components ready" while the repo sat at Level 1.
+  - With no container runtime, the default headline said "Nothing blocks bug fixes … Start delegating" at Level 0.
+- **Lever:** script text (lever 3).
+- **Change:** each sentence names only what ran; the commands check counts and cites the evidence its condition reads; the seal line says "Scripts match the … manifest bundled with this copy; the published release isn't checked here"; Part 3 reads "What each closed step was expected to move, and what moved after it", with the not-attribution caveat under it; repo-wide conditions carry no component name; a level below 2 with no fix to offer is reported as unproven, with an ask to rerun where a container runtime exists.
+- **New tests:** `tests/render.test.ts` "part 1 and the checks claim only what the audit ran" and "an unproven level isn't reported as nothing blocking". Both fail on the old text.
+- **Also fixed:** an exported but empty `READINESS_IMAGE` was passed to `docker run` as the image name and dropped every level to 0. Test: `tests/cli.test.ts` "empty READINESS_IMAGE and READINESS_RUNTIME mean the defaults".
+
+| Measure | Before | After |
+| --- | --- | --- |
+| Page judge, 51 final reports | 0.698 | 0.697 |
+| Page judge, python-unpinned | 0.51 | 0.60 |
+| Deterministic suite | 116 tests | 120 tests, all passing; every fixture's levels unchanged |
+
+- **Verdict:** kept. The target here is accuracy, which the new tests lock; the page judge didn't move, and the headline judge isn't affected because every final-run headline was narrated. `baseline.json` is from the final run before this round, which changes no gate; CI's next full run re-records it on these scripts.
+
 ### Still open
 
-- The page judge sits at 0.70. Its top remaining complaints are the unmeasured pull-request number, which has nothing to compare with until outcomes are read, and words such as "lockfile" and "clean container" in the next-level line, which come from the rubric's condition labels and would need a rubric bump.
+From the four-model review, not fixed in this PR:
+
+- **Anti-gaming that the evals can't see yet.** Every eval run used the external driver, which has no tool-call stream, so the gates for running repo commands outside `readiness` or reading planted-fault details were never exercised. Planted-fault details sit in `audit.json` in the working tree, and the seal is an unkeyed digest. The SDK driver in CI is the next measurement; signing seals or keeping mutants off the working tree is a design change.
+- **Level 3 and 4 rules.** `level4.consecutiveWindows` isn't consumed, and the 10-PR absolute floor under the 20-PR minimum needs to be stated wherever the 20 is. Both are level-rule changes, so they go through the governance rule with a rubric bump.
+- **Part 1 comparisons.** "Last audit" can be a proving audit the reader never saw; comparing with the first audit as well, and keeping the third number's definition fixed across audits, would show movement better.
+- **The canvas** renders a projection of `report.json` copied in by hand; generating its data from `npm run sample` would keep every field, including citations and per-component outcomes.
+- **The effort and impact matrix** can put the only recommended action in "Later", because impact is an absolute share and medium effort sits past the midpoint.
+- The page judge sits at 0.70. Its top remaining complaints are the unmeasured pull-request number and rubric condition labels such as "lockfile" and "clean container" (a rubric bump).
 - The model matrix (two more models on `full`) needs the SDK driver and a key.
-- needs-prod-secret's default headline gives its cause as a bare variable name.

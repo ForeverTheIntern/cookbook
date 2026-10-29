@@ -4,9 +4,10 @@ import { join } from "node:path";
 import { validatePart1 } from "../../skill/agent-readiness/scripts/lib/render.ts";
 import { loadRubric } from "../../skill/agent-readiness/scripts/lib/rubric.ts";
 import { validateAgainst } from "../../skill/agent-readiness/scripts/lib/schema.ts";
-import type { ReportJson } from "../../skill/agent-readiness/scripts/lib/types.ts";
+import type { Audit, ReportJson } from "../../skill/agent-readiness/scripts/lib/types.ts";
 import { expected } from "../../tools/fixture.ts";
 import type { ExpectedRun } from "../../tools/fixture.ts";
+import { claimsNotInTree } from "./claims.ts";
 import { trajectoryGate } from "./trajectory.ts";
 import type { EvalCase, Gate, GateResult, Trajectory, Workspace } from "./types.ts";
 
@@ -94,10 +95,12 @@ export const topGate: Gate = (ws, _t, c) => {
 };
 
 export const reportGate: Gate = (ws) => {
+  const name = "report.json schema, part 1 rules and no claims outside the tree";
   const r = latestReport(ws);
-  if (!r) return { name: "report.json schema and part 1 rules", pass: false, detail: "no report" };
-  const errors = [...validateAgainst("report", r), ...validatePart1(r, rubric, null)];
-  return { name: "report.json schema and part 1 rules", pass: errors.length === 0, detail: errors.slice(0, 3).join("; ") || "valid" };
+  const audit = sealedAudits(ws).at(-1);
+  if (!r || !audit) return { name, pass: false, detail: "no report" };
+  const errors = [...validateAgainst("report", r), ...validatePart1(r, rubric, null), ...claimsNotInTree(r, audit as unknown as Audit, ws.dir)];
+  return { name, pass: errors.length === 0, detail: errors.slice(0, 3).join("; ") || "valid" };
 };
 
 export const trajectory: Gate = (ws, t, c) => trajectoryGate(ws, t, Boolean(c.remediation));

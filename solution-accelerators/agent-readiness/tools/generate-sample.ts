@@ -6,6 +6,8 @@ import { ACCELERATOR, materialize, materializePrs, readiness } from "./fixture.t
 const args = process.argv.slice(2);
 const image = args.includes("--image") ? args[args.indexOf("--image") + 1] : undefined;
 const imageArgs = image ? ["--image", image] : [];
+// The Postgres fix installs Postgres with apt; --skip-postgres leaves it out where the Debian mirrors are unreachable.
+const skipPostgres = args.includes("--skip-postgres");
 const SEED = "sample-seed";
 const T0 = "2026-10-27T15:00:00.000Z";
 
@@ -36,8 +38,10 @@ at(T0, ["audit", "--tier", "local-exec", "--outcomes-input", materializePrs("mon
 const first = { json: read(".agent-readiness/latest/report.json"), md: read(".agent-readiness/latest/report.md") };
 
 at("2026-10-28T15:00:00.000Z", ["roadmap", "owner", "Platform team"]);
-at("2026-10-29T15:00:00.000Z", ["draft-env", "--remediate"]);
-commitAt("2026-10-29T16:00:00.000Z", "Add the agent environment setup for Postgres");
+if (!skipPostgres) {
+  at("2026-10-29T15:00:00.000Z", ["draft-env", "--remediate"]);
+  commitAt("2026-10-29T16:00:00.000Z", "Add the agent environment setup for Postgres");
+}
 edit("AGENTS.md", (s) => s.replace("- Run `pnpm test` before you push.\n", "- Run `npm test` before you push.\n").replace("- The service map is in `docs/architecture.md`.\n", ""));
 edit(".cursor/skills/release-notes/SKILL.md", (s) => s.replace("Run `npm run changelog` to collect merged changes.", "List merged changes since the last tag with git log."));
 commitAt("2026-10-29T17:00:00.000Z", "Fix stale agent instructions");
@@ -55,7 +59,7 @@ commitAt("2026-11-14T10:00:00.000Z", "Remove debug logging");
 at("2026-11-20T13:00:00.000Z", ["recheck", ...imageArgs]);
 
 const T2 = "2026-11-30T15:00:00.000Z";
-at(T2, ["audit", "--tier", "local-exec", "--outcomes-input", materializePrs("monorepo-mixed", T2, "prs-later.template.json"), ...imageArgs]);
+at(T2, ["audit", "--tier", "local-exec", "--scenario", "bug_fixes", "--outcomes-input", materializePrs("monorepo-mixed", T2, "prs-later.template.json"), ...imageArgs]);
 const latest = { json: read(".agent-readiness/latest/report.json"), md: read(".agent-readiness/latest/report.md") };
 
 const out = join(ACCELERATOR, "examples");

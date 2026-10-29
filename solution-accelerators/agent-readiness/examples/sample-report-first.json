@@ -8,15 +8,13 @@
     "dirtyTree": false,
     "rubric": "2026-10-alpha",
     "tier": "local-exec",
-    "scriptsDigest": "8ff14a58c1bb993e16831571ad4f908a70d7ead9a47f4113f09d371c21b9e00a",
+    "scriptsDigest": "0d6fcaa4e37e814b5741a3b87bb097360242d52f8c08e4ba3dd9a9756ad4a519",
     "seedPinned": true,
     "sealStatus": "Scripts match the agent-readiness-v0.1.0 manifest bundled with this copy; the published release isn't checked here",
     "staleCopy": null,
     "previous": null,
     "storedAt": ".agent-readiness/history/audits/aud-2026-10-27-7070f44-e101"
   },
-  "goal": "bug_fixes",
-  "goalLabel": "bug fixes",
   "scale": [
     {
       "level": 0,
@@ -36,7 +34,7 @@
       "level": 2,
       "name": "Verifiable",
       "plain": "verifiable",
-      "meaning": "Everything this activity needs to check an agent's work passes.",
+      "meaning": "Agents can check their own work: the commands pass, the tests catch planted faults, the instructions are accurate and normal work needs no production access.",
       "measuredBy": "audit"
     },
     {
@@ -54,14 +52,34 @@
       "measuredBy": "outcomes"
     }
   ],
+  "scenarios": [],
   "maturity": {
     "level": 0,
+    "rule": "The repo level is the lowest level among active components, the assessed components with at least 10% of changes over 90 days; a component joins or leaves that set only after two audits on the same side of the line, and components the audit can't assess never set it.",
     "couldBe": null,
     "couldBeReason": null,
     "setBy": [
       "api"
     ],
     "partialCoverage": false,
+    "assessedComponents": 3,
+    "outcome": "proven",
+    "confidence": {
+      "level": "high",
+      "reasons": [
+        "every check that decides the level ran"
+      ]
+    },
+    "capReasons": [
+      {
+        "component": "api",
+        "condition": "clean.test",
+        "label": "passes every test in a clean container",
+        "state": "not_met",
+        "reason": "test failed: connection refused on port 5432 (1 of 1 tests failed)"
+      }
+    ],
+    "unproven": false,
     "next": {
       "level": 1,
       "name": "Bootable",
@@ -69,13 +87,102 @@
       "unmet": []
     }
   },
+  "components": {
+    "shape": "monorepo",
+    "included": [
+      {
+        "id": "api",
+        "path": "packages/api",
+        "toolchain": "Node",
+        "manifest": "packages/api/package.json",
+        "lockfile": null,
+        "changeShare": 0.56,
+        "active": true,
+        "level": 0,
+        "couldBe": null,
+        "unproven": false,
+        "capReasons": [
+          {
+            "component": "api",
+            "condition": "clean.test",
+            "label": "passes every test in a clean container",
+            "state": "not_met",
+            "reason": "test failed: connection refused on port 5432 (1 of 1 tests failed)"
+          }
+        ],
+        "scenarios": []
+      },
+      {
+        "id": "shared",
+        "path": "packages/shared",
+        "toolchain": "Node",
+        "manifest": "packages/shared/package.json",
+        "lockfile": null,
+        "changeShare": 0.15,
+        "active": true,
+        "level": 1,
+        "couldBe": null,
+        "unproven": false,
+        "capReasons": [
+          {
+            "component": "shared",
+            "condition": "instructions",
+            "label": "agent instructions are accurate",
+            "state": "not_met",
+            "reason": "3 of 7 instruction items are wrong"
+          }
+        ],
+        "scenarios": []
+      },
+      {
+        "id": "worker",
+        "path": "packages/worker",
+        "toolchain": "Node",
+        "manifest": "packages/worker/package.json",
+        "lockfile": null,
+        "changeShare": 0.27,
+        "active": true,
+        "level": 1,
+        "couldBe": null,
+        "unproven": false,
+        "capReasons": [
+          {
+            "component": "worker",
+            "condition": "faults",
+            "label": "tests catch planted faults",
+            "state": "not_met",
+            "reason": "caught 0 of 5 planted faults; missed: change_constant at packages/worker/src/retry.js:2, change_constant at packages/worker/src/retry.js:9, change_constant at packages/worker/src/retry.js:3, change_constant at packages/worker/src/retry.js:12, change_constant at packages/worker/src/retry.js:5"
+          },
+          {
+            "component": "worker",
+            "condition": "instructions",
+            "label": "agent instructions are accurate",
+            "state": "not_met",
+            "reason": "3 of 7 instruction items are wrong"
+          }
+        ],
+        "scenarios": []
+      }
+    ],
+    "excluded": [
+      {
+        "id": "infra",
+        "path": "infra",
+        "toolchain": "Terraform",
+        "manifest": null,
+        "lockfile": null,
+        "changeShare": 0.02,
+        "reason": "Terraform isn't supported by this rubric"
+      }
+    ]
+  },
   "executive": {
-    "heading": "Level 0 of 4, not bootable, for bug fixes",
-    "headline": "Agents can't pass the tests in api from a clean checkout because its tests need Postgres running, which the setup doesn't start, and 56% of recent changes land there. shared is already ready for bug fixes.",
+    "heading": "Level 0 of 4, not bootable",
+    "headline": "Agents can't pass the tests in api from a clean checkout because its tests need Postgres running, which the setup doesn't start, and 56% of recent changes land there.",
     "numbers": [
       {
-        "label": "Components ready for bug fixes",
-        "value": "1 of 3",
+        "label": "Components ready for agents",
+        "value": "0 of 3",
         "comparison": "Level 2 needs 3 of 3"
       },
       {
@@ -99,8 +206,14 @@
       },
       {
         "rank": 2,
+        "text": "Fix the stale agent instructions",
+        "blocks": "Blocks Level 2 for shared",
+        "itemId": "instructions:repo"
+      },
+      {
+        "rank": 3,
         "text": "Make worker's tests catch wrong behavior",
-        "blocks": "Blocks Level 2 for worker",
+        "blocks": "Blocks Level 2 for shared",
         "itemId": "faults:worker"
       }
     ],
@@ -115,7 +228,7 @@
       "title": "Set up Postgres for agents in api",
       "startNow": false,
       "why": "In a clean container, api's tests fail because nothing starts Postgres: connection refused on port 5432.",
-      "movesTheNeedle": "Takes api to Level 1 for bug fixes, covering 56% of recent changes. Agents can run api's checks before they push, so fewer agent PRs fail CI the first time.",
+      "movesTheNeedle": "Takes api to Level 1, covering 56% of recent changes. Agents can run api's checks before they push, so fewer agent PRs fail CI the first time.",
       "watch": "Share of agent PRs touching api that pass CI the first time. Now: 20% (1 of 5), Sep 27 to Oct 27, 2026.",
       "research": "In the BootstrapAgent study, a reusable, verified setup cut later agents' token use by 25.9% and build time by 22.3%. Measured on the study's benchmark repositories. https://arxiv.org/abs/2605.15815",
       "effortAndOwner": "Small: setup scripts and environment config, no source changes. Repo maintainer.",
@@ -127,35 +240,35 @@
     },
     {
       "rank": 2,
+      "itemId": "instructions:repo",
+      "title": "Fix the stale agent instructions",
+      "startNow": false,
+      "why": "3 instructions agents would follow are wrong: npm run changelog (no \"changelog\" script in package.json), pnpm test (uses pnpm, but the repo uses npm).",
+      "movesTheNeedle": "Takes shared to Level 2, covering 15% of recent changes. Agents stop following stale steps, such as running pnpm in a repo that doesn't use it.",
+      "watch": "Agent PRs that add a stray pnpm-lock.yaml. Now: 11% (1 of 9), Sep 27 to Oct 27, 2026.",
+      "research": null,
+      "effortAndOwner": "Small: 2 instruction files. Repo maintainer.",
+      "decision": null,
+      "doneWhen": "`readiness run --instructions` replays every instruction item.",
+      "dependsOn": [],
+      "impact": 0.15,
+      "effort": "small"
+    },
+    {
+      "rank": 3,
       "itemId": "faults:worker",
       "title": "Make worker's tests catch wrong behavior",
       "startNow": false,
       "why": "The audit planted 5 faults in worker in a throwaway copy, and the tests caught 0.",
-      "movesTheNeedle": "Takes worker to Level 2 for bug fixes, covering 27% of recent changes. Changes in worker get a real pass-or-fail signal, so reviewers catch less by hand.",
+      "movesTheNeedle": "Changes no level on its own: shared to Level 2, worker to Level 2 together with Fix the stale agent instructions. Changes in worker get a real pass-or-fail signal, so reviewers catch less by hand.",
       "watch": "Share of agent PRs touching worker where a reviewer requested changes. Now: 2 of 3 (too few for a rate), Sep 27 to Oct 27, 2026.",
       "research": "In DeployBench, 53.9% of failed runs passed generic checks and failed only task-specific ones. 51 research-artifact deployment tasks. https://deploybench.vercel.app/",
       "effortAndOwner": "Medium: tests in worker only. Component owner.",
       "decision": "What the untested behavior in packages/worker/src/retry.js should be",
       "doneWhen": "A new audit's fresh planted faults in worker are all caught.",
       "dependsOn": [],
-      "impact": 0.27,
-      "effort": "medium"
-    },
-    {
-      "rank": 3,
-      "itemId": "delegate:bug_fixes:shared",
-      "title": "Give agents bug fixes in shared",
-      "startNow": true,
-      "why": "shared is already at Level 2 for bug fixes, so agents can check their own work there.",
-      "movesTheNeedle": "Unlocks measured agent work in shared. The next report has real agent PR numbers for shared, which Level 3 is measured on.",
-      "watch": "Merged agent PRs touching shared. Now: 2 of 2 (too few for a rate), Sep 27 to Oct 27, 2026.",
-      "research": null,
-      "effortAndOwner": "Small: pick the work. Component owner.",
-      "decision": "Which tasks go to agents first, and who reviews them",
-      "doneWhen": "Agent PRs in shared appear in the outcome numbers.",
-      "dependsOn": [],
       "impact": 0,
-      "effort": "small"
+      "effort": "medium"
     }
   ],
   "matrix": {
@@ -173,23 +286,23 @@
         "itemId": "clean.test:api"
       },
       {
-        "label": "2. Make worker's tests catch wrong behavior",
-        "x": 0.5900000000000001,
-        "y": 0.27,
-        "itemId": "faults:worker"
+        "label": "2. Fix the stale agent instructions",
+        "x": 0.24000000000000002,
+        "y": 0.15,
+        "itemId": "instructions:repo"
       },
       {
-        "label": "3. Give agents bug fixes in shared",
-        "x": 0.28,
+        "label": "3. Make worker's tests catch wrong behavior",
+        "x": 0.63,
         "y": 0,
-        "itemId": "delegate:bug_fixes:shared"
+        "itemId": "faults:worker"
       }
     ]
   },
   "roadmap": {
     "owner": null,
     "doneCount": 0,
-    "total": 7,
+    "total": 6,
     "items": [
       {
         "id": "owner",
@@ -206,30 +319,21 @@
         "title": "Set up Postgres for agents in api",
         "status": "next",
         "statusText": "next",
-        "unlocks": "api to Level 1 for bug fixes",
+        "unlocks": "api to Level 1",
         "decision": "Approve committing the setup files"
       },
       {
-        "id": "faults:worker",
+        "id": "instructions:repo",
         "order": 3,
-        "title": "Make worker's tests catch wrong behavior",
+        "title": "Fix the stale agent instructions",
         "status": "next",
         "statusText": "next",
-        "unlocks": "worker to Level 2 for bug fixes",
-        "decision": "What the untested behavior in packages/worker/src/retry.js should be"
-      },
-      {
-        "id": "instructions:repo",
-        "order": 4,
-        "title": "Fix the stale agent instructions",
-        "status": "later",
-        "statusText": "later",
-        "unlocks": "no level change for bug fixes yet",
+        "unlocks": "shared to Level 2",
         "decision": null
       },
       {
         "id": "faults:api",
-        "order": 5,
+        "order": 4,
         "title": "Check api's tests with planted faults",
         "status": "waiting",
         "statusText": "waiting on step 2",
@@ -237,22 +341,22 @@
         "decision": "What the untested behavior in packages/api should be"
       },
       {
-        "id": "delegate:bug_fixes:shared",
-        "order": 6,
-        "title": "Give agents bug fixes in shared",
-        "status": "start_now",
-        "statusText": "can start now",
-        "unlocks": "measured agent work in shared",
-        "decision": "Which tasks go to agents first, and who reviews them"
+        "id": "faults:worker",
+        "order": 5,
+        "title": "Make worker's tests catch wrong behavior",
+        "status": "next",
+        "statusText": "next",
+        "unlocks": "shared to Level 2, worker to Level 2 together with Fix the stale agent instructions",
+        "decision": "What the untested behavior in packages/worker/src/retry.js should be"
       },
       {
-        "id": "targets:bug_fixes",
-        "order": 7,
+        "id": "targets",
+        "order": 6,
         "title": "Set your Level 3 targets",
         "status": "later",
         "statusText": "later",
-        "unlocks": "a definition of Level 3 for bug fixes",
-        "decision": "The merge rate, first-time CI pass rate and review load that mean agents handle bug fixes here"
+        "unlocks": "a definition of Level 3 for this repo",
+        "decision": "The merge rate, first-time CI pass rate and review load that mean agents handle work here"
       }
     ]
   },
@@ -286,6 +390,20 @@
         ]
       },
       {
+        "itemId": "instructions:repo",
+        "title": "Fix the stale agent instructions",
+        "steps": [
+          {
+            "title": "Fix each listed item",
+            "detail": "`.cursor/skills/release-notes/SKILL.md:8` `npm run changelog`: no \"changelog\" script in package.json; `AGENTS.md:7` `pnpm test`: uses pnpm, but the repo uses npm; `AGENTS.md:8` `docs/architecture.md`: docs/architecture.md doesn't exist"
+          },
+          {
+            "title": "Prove it",
+            "detail": "`readiness run --instructions` replays every command and checks every path."
+          }
+        ]
+      },
+      {
         "itemId": "faults:worker",
         "title": "Make worker's tests catch wrong behavior",
         "steps": [
@@ -304,24 +422,6 @@
           {
             "title": "Review",
             "detail": "`readiness diff` flags any deleted test or new skip marker, so nothing was weakened to pass."
-          }
-        ]
-      },
-      {
-        "itemId": "delegate:bug_fixes:shared",
-        "title": "Give agents bug fixes in shared",
-        "steps": [
-          {
-            "title": "Pick 3 to 5 real tasks",
-            "detail": "Well-scoped bug fixes that touch only shared."
-          },
-          {
-            "title": "Hand them to agents",
-            "detail": "Agents run the verify skill before they push."
-          },
-          {
-            "title": "Review as usual",
-            "detail": "The next audit counts these PRs by component."
           }
         ]
       }
@@ -477,78 +577,10 @@
       "How easily code can be found",
       "Outcome checks on held-out tasks"
     ],
-    "levels": {
-      "activities": [
-        {
-          "id": "first_pr",
-          "label": "First PR",
-          "bar": "Level 2 needs: build, lint, type-check and test commands pass, agent instructions are accurate and normal work needs no production access"
-        },
-        {
-          "id": "bug_fixes",
-          "label": "Bug fixes",
-          "bar": "Level 2 needs: build, lint, type-check and test commands pass, tests catch planted faults and normal work needs no production access"
-        },
-        {
-          "id": "features",
-          "label": "Features and refactors",
-          "bar": "Level 2 needs: build, lint, type-check and test commands pass, tests catch planted faults, normal work needs no production access and agent instructions are accurate"
-        },
-        {
-          "id": "repo_wide",
-          "label": "Repo-wide changes",
-          "bar": "Level 2 needs: build, lint, type-check and test commands pass, tests catch planted faults, normal work needs no production access, toolchain versions are pinned and a frozen install reproduces the lockfile"
-        }
-      ],
-      "components": [
-        {
-          "id": "api",
-          "changeShare": 0.56,
-          "active": true,
-          "levels": {
-            "first_pr": 0,
-            "bug_fixes": 0,
-            "features": 0
-          },
-          "couldBe": {}
-        },
-        {
-          "id": "shared",
-          "changeShare": 0.15,
-          "active": true,
-          "levels": {
-            "first_pr": 1,
-            "bug_fixes": 2,
-            "features": 1
-          },
-          "couldBe": {}
-        },
-        {
-          "id": "worker",
-          "changeShare": 0.27,
-          "active": true,
-          "levels": {
-            "first_pr": 1,
-            "bug_fixes": 1,
-            "features": 1
-          },
-          "couldBe": {}
-        }
-      ],
-      "repoLevels": {
-        "first_pr": 0,
-        "bug_fixes": 0,
-        "features": 0,
-        "repo_wide": 0
-      },
-      "repoLevelRule": "the lowest level among components that get at least 10% of changes over 90 days; a component joins or leaves that set only after two audits on the same side of the line",
-      "unassessed": [
-        {
-          "id": "infra",
-          "changeShare": 0.02,
-          "reason": "Terraform isn't supported by this rubric"
-        }
-      ]
+    "levelRules": {
+      "level1": "Level 1 needs: installs from the lockfile in a clean container, builds in a clean container and passes every test in a clean container",
+      "level2": "Level 2 needs: build, lint, type-check and test commands pass, tests catch planted faults, agent instructions are accurate and normal work needs no production access",
+      "scenarios": []
     },
     "outcomes": {
       "window": "Sep 27 to Oct 27, 2026",
@@ -704,6 +736,38 @@
       "an environment setup",
       "hooks"
     ],
+    "signals": [
+      {
+        "id": "ci",
+        "label": "CI config",
+        "found": true,
+        "detail": ".github/workflows/ci.yml, and it runs tests"
+      },
+      {
+        "id": "targeted_tests",
+        "label": "A way to run one test file",
+        "found": true,
+        "detail": "api: node --test takes file paths; shared: node --test takes file paths; worker: node --test takes file paths"
+      },
+      {
+        "id": "env_sample",
+        "label": "Sample env file",
+        "found": null,
+        "detail": "the code reads no environment variables of its own"
+      },
+      {
+        "id": "isolation",
+        "label": "Worktree and port isolation",
+        "found": true,
+        "detail": "no fixed ports or machine-specific absolute paths in the setup and scripts"
+      },
+      {
+        "id": "agents_md_length",
+        "label": "AGENTS.md length",
+        "found": true,
+        "detail": "42 words"
+      }
+    ],
     "evidence": [
       {
         "id": "ev-001",
@@ -784,7 +848,7 @@
         "ran": "npm run test",
         "where": "ran in a clean container",
         "result": "fail",
-        "summary": "test failed: connection refused on port 5432"
+        "summary": "test failed: connection refused on port 5432 (1 of 1 tests failed)"
       },
       {
         "id": "ev-010",
@@ -802,7 +866,7 @@
         "ran": "npm run test",
         "where": "ran in a clean container",
         "result": "pass",
-        "summary": "test passed"
+        "summary": "test passed (3 of 3 tests)"
       },
       {
         "id": "ev-012",
@@ -820,7 +884,7 @@
         "ran": "npm run test",
         "where": "ran in a clean container",
         "result": "pass",
-        "summary": "test passed"
+        "summary": "test passed (2 of 2 tests)"
       },
       {
         "id": "ev-014",
@@ -836,7 +900,7 @@
         "check": "verify.behavioral_oracle",
         "component": "api",
         "ran": "tests must pass before faults can be planted",
-        "where": "ran in a clean container",
+        "where": "not run",
         "result": "not_run",
         "summary": "tests must pass before faults can be planted"
       },
@@ -844,19 +908,19 @@
         "id": "ev-016",
         "check": "verify.behavioral_oracle",
         "component": "shared",
-        "ran": "caught 5 of 5 planted faults (drop_throw_or_return, change_constant, negate_condition)",
+        "ran": "caught 5 of 5 planted faults (tried: drop_throw_or_return, change_constant, negate_condition)",
         "where": "ran in a clean container",
         "result": "pass",
-        "summary": "caught 5 of 5 planted faults (drop_throw_or_return, change_constant, negate_condition)"
+        "summary": "caught 5 of 5 planted faults (tried: drop_throw_or_return, change_constant, negate_condition)"
       },
       {
         "id": "ev-017",
         "check": "verify.behavioral_oracle",
         "component": "worker",
-        "ran": "caught 0 of 5 planted faults (change_constant); uncaught in packages/worker/src/retry.js",
+        "ran": "caught 0 of 5 planted faults; missed: change_constant at packages/worker/src/retry.js:2, change_constant at packages/worker/src/retry.js:9, change_constant at packages/worker/src/retry.js:3, change_constant at packages/worker/src/retry.js:12, change_constant at packages/worker/src/retry.js:5",
         "where": "ran in a clean container",
         "result": "fail",
-        "summary": "caught 0 of 5 planted faults (change_constant); uncaught in packages/worker/src/retry.js"
+        "summary": "caught 0 of 5 planted faults; missed: change_constant at packages/worker/src/retry.js:2, change_constant at packages/worker/src/retry.js:9, change_constant at packages/worker/src/retry.js:3, change_constant at packages/worker/src/retry.js:12, change_constant at packages/worker/src/retry.js:5"
       },
       {
         "id": "ev-018",
@@ -900,15 +964,15 @@
       },
       {
         "label": "Skill digest",
-        "value": "8ff14a58c1bb"
+        "value": "0d6fcaa4e37e"
       },
       {
-        "label": "Planted-fault seed",
-        "value": "pinned (eval run; not a production result)"
+        "label": "Planted faults",
+        "value": "seed pinned (eval run; not a production result)"
       },
       {
         "label": "Replay environment",
-        "value": "docker container, readiness-ubuntu-node22"
+        "value": "docker container, node:22-bookworm"
       },
       {
         "label": "Stored in",

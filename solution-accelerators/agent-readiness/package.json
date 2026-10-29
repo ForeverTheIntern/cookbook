@@ -13,7 +13,8 @@
     "check": "npm run typecheck && npm test",
     "sample": "node --experimental-strip-types --no-warnings tools/generate-sample.ts",
     "release-manifest": "node --experimental-strip-types --no-warnings tools/release-manifest.ts",
-    "evals": "node --experimental-strip-types --no-warnings evals/run.ts"
+    "evals": "node --experimental-strip-types --no-warnings evals/run.ts",
+    "goldens": "node --experimental-strip-types --no-warnings evals/goldens.ts"
   },
   "devDependencies": {
     "@cursor/sdk": "1.2.0",

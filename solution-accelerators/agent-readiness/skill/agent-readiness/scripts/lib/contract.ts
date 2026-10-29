@@ -44,16 +44,18 @@ function runScript(pm: string | null, script: string): string {
   return `npm run ${script}`;
 }
 
-function pythonTest(tree: string, path: string): string | null {
+// uv sync installs into .venv, with the dev dependency group by default.
+function pythonTest(tree: string, path: string, pm: Profile["packageManager"]): string | null {
   const dir = join(tree, path);
+  const python = pm === "uv" ? ".venv/bin/python" : pm === "poetry" ? "poetry run python" : `${VENV}/bin/python`;
   const reqs = ["requirements.txt", "requirements-dev.txt", "pyproject.toml"].map((f) => (exists(join(dir, f)) ? readText(join(dir, f)) : "")).join("\n");
-  if (/pytest/.test(reqs) || exists(join(dir, "pytest.ini")) || exists(join(dir, "conftest.py"))) return `${VENV}/bin/python -m pytest -q`;
-  if (exists(join(dir, "tests"))) return `${VENV}/bin/python -m unittest discover -s tests -t .`;
+  if (/pytest/.test(reqs) || exists(join(dir, "pytest.ini")) || exists(join(dir, "conftest.py"))) return `${python} -m pytest -q`;
+  if (exists(join(dir, "tests"))) return `${python} -m unittest discover -s tests -t .`;
   return null;
 }
 
 function doctorCommand(profile: Profile): string {
-  const pms = new Set(profile.components.filter((c) => c.assessed).map((c) => c.packageManager ?? (c.path === "." ? profile.packageManager : null)).filter((x): x is NonNullable<Profile["packageManager"]> => Boolean(x)));
+  const pms = new Set(profile.components.filter((c) => c.assessed).map((c) => c.packageManager ?? profile.packageManager).filter((x): x is NonNullable<Profile["packageManager"]> => Boolean(x)));
   const parts: string[] = [];
   if ([...pms].some((p) => p === "npm" || p === "pnpm" || p === "yarn")) parts.push("node --version");
   if (pms.has("npm")) parts.push("npm --version");
@@ -104,7 +106,7 @@ export function discoverContract(profile: Profile, tree: string, rubric: Rubric,
   }
   for (const c of profile.components.filter((x) => x.assessed)) {
     if (c.language === "py") {
-      const test = pythonTest(tree, c.path);
+      const test = pythonTest(tree, c.path, c.packageManager ?? pm);
       if (test) cmds.push({ id: `cmd-${c.id}-test`, kind: "test", component: c.id, cwd: c.path, command: test, source: c.manifest ?? "readiness", reason: "discovered test runner", timeoutSec: timeout });
       continue;
     }
@@ -149,7 +151,7 @@ export function containerImage(profile: Profile, tree: string): string {
   const isPy = profile.packageManager === "pip" || profile.packageManager === "uv" || profile.packageManager === "poetry";
   if (isPy) {
     const pv = exists(join(tree, ".python-version")) ? readText(join(tree, ".python-version")).trim().match(/^(\d+\.\d+)/)?.[1] : null;
-    return `python:${pv ?? "3.12"}-slim`;
+    return profile.packageManager === "uv" ? `ghcr.io/astral-sh/uv:python${pv ?? "3.12"}-bookworm-slim` : `python:${pv ?? "3.12"}-slim`;
   }
   const standalone = profile.components.filter((c) => c.packageManager && c.path !== ".");
   if (!profile.packageManager && standalone.length > 0 && standalone.every((c) => c.language === "py")) return "python:3.12-slim";
@@ -169,5 +171,6 @@ export function containerImage(profile: Profile, tree: string): string {
     }
     if (major) break;
   }
-  return `node:${major ?? "22"}-bookworm-slim`;
+  // The full image, like a CI runner, has python3, make and g++ for native npm builds.
+  return `node:${major ?? "22"}-bookworm`;
 }

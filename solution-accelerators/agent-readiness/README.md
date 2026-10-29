@@ -106,6 +106,7 @@ Most open-source readiness tools we found score what's in the repo's files: [Age
 npm ci
 npm run check            # typecheck and every test; fixture audits need Docker
 npm run evals -- --tag smoke
+npm run goldens          # audit the pinned public repos; needs network and Docker
 npm run sample           # regenerate examples/ from the monorepo-mixed fixture
 npm run release-manifest # after changing the skill's scripts, rubric, schemas or templates
 ```
@@ -121,12 +122,17 @@ The evals run the real Cursor agent on each fixture with a pinned prompt and gra
 
 [evals/baseline.json](evals/baseline.json) is the result CI compares against, and [evals/HILLCLIMB.md](evals/HILLCLIMB.md) logs how it was reached, one failure mode per round.
 
+### Public goldens
+
+Six pinned public repos, from a well-tested npm package down to a monorepo with no tests, plus a Go module and a .NET solution, check that the levels rank real repositories in the expected order and that no report claims a config, script or path its tree doesn't have. [evals/README.md](evals/README.md) lists the repos, why each is there, the expected order and what the first runs found.
+
 ## Known gaps
 
 - Not assessed yet: whether CI matches the local commands, flaky tests, the quality of error messages, how easily code can be found, and outcome checks on held-out tasks.
 - Planted faults target files the tests import, most recently changed first. Targeting by coverage is a follow-up. Faults are planted in TypeScript, JavaScript and Python only.
 - Components are found by walking the whole tree for manifests: workspaces, standalone Node and Python packages at any depth, each with its own install, and .NET, Go, Rust, JVM, Ruby and PHP projects, which are listed as not assessed. Manifests under test, sample or tooling folders are listed as satellites, not components.
 - The instruction check reads a fenced `npm test` after a `cd apps/web` line as a root command.
+- Node and Python components in one repo share the Node image, which needs `python3-venv` from apt for the Python ones. Where apt is blocked, their installs fail and read as repo failures.
 - First-time CI pass is read from the check runs on a PR's first commit.
 - Follow-ups outside this folder: the cookbook index row, a docs page, a blog post, and running the recheck from a Cursor automation.
 

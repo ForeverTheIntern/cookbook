@@ -11,7 +11,7 @@ export interface Site {
   after: string;
 }
 
-const TEST_FILE = /(\.test\.|\.spec\.|(^|\/)tests?\/|(^|\/)__tests__\/|(^|\/)test_[^/]*\.py$|_test\.py$)/;
+const TEST_FILE = /(\.test\.|\.spec\.|(^|\/)tests?\/|(^|\/)__tests__\/|(^|\/)tests?\.(m?[jt]sx?|cjs|py)$|(^|\/)test_[^/]*\.py$|_test\.py$)/;
 
 export function isTestFile(path: string): boolean {
   return TEST_FILE.test(path);

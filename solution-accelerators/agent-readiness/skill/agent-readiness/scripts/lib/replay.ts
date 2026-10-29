@@ -18,7 +18,8 @@ export interface Executor {
   strength: Strength;
   image: string | null;
   root: string;
-  exec(command: string, cwd: string, timeoutSec: number): Promise<RunOutcome>;
+  // imageUser: the repo's declared setup, run as its image's own user rather than an ordinary one.
+  exec(command: string, cwd: string, timeoutSec: number, opts?: { imageUser?: boolean }): Promise<RunOutcome>;
   offline(): boolean;
   close(): void;
 }
@@ -45,7 +46,7 @@ export function containerExecutor(session: ContainerSession, root: string): Exec
     strength: "clean_replay",
     image: session.image,
     root,
-    exec: (command, cwd, timeoutSec) => session.exec(command, cwd, timeoutSec),
+    exec: (command, cwd, timeoutSec, opts) => session.exec(command, cwd, timeoutSec, opts),
     offline: () => session.disconnectNetwork(),
     close: () => session.stop(),
   };
@@ -136,7 +137,7 @@ export async function runContract(
       push({ cmd, status: "not_run", outcome: null, diagnosis: null, note: SUDO_REFUSED, blocked: `the ${cmd.kind} command uses sudo, which the audit never runs on the host` });
       return;
     }
-    const out = await ex.exec(cmd.command, cmd.cwd, cmd.timeoutSec);
+    const out = await ex.exec(cmd.command, cmd.cwd, cmd.timeoutSec, { imageUser: cmd.source.startsWith(".cursor/environment.json") });
     charge(opts.budget, cmd.component, out.durationMs);
     const ok = out.exitCode === 0 && !out.timedOut;
     const diagnosis = ok ? null : diagnose(out.output, out.timedOut, cmd.kind);
@@ -333,6 +334,11 @@ export function makeExecutor(audit: Audit, copyDir: string, runtimePref: string,
       audit.environment.containerRuntime = runtime.bin;
       audit.environment.image = image;
       log(`Replaying in a clean ${runtime.bin} container (${image}).`);
+      // Python components next to Node ones run in the Node image, which has python3 but no venv.
+      if (image.startsWith("node:") && audit.profile!.components.some((c) => c.assessed && c.language === "py")) {
+        const added = session.asImageUser("python3 -m venv /tmp/venv-probe >/dev/null 2>&1 || (apt-get update -qq && DEBIAN_FRONTEND=noninteractive apt-get install -y -qq python3-venv >/dev/null)", 600000);
+        log(added.ok ? "Added python3-venv to the Node image for the Python components." : `Couldn't add python3-venv for the Python components: ${tail(added.output, 300)}`);
+      }
       return containerExecutor(session, copyDir);
     }
     log(`Could not start a container: ${started.output.trim().split("\n").pop()}`);

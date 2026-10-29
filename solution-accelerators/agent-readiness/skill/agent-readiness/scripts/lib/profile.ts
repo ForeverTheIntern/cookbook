@@ -125,7 +125,7 @@ const within = (dir: string, parent: string) => parent === "." || dir === parent
 
 // Folders that usually hold tests, samples or tooling next to the product. A manifest there is a
 // satellite: it becomes a component only when the repo has nothing else to assess.
-const SATELLITE_SEGMENT = /^(tests?|__tests__|specs?|e2e|samples?|examples?|demos?|bench|benchmarks?|plugins?|utils?|configs?)$/;
+const SATELLITE_SEGMENT = /^(tests?|__tests__|specs?|e2e|samples?|examples?|demos?|bench|benchmarks?|plugins?|utils?|configs?|tooling)$/;
 const CONFIG_PACKAGE = /^(@[^/]+\/)?((eslint|prettier|stylelint|babel|jest|vitest|tsconfig|typescript)-config(-[\w.-]+)?|eslint-config|tsconfig|config)$/;
 
 function satelliteReason(tree: string, m: FoundManifest): string | null {
@@ -200,9 +200,15 @@ export function discoverComponents(tree: string, files: string[]): Component[] {
 
 export function discoverLayout(tree: string, files: string[]): { components: Component[]; satellites: Profile["satellites"] } {
   const comps: Component[] = [];
+  const memberSatellites: Profile["satellites"] = [];
   const patterns = workspacePatterns(tree);
   if (patterns.length > 0) {
-    const dirs = [...new Set(patterns.flatMap((p) => expandPattern(tree, p)))].filter((d) => exists(join(tree, d, "package.json"))).sort();
+    const all = [...new Set(patterns.flatMap((p) => expandPattern(tree, p)))].filter((d) => exists(join(tree, d, "package.json"))).sort();
+    // Workspace members under tooling/ or examples/ are satellites too, unless nothing else exists.
+    const reasons = new Map(all.map((d) => [d, d === "." ? null : satelliteReason(tree, { dir: d, kind: "js", manifest: `${d}/package.json` })]));
+    const product = all.filter((d) => !reasons.get(d));
+    const dirs = product.length ? product : all;
+    if (product.length) for (const d of all.filter((x) => reasons.get(x))) memberSatellites.push({ path: d, manifest: `${d}/package.json`, toolchain: "Node", reason: reasons.get(d)! });
     for (const dir of dirs) {
       const pkg = readPackageJson(join(tree, dir));
       comps.push({
@@ -225,7 +231,7 @@ export function discoverLayout(tree: string, files: string[]): { components: Com
     comps.push({ id: sanitizeId(pyName ?? "app"), path: ".", language: "py", manifest, scripts: {}, changes: 0, changeShare: 0, assessed: false });
   }
   const hasRoot = comps.some((c) => c.path === ".");
-  const { found, satellites } = discoverManifests(tree, files, comps.filter((c) => c.path !== ".").map((c) => c.path), hasRoot);
+  const { found, satellites } = discoverManifests(tree, files, [...comps.filter((c) => c.path !== ".").map((c) => c.path), ...memberSatellites.map((s) => s.path)], hasRoot);
   const deferred = comps.length === 0 && found.length === 0;
   for (const m of deferred ? satellites : found) {
     const pkg = m.kind === "js" ? readPackageJson(join(tree, m.dir)) : null;
@@ -238,7 +244,7 @@ export function discoverLayout(tree: string, files: string[]): { components: Com
     }
   }
   for (const c of comps) c.lockfile = lockfileIn(tree, c.path);
-  const satelliteList = deferred ? [] : satellites.map((s) => ({ path: s.dir, manifest: s.manifest, toolchain: s.kind === "js" ? "Node" : s.kind === "py" ? "Python" : s.toolchain!, reason: s.reason }));
+  const satelliteList = [...memberSatellites, ...(deferred ? [] : satellites.map((s) => ({ path: s.dir, manifest: s.manifest, toolchain: s.kind === "js" ? "Node" : s.kind === "py" ? "Python" : s.toolchain!, reason: s.reason })))];
   if (comps.length === 1 && comps[0].path === ".") return { components: comps, satellites: satelliteList };
   // Unsupported source with no manifest, such as infra/*.tf, is listed by its top-level folder.
   const claimed = new Set([...comps.map((c) => c.path), ...satelliteList.map((s) => s.path)].map((p) => p.split("/")[0]));

@@ -38,5 +38,5 @@ jobs:
           sparse-checkout: solution-accelerators/agent-readiness/skill
       - name: Static checks
         run: |
-          $READINESS init --goal first_pr --tier read-only
+          $READINESS init --tier read-only
           $READINESS scan --strict

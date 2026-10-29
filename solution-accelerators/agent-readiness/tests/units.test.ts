@@ -7,12 +7,12 @@ import { describe, test } from "node:test";
 import { inventory, orgSkillBuilders } from "../skill/agent-readiness/scripts/lib/assets.ts";
 import { staticSignals } from "../skill/agent-readiness/scripts/lib/signals.ts";
 import { disconnectArgs, execArgs, startArgs } from "../skill/agent-readiness/scripts/lib/container.ts";
-import { discoverContract } from "../skill/agent-readiness/scripts/lib/contract.ts";
+import { containerImage, discoverContract } from "../skill/agent-readiness/scripts/lib/contract.ts";
 import { diagnose, testCounts } from "../skill/agent-readiness/scripts/lib/diagnose.ts";
 import { weakening, weakeningFlags } from "../skill/agent-readiness/scripts/lib/diff.ts";
 import { recordObservation } from "../skill/agent-readiness/scripts/lib/evidence.ts";
 import { appendHistory, pushHistory, readHistory, storeAudit } from "../skill/agent-readiness/scripts/lib/history.ts";
-import { allSites, applySite, chooseSites, cosmetic, resolveJs, sitesForLine, targetFiles } from "../skill/agent-readiness/scripts/lib/mutate.ts";
+import { allSites, applySite, chooseSites, cosmetic, isTestFile, resolveJs, sitesForLine, targetFiles } from "../skill/agent-readiness/scripts/lib/mutate.ts";
 import { computeOutcomes, fetchPrs, isAgentPr } from "../skill/agent-readiness/scripts/lib/outcomes.ts";
 import { buildProfile } from "../skill/agent-readiness/scripts/lib/profile.ts";
 import { redact, scanText } from "../skill/agent-readiness/scripts/lib/redact.ts";
@@ -100,6 +100,15 @@ describe("scrubbed environment", () => {
     assert.deepEqual(execArgs("c1", "npm test", "packages/api").slice(0, 3), ["exec", "-w", "/work/packages/api"]);
     assert.deepEqual(disconnectArgs("c1"), ["network", "disconnect", "bridge", "c1"]);
     delete process.env.NPM_TOKEN;
+  });
+
+  test("the repo's commands run as an ordinary user, and Node repos get the full image with build tools", () => {
+    assert.deepEqual(execArgs("c1", "npm test", ".", "1001:121").slice(0, 5), ["exec", "-u", "1001:121", "-w", "/work"]);
+    const node = materialize("healthy-node");
+    assert.equal(containerImage(buildProfile(node, node, rubric), node), "node:22-bookworm");
+    const py = gitRepo({ "pyproject.toml": "[project]\nname = \"lib\"\n\n[dependency-groups]\ndev = [\"pytest\"]\n", "uv.lock": "version = 1\n", ".python-version": "3.13\n", "tests/test_a.py": "def test_a():\n    assert True\n" });
+    assert.equal(containerImage(buildProfile(py, py, rubric), py), "ghcr.io/astral-sh/uv:python3.13-bookworm-slim", "uv projects get an image that has uv");
+    assert.match(discoverContract(buildProfile(py, py, rubric), py, rubric, []).find((c) => c.kind === "test")!.command, /^\.venv\/bin\/python -m pytest -q$/, "uv sync installs into .venv");
   });
 });
 
@@ -385,6 +394,20 @@ describe("profile", () => {
     assert.deepEqual(discoverContract(buildProfile(go, go, rubric), go, rubric, []), []);
   });
 
+  test("workspace members under tooling/ are satellites, and the doctor checks the workspace's package manager", () => {
+    const repo = gitRepo({
+      "package.json": JSON.stringify({ name: "turbo", private: true, packageManager: "pnpm@9.15.0" }),
+      "pnpm-lock.yaml": "lockfileVersion: '9.0'\n",
+      "pnpm-workspace.yaml": "packages:\n  - apps/*\n  - tooling/*\n",
+      "apps/web/package.json": JSON.stringify({ name: "@acme/web", scripts: { test: "vitest run" } }),
+      "tooling/eslint/package.json": JSON.stringify({ name: "@acme/eslint-base", scripts: { typecheck: "tsc --noEmit" } }),
+    });
+    const profile = buildProfile(repo, repo, rubric);
+    assert.deepEqual(profile.components.map((c) => c.id), ["web"]);
+    assert.deepEqual(profile.satellites.map((s) => [s.path, s.reason]), [["tooling/eslint", "it sits under tooling/, which usually holds tests, samples or tooling rather than the product"]]);
+    assert.equal(discoverContract(profile, repo, rubric, []).find((c) => c.kind === "doctor")!.command, "node --version && corepack pnpm --version");
+  });
+
   test("a declared install gets frozen installs behind it that run only if this machine blocks it", () => {
     const repo = materialize("nested-apps-dotnet");
     writeFileSync(join(repo, ".cursor/environment.json"), JSON.stringify({ install: "dotnet restore && npm ci --prefix apps/buyer-web" }));
@@ -429,15 +452,18 @@ describe("profile", () => {
       "examples/starter/package-lock.json": "{}",
       "tests/e2e-runner/package.json": JSON.stringify({ name: "e2e-runner" }),
       "tests/e2e-runner/package-lock.json": "{}",
-      "tooling/eslint/package.json": JSON.stringify({ name: "@acme/eslint-config" }),
+      "tooling/eslint/package.json": JSON.stringify({ name: "@acme/eslint-base" }),
       "tooling/eslint/package-lock.json": "{}",
+      "packages/eslint-config/package.json": JSON.stringify({ name: "@acme/eslint-config" }),
+      "packages/eslint-config/package-lock.json": "{}",
       "tests/Shop.Tests/Shop.Tests.csproj": "<Project />",
       "tests/Shop.Tests/CartTests.cs": "",
     });
     const profile = buildProfile(repo, repo, rubric);
     assert.deepEqual(profile.components.map((c) => c.id), ["shop"]);
-    assert.deepEqual(profile.satellites.map((s) => s.path).sort(), ["examples/starter", "tests/Shop.Tests", "tests/e2e-runner", "tooling/eslint"]);
-    assert.match(profile.satellites.find((s) => s.path === "tooling/eslint")!.reason, /shared config package/);
+    assert.deepEqual(profile.satellites.map((s) => s.path).sort(), ["examples/starter", "packages/eslint-config", "tests/Shop.Tests", "tests/e2e-runner", "tooling/eslint"]);
+    assert.match(profile.satellites.find((s) => s.path === "packages/eslint-config")!.reason, /shared config package/);
+    assert.match(profile.satellites.find((s) => s.path === "tooling/eslint")!.reason, /sits under tooling\//);
     const onlySamples = gitRepo({ "examples/demo/package.json": JSON.stringify({ name: "demo", scripts: { test: "node --test" } }), "examples/demo/package-lock.json": "{}" });
     const p2 = buildProfile(onlySamples, onlySamples, rubric);
     assert.deepEqual([p2.components.map((c) => c.id), p2.satellites.length], [["demo"], 0], "with nothing else to assess, a deferred package is assessed");
@@ -494,6 +520,11 @@ describe("planted faults", () => {
       assert.ok(!cosmetic(line), line);
       assert.ok(sitesForLine(line, "js").some((s) => s.operator === "change_constant"), line);
     }
+  });
+
+  test("a root test.js is a test file, so its imports can take planted faults", () => {
+    for (const f of ["test.js", "test.ts", "packages/a/test.mjs", "tests.py", "src/a.test.ts", "tests/b.js"]) assert.ok(isTestFile(f), f);
+    for (const f of ["index.js", "src/testing-utils.ts", "contest.js"]) assert.ok(!isTestFile(f), f);
   });
 
   test("targets are files the tests import, and the seed decides the pick", () => {

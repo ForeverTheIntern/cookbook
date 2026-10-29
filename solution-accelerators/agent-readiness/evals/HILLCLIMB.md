@@ -303,3 +303,15 @@ The rerun at `9220380` ran end to end through the documented path: the full repl
 | `status` printed "level Level" and dropped "(could be 1)" on scenarios | One wording for every tier | `tests/cli.test.ts` "status words every tier" |
 | Test counts weren't in the report | The test evidence says "test passed (82 of 82 tests)" for node --test, vitest, jest, mocha, pytest and unittest | `tests/units.test.ts` "test counts" |
 | "Changes below Level 1" counted an unproven component; the fault summary's operator list read like the missed ones | "not yet proven at Level 1"; the summary names each missed fault's operator and line | `tests/render.test.ts`, `tests/cli.test.ts` |
+
+## Public goldens (October 29, 2026)
+
+Six pinned public repos now check the ranking of real component levels and that reports claim nothing outside their tree; [README.md](README.md) has the set and the expected order. Their first passes found six bugs in the audit's own environment, each fixed with a test:
+- folder imports crashing fault planting;
+- uv projects run without uv;
+- the container running as root;
+- root-level `test.js` files not read as tests;
+- the slim Node image lacking build tools;
+- config packages under `tooling/` counted as components.
+
+The full Node image and the ordinary user changed no fixture's level.

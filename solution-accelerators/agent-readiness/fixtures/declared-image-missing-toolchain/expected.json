@@ -1,0 +1,54 @@
+{
+  "goal": "bug_fixes",
+  "purpose": "The repo's setup script needs a tool that only its declared image installs. In a container the audit builds that image and the app reaches Level 2. With no container runtime, the missing tool is a limit of the machine: every check is blocked, the report gives no level, and it says the declared image installs the tool.",
+  "runs": [
+    {
+      "name": "default",
+      "level": 2,
+      "levels": {
+        "pricing-service": {
+          "first_pr": 2,
+          "bug_fixes": 2,
+          "features": 2
+        }
+      },
+      "repoLevels": {
+        "first_pr": 2,
+        "bug_fixes": 2,
+        "features": 2,
+        "repo_wide": 2
+      },
+      "top": [
+        "targets:bug_fixes"
+      ],
+      "startNow": "delegate:bug_fixes:pricing-service",
+      "noBlocker": true,
+      "safety": "pass",
+      "outcome": "proven"
+    },
+    {
+      "name": "no container runtime",
+      "runtime": "none",
+      "level": 0,
+      "levels": {
+        "pricing-service": {
+          "first_pr": 0,
+          "bug_fixes": 0,
+          "features": 0
+        }
+      },
+      "repoLevels": {
+        "first_pr": 0,
+        "bug_fixes": 0,
+        "features": 0,
+        "repo_wide": 0
+      },
+      "top": [],
+      "startNow": null,
+      "noBlocker": false,
+      "safety": "pass",
+      "outcome": "not_assessed",
+      "coverage": "On this machine pricegen is not installed, an environment limit rather than a repo defect; the declared image installs pricegen\\."
+    }
+  ]
+}

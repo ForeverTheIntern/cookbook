@@ -180,8 +180,9 @@ function confidenceOf(input: RenderInput, outcome: ReportJson["maturity"]["outco
   return { level, reasons: [...low, ...medium].length ? [...low, ...medium] : ["every check that decides the level ran"] };
 }
 
+// Only the steps a level depends on: a refused start command doesn't explain a missing Level 1.
 function blockedCauses(input: RenderInput): string[] {
-  return [...new Set(input.audit.evidence.map(blockedBy).filter((b): b is string => Boolean(b) && b !== "the install was blocked on this machine").map((b) => b.replace(/, though the repo's declared image .*$/, "")))];
+  return [...new Set(input.audit.evidence.filter((e) => e.kind !== "start" && e.kind !== "doctor").map(blockedBy).filter((b): b is string => Boolean(b) && b !== "the install was blocked on this machine").map((b) => b.replace(/, though the repo's declared image .*$/, "")))];
 }
 
 function whyNoneAssessed(input: RenderInput): string[] {
@@ -623,6 +624,7 @@ export function buildReport(input: RenderInput): ReportJson {
         : null,
       assets: audit.assets.map((a: Asset) => ({ kind: a.kind, path: a.path, authors: a.authors.map((x) => x.name), lastChanged: a.lastChanged, status: a.status, ok: a.ok })),
       missingAssets: missingList(audit.assets),
+      signals: audit.signals ?? [],
       evidence: audit.evidence.map((e) => ({ id: e.id, check: e.checkId, component: e.component && e.component !== "*" ? e.component : null, ran: e.command ?? e.summary, where: rubric.strengthLabels[e.strength], result: blockedBy(e) ? "blocked" : e.result, summary: blockedBy(e) ? `${e.summary}; blocked: ${blockedBy(e)}` : e.summary })),
       record: [
         { label: "Audit", value: audit.id },
@@ -826,6 +828,11 @@ export function renderMarkdown(r: ReportJson, rubric: Rubric): string {
     out.push("");
   }
   if (r.details.missingAssets.length) out.push(`Missing: ${list(r.details.missingAssets)}.`, "");
+  if (r.details.signals.length) {
+    out.push("### Other signals (informational, not scored)", "", "| Signal | Found | Detail |", "|---|---|---|");
+    for (const s of r.details.signals) out.push(`| ${s.label} | ${s.found === null ? "n/a" : s.found ? "yes" : "no"} | ${s.detail.replace(/\|/g, "\\|")} |`);
+    out.push("", "These don't set a level or add a roadmap step.", "");
+  }
   out.push("### Evidence log", "", "<details><summary>All evidence</summary>", "", "| ID | Check | Component | What ran | Where | Result |", "|---|---|---|---|---|---|");
   for (const e of r.details.evidence) out.push(`| \`${e.id}\` | \`${e.check}\` | ${e.component ?? "repo"} | ${e.ran.replace(/\|/g, "\\|").slice(0, 140)} | ${e.where} | ${e.result}: ${e.summary.replace(/\|/g, "\\|").slice(0, 160)} |`);
   out.push("", "</details>", "", "Evidence strength, weakest to strongest: stated in docs, read from files, ran on host, ran in a clean container, confirmed by outcomes. A check passes only at its required strength.", "");

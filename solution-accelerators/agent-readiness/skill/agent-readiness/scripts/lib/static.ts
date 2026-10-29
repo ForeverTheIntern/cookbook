@@ -138,7 +138,7 @@ function staticCheckCommand(cmd: string, tree: string, profile: Profile, fileDir
 
 const MACHINE_PATH = /(^|\s|=)(~\/|\$HOME\b|\/Users\/|\/home\/[a-z])/;
 
-const ELEVATED = /(^|[\s;&|(`]|\$\()sudo(\s|$)/;
+export const ELEVATED = /(^|[\s;&|(`]|\$\()sudo(\s|$)/;
 
 function categorize(cmd: string): InstructionItem["category"] {
   if (isRisky(cmd)) return "risky";

@@ -255,3 +255,5 @@ A review of other readiness tools then shaped how far each fix goes. We took ide
 | A final consistency pass | The seal refuses contract commands, evidence or narration keys the scan or report doesn't know | `tests/render.test.ts` "consistency pass" |
 
 These change discovery and report text, and add the blocked and not-assessed outcomes, but no level number: every existing fixture's levels are unchanged. The new fixture joins the full eval set, which hasn't been rerun with the agent since.
+
+Four more fixtures, written for this, pin the field shapes: `standalone-nested-mixed`, `declared-image-missing-toolchain`, `sudo-start` and `unsupported-go-service`. The second and third also run with no container runtime. Part 4 also gained five informational signals: CI config, a way to run one test file, a sample env file, worktree and port isolation, and AGENTS.md length. None of them changes a level.

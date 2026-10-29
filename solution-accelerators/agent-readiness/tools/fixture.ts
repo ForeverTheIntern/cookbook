@@ -110,6 +110,15 @@ export function materializePrs(fixture: string, now: string, file = "prs.templat
 export interface ExpectedRun {
   name: string;
   registryEnv?: Record<string, string>;
+  // "none" audits with the host fallback, as on a machine with no container runtime.
+  runtime?: "none";
+  outcome?: "proven" | "blocked" | "not_assessed";
+  shares?: Record<string, number>;
+  satellites?: string[];
+  assets?: Record<string, boolean>;
+  listed?: string[];
+  signals?: Record<string, boolean | null>;
+  coverage?: string;
   level: number;
   levels: Record<string, Record<string, number>>;
   repoLevels: Record<string, number>;
@@ -139,6 +148,7 @@ export interface FixtureAudit {
   out: string;
   report: Record<string, any>;
   roadmap: Record<string, any>;
+  audit: Record<string, any>;
 }
 
 export function auditFixture(fixture: string, run: ExpectedRun, opts: { seed?: string; image?: string; now?: string } = {}): FixtureAudit {
@@ -153,9 +163,11 @@ export function auditFixture(fixture: string, run: ExpectedRun, opts: { seed?: s
   }
   if (exp.outcomes) args.push("--outcomes-input", materializePrs(fixture, now, exp.outcomes));
   if (opts.image) args.push("--image", opts.image);
+  if (run.runtime) args.push("--runtime", run.runtime);
   const r = readiness(repo, args, env);
   const read = (p: string) => (existsSync(join(repo, p)) ? JSON.parse(readFileSync(join(repo, p), "utf8")) : {});
-  return { repo, code: r.code, out: r.out, report: read(".agent-readiness/latest/report.json"), roadmap: read(".agent-readiness/roadmap.json") };
+  const report = read(".agent-readiness/latest/report.json");
+  return { repo, code: r.code, out: r.out, report, roadmap: read(".agent-readiness/roadmap.json"), audit: report.audit ? read(`.agent-readiness/history/audits/${report.audit.id}/audit.json`) : {} };
 }
 
 export function fixtureNames(): string[] {

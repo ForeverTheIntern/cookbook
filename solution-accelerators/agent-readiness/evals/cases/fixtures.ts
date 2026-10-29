@@ -16,7 +16,7 @@ export const cases: EvalCase[] = fixtureNames().flatMap((fixture) => {
       tags: SMOKE.has(fixture) && run.name === "default" ? ["smoke", "full"] : ["full"],
       expectedRun: run.name,
       turns: [{ prompt }],
-      env: run.registryEnv,
+      env: run.runtime ? { ...run.registryEnv, READINESS_RUNTIME: run.runtime } : run.registryEnv,
       prs: exp.outcomes,
       description: exp.purpose,
     } as EvalCase;

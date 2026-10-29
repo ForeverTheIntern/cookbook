@@ -97,7 +97,7 @@ Repo commands get an allowlisted environment: `PATH`, a temporary `HOME` and iso
 
 ## How this differs from checklist tools
 
-Every open-source readiness tool we found is static: [AgentReady](https://github.com/napetrov/agentready), [agentsmd-check](https://github.com/7y-9/agentsmd-check), [agent-pipx](https://github.com/kyizinlatt/agent-pipx), [RepoReady](https://github.com/shidesheng0218/repo-ready), and the OpenHands [`agent-readiness-report`](https://github.com/OpenHands/extensions/tree/main/plugins/onboarding/skills/agent-readiness-report) skill, which gathers filesystem signals across 5 pillars and 74 features. [Factory's Agent Readiness](https://github.com/Factory-AI/factory/blob/main/docs/web/agent-readiness/overview.mdx) uses 5 levels, 9 pillars and an 80% gate. This skill borrows their detector lists and safety patterns, but scores only executed evidence, grades per component and activity instead of one percentage, and never acts as a gate.
+Most open-source readiness tools we found score what's in the repo's files: [AgentReady](https://github.com/napetrov/agentready), [agentsmd-check](https://github.com/7y-9/agentsmd-check), [agent-pipx](https://github.com/kyizinlatt/agent-pipx), [RepoReady](https://github.com/shidesheng0218/repo-ready), and the OpenHands [`agent-readiness-report`](https://github.com/OpenHands/extensions/tree/main/plugins/onboarding/skills/agent-readiness-report) skill, which gathers filesystem signals across 5 pillars and 74 features. Some tools also have an agent try the setup or the checks, and grade that attempt. [Factory's Agent Readiness](https://github.com/Factory-AI/factory/blob/main/docs/web/agent-readiness/overview.mdx) uses 5 levels, 9 pillars and an 80% gate. This skill borrows their detector lists and safety patterns, but scores only evidence its scripts produced by running the repo's commands, never the agent's own grade. It grades per component and activity instead of one percentage, and never acts as a gate.
 
 ## Develop
 
@@ -109,7 +109,7 @@ npm run sample           # regenerate examples/ from the monorepo-mixed fixture
 npm run release-manifest # after changing the skill's scripts, rubric, schemas or templates
 ```
 
-Ten fixtures under `fixtures/`, each a tiny repo with one planted defect and an `expected.json`, are the diagnostic ground truth. [AGENTS.md](AGENTS.md) holds the rule for adding checks and goal packs, and for turning field feedback bundles into fixtures.
+Fourteen fixtures under `fixtures/`, each a tiny repo with one planted defect or repo shape and an `expected.json`, are the diagnostic ground truth. Four cover repo shapes from the field: standalone apps next to .NET projects with no root package (`standalone-nested-mixed`), a setup that needs a tool only the declared image installs (`declared-image-missing-toolchain`), a start command that runs sudo (`sudo-start`), and a toolchain the rubric doesn't support (`unsupported-go-service`). Two of them also run with no container runtime. [AGENTS.md](AGENTS.md) holds the rule for adding checks and goal packs, and for turning field feedback bundles into fixtures.
 
 ### Skill evals
 

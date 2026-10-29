@@ -33,6 +33,16 @@ describe("fixtures match expected.json", { concurrency: 3, skip: runtime ? false
         if (run.notAssessed) assert.deepEqual(r.details.levels.unassessed.map((u: { id: string }) => u.id), run.notAssessed);
         if (run.waiting) for (const w of run.waiting) assert.equal(a.roadmap.items.find((i: { id: string }) => i.id === w)?.status, "waiting", `${w} waits`);
         if (run.diagnosis) assert.ok(r.details.evidence.some((e: { summary: string }) => e.summary.includes(run.diagnosis!)), `evidence says ${run.diagnosis}`);
+        if (run.outcome) assert.equal(r.maturity.outcome, run.outcome, "outcome");
+        if (run.shares) {
+          const all = [...r.details.scope.included, ...r.details.scope.excluded.filter((c: { reason: string }) => !c.reason.startsWith("not a component"))];
+          assert.deepEqual(Object.fromEntries(all.filter((c: { id: string }) => c.id in run.shares!).map((c: { id: string; changeShare: number }) => [c.id, c.changeShare])), run.shares, "share of changes, kept for components that aren't assessed");
+        }
+        if (run.satellites) assert.deepEqual(r.details.scope.excluded.filter((c: { reason: string }) => c.reason.startsWith("not a component")).map((c: { path: string }) => c.path), run.satellites, "satellites");
+        if (run.assets) for (const [path, ok] of Object.entries(run.assets)) assert.equal(r.details.assets.find((x: { path: string }) => x.path === path)?.ok, ok, `asset ${path} ok`);
+        if (run.listed) assert.deepEqual([...new Set(a.audit.safety.filter((s: { blocking: boolean }) => !s.blocking).map((s: { kind: string }) => s.kind))].sort(), [...run.listed].sort(), "safety findings listed for review");
+        if (run.signals) assert.deepEqual(Object.fromEntries(r.details.signals.filter((s: { id: string }) => s.id in run.signals!).map((s: { id: string; found: boolean | null }) => [s.id, s.found])), run.signals, "informational signals");
+        if (run.coverage) assert.match(r.executive.coverage, new RegExp(run.coverage), "coverage line");
       });
     }
   }

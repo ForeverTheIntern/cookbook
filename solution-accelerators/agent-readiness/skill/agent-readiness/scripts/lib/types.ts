@@ -138,6 +138,8 @@ export interface Asset {
   status: string;
   ok: boolean;
   frontmatterOk?: boolean;
+  // Set when an environment config needs sudo, which a clean container setup must not.
+  elevated?: string;
 }
 
 export interface PrRecord {
@@ -205,7 +207,16 @@ export interface Audit {
   mutants: Mutant[];
   outcomes: OutcomesSnapshot | null;
   narration: Narration | null;
+  signals?: Signal[];
   sealed?: { at: string; digest: string; reportJsonDigest: string; reportMdDigest: string; roadmapItemsDigest?: string };
+}
+
+// found is null when the signal doesn't apply, for example no AGENTS.md to measure.
+export interface Signal {
+  id: "ci" | "targeted_tests" | "env_sample" | "isolation" | "agents_md_length";
+  label: string;
+  found: boolean | null;
+  detail: string;
 }
 
 export interface Narration {
@@ -414,6 +425,7 @@ export interface ReportDetails {
   } | null;
   assets: { kind: string; path: string; authors: string[]; lastChanged: string | null; status: string; ok: boolean }[];
   missingAssets: string[];
+  signals: Signal[];
   evidence: { id: string; check: string; component: string | null; ran: string; where: string; result: string; summary: string }[];
   record: { label: string; value: string }[];
 }

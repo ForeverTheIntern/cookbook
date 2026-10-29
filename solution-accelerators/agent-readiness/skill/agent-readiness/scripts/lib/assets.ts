@@ -1,5 +1,6 @@
 import { join } from "node:path";
 import { ghJson } from "./gh.ts";
+import { ELEVATED } from "./static.ts";
 import type { Asset, InstructionItem } from "./types.ts";
 import { addDays, git, listFiles, readText, today } from "./util.ts";
 
@@ -27,14 +28,28 @@ function authors(repo: string, path: string): { name: string; commits: number }[
   return [...counts.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0])).map(([name, commits]) => ({ name, commits }));
 }
 
-export function statusFor(asset: Pick<Asset, "kind" | "path" | "frontmatterOk">, items: InstructionItem[]): { status: string; ok: boolean } {
+export function statusFor(asset: Pick<Asset, "kind" | "path" | "frontmatterOk" | "elevated">, items: InstructionItem[]): { status: string; ok: boolean } {
   const mine = items.filter((i) => i.source === asset.path);
   const failed = mine.filter((i) => i.result === "fail").length;
   const notRun = mine.filter((i) => i.result === "not_run" && i.category === "replay").length;
   if (failed > 0) return { status: `${failed} stale ${failed === 1 ? "item" : "items"}`, ok: false };
   if (notRun > 0) return { status: `${notRun} ${notRun === 1 ? "command" : "commands"} not checked`, ok: false };
   if (asset.kind === "skill" && asset.frontmatterOk === false) return { status: "Frontmatter is missing a name or description", ok: false };
+  if (asset.elevated) return { status: `${asset.elevated}, so it isn't counted as a working setup`, ok: false };
   return { status: mine.length > 0 ? "Replays" : "Present", ok: true };
+}
+
+function elevatedSetup(path: string): string | undefined {
+  let env: { install?: unknown; start?: unknown };
+  try {
+    env = JSON.parse(readText(path));
+  } catch {
+    return undefined;
+  }
+  for (const field of ["install", "start"] as const) {
+    if (typeof env[field] === "string" && ELEVATED.test(env[field] as string)) return `Its ${field} command uses sudo`;
+  }
+  return undefined;
 }
 
 export function refreshAssetStatus(assets: Asset[], items: InstructionItem[]): void {
@@ -48,9 +63,10 @@ export function inventory(repo: string, tree: string, items: InstructionItem[]):
     const hit = KINDS.find((k) => k.re.test(file));
     if (!hit) continue;
     const fm = hit.kind === "skill" ? frontmatterOk(readText(join(tree, file))) : undefined;
-    const { status, ok } = statusFor({ kind: hit.kind, path: file, frontmatterOk: fm }, items);
+    const elevated = hit.kind === "environment" ? elevatedSetup(join(tree, file)) : undefined;
+    const { status, ok } = statusFor({ kind: hit.kind, path: file, frontmatterOk: fm, elevated }, items);
     const last = git(["log", "-1", "--format=%cI", "--", file], repo).stdout.trim();
-    assets.push({ kind: hit.kind, path: file, authors: authors(repo, file), lastChanged: last ? last.slice(0, 10) : null, status, ok, frontmatterOk: fm });
+    assets.push({ kind: hit.kind, path: file, authors: authors(repo, file), lastChanged: last ? last.slice(0, 10) : null, status, ok, frontmatterOk: fm, ...(elevated ? { elevated } : {}) });
   }
   return assets;
 }

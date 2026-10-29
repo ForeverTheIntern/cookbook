@@ -62,6 +62,18 @@ Informational and never scored. Lists AGENTS.md and CLAUDE.md, skills (`.cursor/
 - **Needs:** read from files.
 - **Why:** agents run with whatever access setup gives them, so normal work must never need production credentials, and setup must not need more privilege than a container gives it. When a hook pipes a download into a shell, the replay installs with `--ignore-scripts` instead of running it. A command that uses `sudo` runs only inside the throwaway container, never on the host.
 
+## Other signals (informational)
+
+Part 4 lists five signals read from files. None of them sets a level, adds a roadmap step or appears in part 1.
+
+- **CI config:** a GitHub Actions, GitLab CI, CircleCI or Buildkite config, and whether it runs tests.
+- **A way to run one test file:** whether each assessed component's test runner takes a file or a name filter (`node --test`, vitest, jest, mocha, pytest), so an agent can rerun only the tests near its change.
+- **Sample env file:** when the code reads environment variables of its own, whether a `.env.example` or similar names them.
+- **Worktree and port isolation:** fixed ports and machine-specific absolute paths in package scripts, the environment setup, Makefiles, shell scripts and compose files, which collide when two agents work in separate worktrees.
+- **AGENTS.md length:** the root AGENTS.md's word count, marked long over 900 words, since agents load all of it on every task.
+
+An environment setup whose install or start uses `sudo` is listed in the agent assets as not a working setup, and `draft-skill` never puts a sudo command into agent setup.
+
 ## Met, not met, blocked and unknown
 
 Every condition ends in one of four states. Met and not met come from a run at the strength the check needs. Blocked means a limit of this machine kept the deciding run from happening. Unknown means it didn't run for another reason, such as the time budget. A level needs every condition met.

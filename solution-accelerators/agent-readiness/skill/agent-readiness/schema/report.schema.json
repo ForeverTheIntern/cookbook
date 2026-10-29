@@ -135,8 +135,16 @@
     "progress": { "type": ["object", "null"] },
     "details": {
       "type": "object",
-      "required": ["scope", "steps", "checks", "notAssessed", "levels", "outcomes", "assets", "missingAssets", "evidence", "record"],
+      "required": ["scope", "steps", "checks", "notAssessed", "levels", "outcomes", "assets", "missingAssets", "signals", "evidence", "record"],
       "properties": {
+        "signals": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["id", "label", "found", "detail"],
+            "properties": { "id": { "enum": ["ci", "targeted_tests", "env_sample", "isolation", "agents_md_length"] }, "found": { "type": ["boolean", "null"] } }
+          }
+        },
         "scope": {
           "type": "object",
           "required": ["type", "included", "excluded"],

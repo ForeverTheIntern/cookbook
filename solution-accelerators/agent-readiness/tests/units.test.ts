@@ -4,7 +4,8 @@ import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, wr
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, test } from "node:test";
-import { orgSkillBuilders } from "../skill/agent-readiness/scripts/lib/assets.ts";
+import { inventory, orgSkillBuilders } from "../skill/agent-readiness/scripts/lib/assets.ts";
+import { staticSignals } from "../skill/agent-readiness/scripts/lib/signals.ts";
 import { disconnectArgs, execArgs, startArgs } from "../skill/agent-readiness/scripts/lib/container.ts";
 import { discoverContract } from "../skill/agent-readiness/scripts/lib/contract.ts";
 import { diagnose } from "../skill/agent-readiness/scripts/lib/diagnose.ts";
@@ -125,6 +126,7 @@ describe("diagnosis", () => {
     const d = diagnose(".cursor/install.sh: line 7: dotnet: command not found", false, "install");
     assert.deepEqual([d.cause, d.detail], ["missing_tool", "dotnet is not installed"]);
     assert.equal(diagnose("bash: line 1: sudo: command not found", false, "start").detail, "sudo is not installed");
+    assert.equal(diagnose(".cursor/install.sh: 2: fixturectl: not found", false, "install").detail, "fixturectl is not installed", "dash names the script and line");
     const audit = makeAudit({ components: [{ id: "app", share: 1, test: "not_run" }] });
     const install = audit.evidence.find((e) => e.kind === "install")!;
     Object.assign(install, { result: "fail", where: "fresh_copy", strength: "executed", diagnosis: d, summary: "install failed: dotnet is not installed" });
@@ -177,6 +179,45 @@ describe("sudo", () => {
     const [start] = await runContract(ex, [{ id: "cmd-repo-start", kind: "start", component: "*", cwd: ".", command: `true && sudo touch ${marker}`, source: ".cursor/environment.json start", reason: "the repo's declared services", timeoutSec: 10 }], { components: new Set(), budget: newBudget(1, 1), registryValues: [] });
     assert.deepEqual([start.status, start.note], ["not_run", SUDO_REFUSED]);
     assert.equal(existsSync(marker), false);
+  });
+
+  test("an environment setup that needs sudo isn't counted as a working setup, and sudo never reaches the verify skill", () => {
+    const repo = materialize("sudo-start");
+    const env = inventory(repo, repo, []).find((a) => a.path === ".cursor/environment.json")!;
+    assert.deepEqual([env.ok, env.status], [false, "Its start command uses sudo, so it isn't counted as a working setup"]);
+    const audit = makeAudit({ components: [{ id: "app", share: 1, faults: "pass" }] });
+    audit.contract.push({ id: "cmd-repo-start", kind: "start", component: "*", cwd: ".", command: "sudo service docker start", source: ".cursor/environment.json start", reason: "", timeoutSec: 60 });
+    audit.evidence.push({ id: "ev-090", checkId: "bootstrap.cold_replay", component: "*", kind: "start", contractId: "cmd-repo-start", strength: "clean_replay", where: "container", result: "pass", summary: "start passed", at: audit.createdAt });
+    assert.ok(!renderVerifySkill(audit, rubric).text.includes("sudo"), "a sudo start that passed in the container still isn't agent setup");
+    assert.throws(() => renderVerifySkill(audit, rubric, ["cmd-repo-start"]), /uses sudo, and agent setup must work without it/);
+  });
+});
+
+describe("informational signals", () => {
+  test("CI, a targeted test path, a sample env file, isolation and AGENTS.md length are reported, and none sets a level", () => {
+    const repo = gitRepo({
+      "package.json": JSON.stringify({ name: "shop", scripts: { test: "vitest run", dev: "vite --port 5173" } }),
+      "package-lock.json": "{}",
+      "src/db.js": "export const url = process.env.DATABASE_URL ?? process.env.NODE_ENV;\nconst key = process.env['STRIPE_KEY'];\n",
+      "docker-compose.yml": "services:\n  db:\n    image: postgres:16\n    ports:\n      - \"5432:5432\"\n",
+      "scripts/seed.sh": "cp data.sql /Users/alex/dumps/\n",
+      "AGENTS.md": "word ".repeat(950),
+      ".github/workflows/ci.yml": "jobs:\n  t:\n    steps:\n      - run: npm test\n",
+    });
+    const profile = buildProfile(repo, repo, rubric);
+    const signals = Object.fromEntries(staticSignals(repo, profile, discoverContract(profile, repo, rubric, [])).map((s) => [s.id, s]));
+    assert.deepEqual(Object.fromEntries(Object.entries(signals).map(([k, s]) => [k, s.found])), { ci: true, targeted_tests: true, env_sample: false, isolation: false, agents_md_length: false });
+    assert.match(signals.ci.detail, /\.github\/workflows\/ci\.yml, and it runs tests/);
+    assert.match(signals.targeted_tests.detail, /vitest takes a file or a name filter/);
+    assert.match(signals.env_sample.detail, /none, though the code reads 2 environment variables \(DATABASE_URL, STRIPE_KEY\)/);
+    assert.match(signals.isolation.detail, /scripts\.dev uses fixed port 5173/);
+    assert.match(signals.isolation.detail, /docker-compose\.yml publishes fixed host port 5432/);
+    assert.match(signals.isolation.detail, /scripts\/seed\.sh uses the absolute path \/Users\/alex\//);
+    assert.match(signals.agents_md_length.detail, /^950 words, over 900/);
+    writeFileSync(join(repo, ".env.example"), "DATABASE_URL=\nSTRIPE_KEY=\n");
+    writeFileSync(join(repo, "AGENTS.md"), "Run `npm test`.\n");
+    const again = Object.fromEntries(staticSignals(repo, buildProfile(repo, repo, rubric), []).map((s) => [s.id, s.found]));
+    assert.deepEqual([again.env_sample, again.agents_md_length, again.targeted_tests], [true, true, false]);
   });
 });
 

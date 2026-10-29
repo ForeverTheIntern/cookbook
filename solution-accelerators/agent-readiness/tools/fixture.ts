@@ -33,7 +33,7 @@ function at(nowIso: string, daysAgo: number): string {
 }
 
 function gitc(cwd: string, args: string[], date: string, author: string, email: string): void {
-  execFileSync("git", args, {
+  execFileSync("git", ["-c", "commit.gpgsign=false", ...args], {
     cwd,
     stdio: "ignore",
     env: { ...process.env, GIT_AUTHOR_NAME: author, GIT_AUTHOR_EMAIL: email, GIT_COMMITTER_NAME: author, GIT_COMMITTER_EMAIL: email, GIT_AUTHOR_DATE: date, GIT_COMMITTER_DATE: date },
@@ -66,9 +66,9 @@ export function materialize(fixture: string, opts: { now?: string; into?: string
   return repo;
 }
 
-export function readiness(repo: string, args: string[], env: Record<string, string> = {}): { code: number; out: string } {
+export function readiness(repo: string, args: string[], env: Record<string, string> = {}, cli = CLI): { code: number; out: string } {
   try {
-    const out = execFileSync(process.execPath, ["--experimental-strip-types", "--no-warnings", CLI, ...args], { cwd: repo, encoding: "utf8", env: { ...process.env, ...env }, stdio: ["ignore", "pipe", "pipe"], maxBuffer: 64 * 1024 * 1024 });
+    const out = execFileSync(process.execPath, ["--experimental-strip-types", "--no-warnings", cli, ...args], { cwd: repo, encoding: "utf8", env: { ...process.env, ...env }, stdio: ["ignore", "pipe", "pipe"], maxBuffer: 64 * 1024 * 1024 });
     return { code: 0, out };
   } catch (e) {
     const err = e as { status: number; stdout: string; stderr: string };

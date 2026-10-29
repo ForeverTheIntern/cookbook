@@ -3,7 +3,7 @@ import { describeRate, rate, windowLabel } from "./outcomes.ts";
 import type { Rubric, RubricTemplate } from "./rubric.ts";
 import type { CompStates } from "./score.ts";
 import type { ActivityId, Audit, CondId, CondState, Component, Effort, Fix, Level, OutcomeStats, OutcomesSnapshot, Roadmap, RoadmapItem, Watch } from "./types.ts";
-import { fill, nowIso, today } from "./util.ts";
+import { fill, nowIso } from "./util.ts";
 
 type StateMap = Partial<Record<CondId, CondState>>;
 
@@ -226,7 +226,7 @@ export interface RoadmapResult {
 export function updateRoadmap(prev: Roadmap | null, ctx: RoadmapContext): RoadmapResult {
   const { rubric, goal, audit } = ctx;
   const label = activityLabel(rubric, goal);
-  const date = today();
+  const date = audit.createdAt.slice(0, 10);
   const roadmap: Roadmap = prev
     ? { ...prev, items: prev.items.map((i) => ({ ...i })), updatedBy: audit.id, updatedAt: nowIso() }
     : { schema: "agent-readiness/roadmap@1", owner: null, targets: null, items: [], updatedBy: audit.id, updatedAt: nowIso() };

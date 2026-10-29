@@ -448,9 +448,10 @@ export function danglingEvidence(report: ReportJson, audit: Audit): string[] {
 
 export function allowedNumbers(report: ReportJson): Set<string> {
   const set = new Set<string>();
-  const json = JSON.stringify({ numbers: report.executive.numbers, components: report.details.levels.components, actions: report.actions, outcomes: report.details.outcomes, levels: report.maturity });
-  for (const m of json.matchAll(/\d+(?:\.\d+)?%?/g)) set.add(m[0]);
+  const page1 = report.executive.numbers.map((n) => `${n.value} ${n.comparison}`).join(" ");
+  for (const m of page1.matchAll(/\d+(?:\.\d+)?%?/g)) set.add(m[0]);
   for (const c of report.details.levels.components) set.add(`${Math.round(c.changeShare * 100)}%`);
+  for (const a of report.actions) if (a.impact > 0) set.add(`${Math.round(a.impact * 100)}%`);
   for (let i = 0; i <= 4; i++) set.add(String(i));
   return set;
 }

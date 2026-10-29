@@ -22,10 +22,15 @@ export function scanText(text: string): SecretHit[] {
   const hits: SecretHit[] = [];
   const lines = text.split("\n");
   lines.forEach((line, i) => {
+    let specific = false;
     for (const p of PATTERNS) {
       p.re.lastIndex = 0;
-      if (p.re.test(line)) hits.push({ type: p.type, line: i + 1 });
+      if (p.re.test(line)) {
+        hits.push({ type: p.type, line: i + 1 });
+        specific = true;
+      }
     }
+    if (specific) return;
     ASSIGNMENT.lastIndex = 0;
     let m: RegExpExecArray | null;
     while ((m = ASSIGNMENT.exec(line))) {

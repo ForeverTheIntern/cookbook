@@ -5,14 +5,14 @@ import { loadRubric } from "../skill/agent-readiness/scripts/lib/rubric.ts";
 import { compute } from "../skill/agent-readiness/scripts/lib/seal.ts";
 import type { ActivityId, Audit, Component, ContractCommand, Diagnosis, Evidence, HistoryLine, InstructionItem, OutcomesSnapshot, ReportJson, SafetyFinding, Where } from "../skill/agent-readiness/scripts/lib/types.ts";
 
-export function reportFor(audit: Audit): ReportJson {
+export function reportFor(audit: Audit, history: HistoryLine[] = []): ReportJson {
   const rubric = loadRubric("2026-10-alpha");
-  const c = compute(audit, rubric, []);
+  const c = compute(audit, rubric, history);
   const comps = audit.profile!.components;
   const rm = updateRoadmap(null, { audit, rubric, goal: audit.goal, components: comps, states: c.states, active: c.active, outcomes: audit.outcomes });
   const goalRepo = c.repoLevels.get(audit.goal)!;
   const line: HistoryLine = { id: audit.id, kind: "audit", date: "2026-10-27", commit: "abc", rubric: audit.rubric, scriptsDigest: "x", result: "sealed", goal: audit.goal, levels: {}, repoLevels: {}, shares: {}, active: [...c.active], seedPinned: false };
-  return buildReport({ audit, rubric, goal: audit.goal, components: comps, states: c.states, levels: c.levels, repoLevels: c.repoLevels, goalLevel: { ...goalRepo, outcomeReasons: [] }, active: c.active, roadmap: rm.roadmap, top: rm.top, startNow: rm.startNow, history: [], currentLine: line, previousOutcomes: null, weakening: null, sealStatus: "Seal verified against release agent-readiness-v0.1.0", staleCopy: null, storedAt: ".agent-readiness/history/audits/x", partial: partialCoverage(rubric, comps) });
+  return buildReport({ audit, rubric, goal: audit.goal, components: comps, states: c.states, levels: c.levels, repoLevels: c.repoLevels, goalLevel: { ...goalRepo, outcomeReasons: [] }, active: c.active, roadmap: rm.roadmap, top: rm.top, startNow: rm.startNow, history, currentLine: line, previousOutcomes: null, weakening: null, sealStatus: "Seal verified against release agent-readiness-v0.1.0", staleCopy: null, storedAt: ".agent-readiness/history/audits/x", partial: partialCoverage(rubric, comps) });
 }
 
 type R = "pass" | "fail";

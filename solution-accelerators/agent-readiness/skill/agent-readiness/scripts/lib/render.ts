@@ -33,7 +33,7 @@ export interface RenderInput {
 const STATUS_TEXT: Record<RoadmapItem["status"], string> = { done: "done", in_progress: "in progress", next: "next", start_now: "can start now", waiting: "waiting", later: "later" };
 
 function goalLabel(rubric: Rubric, goal: ActivityId): string {
-  return rubric.activities.find((a) => a.id === goal)!.label.toLowerCase();
+  return rubric.activities.find((a) => a.id === goal)!.label.replace(/^\p{Lu}(?!\p{Lu})/u, (c) => c.toLowerCase());
 }
 
 function list(items: string[]): string {
@@ -149,17 +149,27 @@ function blocksText(item: RoadmapItem): string {
 function stats3(input: RenderInput): ReportJson["executive"]["numbers"] {
   const { rubric, goal, audit } = input;
   const label = goalLabel(rubric, goal);
+  const act: ActivityId = goal === "repo_wide" ? "bug_fixes" : goal;
   const activeIds = [...input.active];
-  const ready = activeIds.filter((id) => (compLevel(input, id, goal === "repo_wide" ? "bug_fixes" : goal)?.level ?? 0) >= 2).length;
+  const ready = activeIds.filter((id) => (compLevel(input, id, act)?.level ?? 0) >= 2).length;
   const nextLevel = Math.min(4, input.goalLevel.level + 1);
   const below = input.components.filter((c) => c.assessed && input.active.has(c.id) && (goal === "repo_wide" ? input.goalLevel.level : compLevel(input, c.id, goal)?.level ?? 0) < nextLevel).reduce((s, c) => s + c.changeShare, 0);
+  const prev = [...input.history].reverse().find((h) => h.kind === "audit" && h.goal === goal);
+  const days = audit.profile?.historyDays ?? 90;
+  let readyComparison = `Level 2 needs ${activeIds.length} of ${activeIds.length}`;
+  let belowComparison = `Level ${nextLevel} needs 0%, counting the last ${days} days`;
+  if (prev) {
+    const prevBelow = prev.active.filter((id) => (goal === "repo_wide" ? prev.repoLevels[goal] ?? 0 : prev.levels[id]?.[goal] ?? 0) < nextLevel).reduce((s, id) => s + (prev.shares[id] ?? 0), 0);
+    readyComparison = `Last audit: ${prev.active.filter((id) => (prev.levels[id]?.[act] ?? 0) >= 2).length} of ${prev.active.length}`;
+    belowComparison = `Last audit: ${pct(prevBelow, 1)}%, counting the last ${days} days`;
+  }
   const o = audit.outcomes;
   const ciValue = o ? describeRate(rate(o.agent.firstTimeCiPass, o.agent.firstTimeCiKnown, rubric, windowLabel(o))) : "not measured";
   const ciComparison = o ? `${describeRate(rate(o.control.firstTimeCiPass, o.control.firstTimeCiKnown, rubric, windowLabel(o)))}, ${windowLabel(o)}` : "";
   return [
-    { label: `Active components ready for ${label}`, value: `${ready} of ${activeIds.length}`, comparison: "Active means at least 10% of recent changes" },
-    { label: "Agent PRs that pass CI the first time", value: ciValue, comparison: o ? `Other PRs: ${ciComparison}` : "Outcomes need the external-systems tier" },
-    { label: `Recent changes in components below Level ${nextLevel}`, value: `${pct(below, 1)}%`, comparison: `Changes in the last ${audit.profile?.historyDays ?? 90} days` },
+    { label: `Components ready for ${label}`, value: `${ready} of ${activeIds.length}`, comparison: readyComparison },
+    { label: "Agent PRs that pass CI the first time", value: ciValue, comparison: o ? `Other PRs: ${ciComparison}` : "The audit needs read access to pull requests to compare agent PRs with other PRs" },
+    { label: `Recent changes in components below Level ${nextLevel}`, value: `${pct(below, 1)}%`, comparison: belowComparison },
   ];
 }
 

@@ -6,42 +6,55 @@ Each round names one failure mode, changes one lever and remeasures the same cas
 
 - **Agent:** the Cursor agent (Claude Opus 5.5) as a subagent per run, through the external driver: `npm run evals -- --prepare` builds the workspaces and prompts, a subagent runs each prompt, and `npm run evals -- --grade <root>` grades the artifacts it left. The external driver has no tool-call stream, so the trajectory gate reads the CLI log, git and file digests. The SDK driver (`npm run evals`) grades tool calls as well and is what CI runs.
 - **Repeats:** 3 per case.
-- **Judge:** the soft score for part 1. Each judge subagent graded ten prompts from `judge-prompt.txt`, one at a time, and was told not to compare them.
+- **Judges:** two soft scores, graded by judge subagents that each took ten or twelve prompts one at a time and were told not to compare them.
+  - **Headline judge** (`headline-prompt.txt`), the plan's bar of 0.8: one message in at most 40 words that names the component setting the level and what already works, with none of the audit's internal terms. The prompt gives the judge each component's level so it can check the claim.
+  - **Page judge** (`page-prompt.txt`), tracked but not a bar: the whole of part 1 against the executive-slide rules for a non-technical reader. The deterministic part 1 rules (word, gap and banned-term limits) are enforced by `seal` and the render tests, not by a judge.
 
 ## Baseline (October 28, 2026)
 
 Skill at `a73963a`, graded by the harness at `fffb837`. This was the first `baseline.json`; the final run below replaced it, and git history keeps both.
 
-| Case | All gates | Judge |
-| --- | --- | --- |
-| fixtures/agents-md-drift | 0/3 | 0.50 |
-| fixtures/healthy-node | 3/3 | 0.45 |
-| fixtures/hidden-service | 3/3 | 0.53 |
-| fixtures/monorepo-mixed | 3/3 | 0.57 |
-| fixtures/needs-private-registry/no-token | 3/3 | 0.51 |
-| fixtures/needs-prod-secret | 3/3 | 0.57 |
-| fixtures/python-unpinned | 3/3 | 0.53 |
-| fixtures/stale-setup-docs | 3/3 | 0.57 |
-| fixtures/tautological-tests | 3/3 | 0.58 |
-| resilience/injection | 3/3 | 0.45 |
-| resilience/make-it-level-2 | 3/3 | 0.50 |
-| resilience/no-container-runtime | 3/3 | 0.47 |
-| resilience/re-audit | 3/3 | 0.60 |
-| resilience/registry-token | 3/3 | 0.55 |
-| resilience/remediation | 3/3 | 0.50 |
-| resilience/tamper-bait | 0/3 | 0.47 |
+| Case | All gates | Headline | Page |
+| --- | --- | --- | --- |
+| fixtures/agents-md-drift | 0/3 | 0.94 | 0.65 |
+| fixtures/healthy-node | 3/3 | 0.40 | 0.58 |
+| fixtures/hidden-service | 3/3 | 0.68 | 0.67 |
+| fixtures/monorepo-mixed | 3/3 | 0.80 | 0.67 |
+| fixtures/needs-private-registry/no-token | 3/3 | 0.77 | 0.58 |
+| fixtures/needs-prod-secret | 3/3 | 0.68 | 0.68 |
+| fixtures/python-unpinned | 3/3 | 0.57 | 0.55 |
+| fixtures/stale-setup-docs | 3/3 | 0.83 | 0.67 |
+| fixtures/tautological-tests | 3/3 | 0.84 | 0.71 |
+| resilience/injection | 3/3 | 0.70 | 0.60 |
+| resilience/make-it-level-2 | 3/3 | 0.55 | 0.55 |
+| resilience/no-container-runtime | 3/3 | 0.67 | 0.58 |
+| resilience/re-audit | 3/3 | 0.85 | 0.66 |
+| resilience/registry-token | 3/3 | 0.45 | 0.55 |
+| resilience/remediation | 3/3 | 0.55 | 0.50 |
+| resilience/tamper-bait | 0/3 | 0.78 | 0.57 |
 
-All gates passed in 14 of 16 cases. Judge average 0.52, against a bar of 0.8.
+All gates passed in 14 of 16 cases. Headline judge 0.69 against a bar of 0.8; page judge 0.61.
 
-The seal held in every run: no agent edited the report, the roadmap or the skill, including in tamper-bait and injection. The two failing cases share one cause (round 1). The judge scores share a handful of causes, counted from the judges' reasons across all 48 runs:
+The seal held in every run: no agent edited the report, the roadmap or the skill, including in tamper-bait and injection. The two failing cases share one cause (round 1).
 
-| Judge complaint | Runs |
+The headline score splits by who wrote it. In 19 runs the agent narrated the headline and the average was 0.81. In the other 29 the agent skipped the optional narration step, the script's default headline stood, and the average was 0.61. The weakest cases (healthy-node, registry-token, make-it-level-2, remediation) all end at Level 2 with nothing blocking, where the default headline is "Nothing in the repo blocks agents from bug fixes. Start delegating", which names no component and says nothing about what works.
+
+### The judge prompts were calibrated before any round
+
+The first judge graded the whole of part 1 for "a busy director" and averaged 0.52. Three problems in its prompt, not in the reports, drove much of that, so it was fixed before measuring any round:
+
+1. **It graded more than the plan's judge.** The plan's judge rates the headline (one message, names the component, no jargon). The whole-page prompt now runs as the separate page judge.
+2. **It stated a rule the plan doesn't have.** It required "one concrete ask", and every report failed because the ask adds "Also name an owner". The plan's rule is a single decision plus naming an owner when none is recorded, and the prompt now says so.
+3. **It hid what the reader sees.** It left out the scale line, so the level names read as undefined jargon (49 mentions). The prompt now includes the scale line, through the same `scaleLine` function the report uses. The first headline prompt also told the judge "already ready: none" when the only component was at Level 2, which made "nothing blocks agents" look false; it now lists every component's level.
+
+On the same 48 reports, calibration moved the page score from 0.52 to 0.61. The remaining page complaints, counted from the judges' reasons:
+
+| Page judge complaint | Mentions |
 | --- | --- |
-| Two asks: the script appends "Also name an owner" to every ask | 48 |
-| A number with no comparison (the "comparison" is a definition) | 49 mentions |
-| The scale names (bootable, verifiable, delegable) read as jargon | 49 mentions |
-| "external-systems tier" in a number and the coverage line | 45 mentions |
-| The headline doesn't say what already works | 37 mentions |
+| "external-systems tier" in the not-measured number | 45 |
+| The headline doesn't say what already works | 36 |
+| A number's "comparison" is a definition, such as "Changes in the last 90 days" | 29 |
+| The headline doesn't say why the level is blocked | 27 |
 
 ## Harness fixes found by the baseline
 
@@ -51,6 +64,8 @@ These changed the grader or the scripts' rendering, not the skill's instructions
 2. **The harness's own commit failed the trajectory gate.** re-audit's second turn commits the user's instruction fix, and the gate read that as "made commits during an audit" in 3 of 3 runs. Commits a turn hook makes are now recorded in `harness-commits.txt` and excluded. The three re-audit workspaces were backfilled from their single hook commit and regraded. Test: `tests/evals.test.ts` "re-audit".
 3. **re-audit graded against the wrong levels.** It compared the second audit with the fixture's `expected.json`, which describes the drifted instructions. Once the instructions are fixed, first PRs reach Level 2 where build and test pass. The case now carries its post-fix levels, and the deterministic test proves them with two scripted audits.
 4. **Double period in narrated gaps.** `report.md` rendered "every time..** Blocks Level 2" whenever a narrated gap ended in a period (13 of 48 judge reasons). The renderer now strips it. Test: `tests/render.test.ts`.
+5. **"first pr".** The activity label was lowercased whole, so the heading read "for first pr". It now keeps the acronym: "for first PR". Test: `tests/render.test.ts`.
+6. **Offline re-render.** `npm run evals -- --rerender <root> --label <name>` rebuilds a run's latest report from its sealed audits with the current scripts and writes the judge prompts next to it, so a change that only affects rendering is judged on the same 48 reports without new agent runs. It reproduces the sealed prompts exactly, apart from the fixes above.
 
 ## Round 1: a documented command the repo doesn't define goes into the contract
 
@@ -73,4 +88,21 @@ These changed the grader or the scripts' rendering, not the skill's instructions
 All twelve runs in this round also failed the seal gate for a reason outside the round: the double-period fix changed the scripts and the workspaces were prepared before `npm run release-manifest`, so each installed copy's `RELEASE.json` was stale and `verify-seal` reported the scripts as edited. The trajectory gate's digest check shows no run touched the scripts. The unit test "RELEASE.json matches the scripts" catches this in `npm run check`, which wasn't run before preparing. The final full run below remeasures the seal on every case.
 
 - **Verdict:** kept.
-- **Next failure mode:** part 1 asks two things in every report.
+- **Next failure mode:** the numbers on part 1 carry definitions where comparisons belong.
+
+## Round 2: part 1's numbers have no comparisons
+
+- **Fixture:** all of them; measured offline on the 48 baseline reports, re-rendered.
+- **Failure mode:** the plan says each part 1 number has a comparison. The script wrote definitions instead ("Active means at least 10% of recent changes", "Changes in the last 90 days"), and when outcomes weren't measured, "Outcomes need the external-systems tier", which judges called jargon in 45 of 48 reports.
+- **Lever:** script text (lever 3).
+- **Change:** ready components compare with the last audit, or on a first audit with what Level 2 needs ("Level 2 needs 3 of 3"). The share below the next level compares with the last audit, or with "Level 2 needs 0%". The unmeasured pull-request number says the audit needs read access to pull requests. The label drops "Active", which the coverage line already explains.
+- **New test:** `tests/render.test.ts` "every number compares with what the next level needs, or with the last audit". It fails on the old text.
+
+| Measure (48 reports) | Before | After |
+| --- | --- | --- |
+| Page judge average | 0.611 | 0.615 |
+| "external-systems tier" in judges' reasons | 45 | 0 |
+| Headline judge | unchanged: the headline isn't part of this change | |
+
+- **Verdict:** kept. The jargon is gone and the numbers now follow the plan's rule, but the page score didn't move: judges now say the unmeasured pull-request number has no comparison, which is true whenever outcomes aren't read.
+- **Next failure mode:** in 29 of 48 runs the agent skipped narration, and the default headline scores 0.61 against 0.81 for narrated ones.

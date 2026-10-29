@@ -4,7 +4,7 @@ import { computeOutcomes, describeRate, rate } from "../skill/agent-readiness/sc
 import { allowedNumbers, danglingEvidence, renderMarkdown, validatePart1 } from "../skill/agent-readiness/scripts/lib/render.ts";
 import { loadRubric } from "../skill/agent-readiness/scripts/lib/rubric.ts";
 import { validateAgainst } from "../skill/agent-readiness/scripts/lib/schema.ts";
-import type { PrRecord, ReportJson } from "../skill/agent-readiness/scripts/lib/types.ts";
+import type { HistoryLine, PrRecord, ReportJson } from "../skill/agent-readiness/scripts/lib/types.ts";
 import type { AuditSpec } from "./helpers.ts";
 import { makeAudit, outcomes, reportFor, stats } from "./helpers.ts";
 
@@ -133,6 +133,24 @@ describe("part 1 rules", () => {
     assert.ok(validatePart1(r, rubric, allowedNumbers(r)).some((e) => e.includes('"5" in the narrated text')));
     r.executive.headline = "Agents can't pass api's tests from a clean checkout, and 56% of recent changes land there.";
     assert.deepEqual(validatePart1(r, rubric, allowedNumbers(r)), []);
+  });
+
+  test("every number compares with what the next level needs, or with the last audit", () => {
+    const audit = makeAudit(mixed);
+    const [ready, , below] = reportFor(audit).executive.numbers;
+    assert.equal(ready.comparison, "Level 2 needs 3 of 3");
+    assert.equal(below.comparison, "Level 1 needs 0%, counting the last 90 days");
+    const unmeasured = reportFor(makeAudit({ ...mixed, outcomes: null })).executive.numbers[1];
+    assert.equal(unmeasured.value, "not measured");
+    assert.doesNotMatch(unmeasured.comparison, /tier/);
+    const prev: HistoryLine = { id: "aud-prev", kind: "audit", date: "2026-10-01", commit: "abc", rubric: audit.rubric, scriptsDigest: "x", result: "sealed", goal: "bug_fixes", levels: { api: { bug_fixes: 0 }, worker: { bug_fixes: 0 }, shared: { bug_fixes: 0 } }, repoLevels: { bug_fixes: 0 }, shares: { api: 0.56, worker: 0.27, shared: 0.15 }, active: ["api", "worker", "shared"], seedPinned: false };
+    const later = reportFor(audit, [prev]).executive.numbers;
+    assert.equal(later[0].comparison, "Last audit: 0 of 3");
+    assert.equal(later[2].comparison, "Last audit: 98%, counting the last 90 days");
+  });
+
+  test("activity labels keep their acronyms", () => {
+    assert.equal(reportFor(makeAudit({ ...mixed, goal: "first_pr" })).executive.heading, "Level 0 of 4, not bootable, for first PR");
   });
 
   test("a narrated gap that ends in a period renders with one period", () => {

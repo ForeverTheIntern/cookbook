@@ -1,5 +1,6 @@
 {
   "name": "agent-readiness",
+  "version": "0.1.0",
   "private": true,
   "type": "module",
   "engines": {
@@ -11,6 +12,7 @@
     "test": "node --experimental-strip-types --no-warnings --test tests/*.test.ts",
     "check": "npm run typecheck && npm test",
     "sample": "node --experimental-strip-types --no-warnings tools/generate-sample.ts",
+    "release-manifest": "node --experimental-strip-types --no-warnings tools/release-manifest.ts",
     "evals": "node --experimental-strip-types --no-warnings evals/run.ts"
   },
   "devDependencies": {

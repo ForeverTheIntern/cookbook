@@ -40,7 +40,7 @@ export interface Profile {
   ciFiles: string[];
   instructionFiles: string[];
   toolchain: { pinned: boolean; files: string[]; missing: string[] };
-  environmentJson: { path: string; install?: string; start?: string } | null;
+  environmentJson: { path: string; install?: string; start?: string; build?: { dockerfile: string; context?: string } } | null;
   components: Component[];
   historyDays: number;
   totalChanges: number;
@@ -62,6 +62,8 @@ export interface Evidence {
   checkId: string;
   condition?: CondId;
   component?: string;
+  kind?: CommandKind;
+  contractId?: string;
   strength: Strength;
   where: Where;
   result: Result;
@@ -184,7 +186,7 @@ export interface Audit {
   rubric: string;
   skill: AuditSkillInfo;
   seed: { value: string; pinned: boolean };
-  environment: { containerRuntime: string | null; image: string | null; registryEnv: string[]; inheritEnv: boolean };
+  environment: { containerRuntime: string | null; image: string | null; imageOverride?: string; registryEnv: string[]; inheritEnv: boolean };
   profile: Profile | null;
   assets: Asset[];
   contract: ContractCommand[];

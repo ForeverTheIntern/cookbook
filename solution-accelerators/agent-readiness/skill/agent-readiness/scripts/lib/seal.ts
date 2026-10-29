@@ -15,7 +15,7 @@ import { loadRubric } from "./rubric.ts";
 import { validateAgainst } from "./schema.ts";
 import type { CompStates } from "./score.ts";
 import { componentStates } from "./score.ts";
-import type { ActivityId, Audit, CondId, CondState, HistoryLine, Level, OutcomeStats, ReportJson } from "./types.ts";
+import type { ActivityId, Audit, CondId, CondState, HistoryLine, Level, OutcomeStats, ReportJson, Roadmap } from "./types.ts";
 import { exists, fail, fmtShortDate, gitOrThrow, nowIso, randomHex, readText, sha256, stableStringify, today } from "./util.ts";
 import type { LocalInfo, Paths } from "./workspace.ts";
 import { clearCurrent, exportTree, releaseManifest, skillDigest } from "./workspace.ts";
@@ -72,16 +72,17 @@ export interface SealResult {
   dir: string;
 }
 
-export function seal(audit: Audit, local: LocalInfo, p: Paths, log: (s: string) => void): SealResult {
-  if (audit.state !== "draft") fail(`Audit ${audit.id} is already sealed.`);
+export interface SealedReport {
+  report: ReportJson;
+  roadmap: Roadmap;
+  line: HistoryLine;
+}
+
+export function buildSealedReport(audit: Audit, rubric: Rubric, history: HistoryLine[], prevRoadmap: Roadmap | null, repo: string, storedAt: string): SealedReport {
   if (!audit.profile) fail("Run `readiness scan` before sealing.");
-  const rubric = loadRubric(audit.rubric);
-  if (audit.skill.scriptsDigest !== skillDigest()) fail("The skill's scripts changed since this audit started. Start a new audit with `readiness init --force`.");
-  const history = readHistory(p);
   refreshAssetStatus(audit.assets, audit.instructions);
   const c = compute(audit, rubric, history);
   const goal = audit.goal;
-  const prevRoadmap = readRoadmap(p);
   const goalRepo = c.repoLevels.get(goal)!;
   const outcome = outcomeLevel(rubric, { level2: goalRepo.level === 2, targets: prevRoadmap?.targets ?? null, outcomes: audit.outcomes, previous: history, goal });
   const goalLevel = { level: (outcome.level ?? goalRepo.level) as Level, couldBe: outcome.level ? null : goalRepo.couldBe, setBy: goalRepo.setBy, outcomeReasons: outcome.reasons };
@@ -89,7 +90,7 @@ export function seal(audit: Audit, local: LocalInfo, p: Paths, log: (s: string) 
   const prevAuditLine = [...history].reverse().find((h) => h.kind === "audit");
   let weak: string | null = null;
   let previousOutcomes: { window: string; agent: OutcomeStats } | null = null;
-  if (prevAuditLine) weak = weakeningText(weakening(p.repo, prevAuditLine.commit, audit.repo.commit));
+  if (prevAuditLine) weak = weakeningText(weakening(repo, prevAuditLine.commit, audit.repo.commit));
   const prevWithOutcomes = [...history].reverse().find((h) => h.kind === "audit" && h.outcomes);
   if (prevWithOutcomes?.outcomes && audit.outcomes) {
     const [from, to] = prevWithOutcomes.outcomes.window.split(" to ");
@@ -116,7 +117,6 @@ export function seal(audit: Audit, local: LocalInfo, p: Paths, log: (s: string) 
     outcomes: o ? { window: `${o.window.from} to ${o.window.to}`, agent: o.agent, control: o.control, byComponent: o.byComponent } : null,
     seedPinned: audit.seed.pinned,
   };
-  const storedAt = join(p.history, "audits", audit.id).replace(p.repo + "/", "");
   const report = buildReport({
     audit,
     rubric,
@@ -139,22 +139,32 @@ export function seal(audit: Audit, local: LocalInfo, p: Paths, log: (s: string) 
     storedAt,
     partial: partialCoverage(rubric, audit.profile.components),
   });
+  return { report, roadmap: rm.roadmap, line };
+}
+
+export function seal(audit: Audit, local: LocalInfo, p: Paths, log: (s: string) => void): SealResult {
+  if (audit.state !== "draft") fail(`Audit ${audit.id} is already sealed.`);
+  if (!audit.profile) fail("Run `readiness scan` before sealing.");
+  const rubric = loadRubric(audit.rubric);
+  if (audit.skill.scriptsDigest !== skillDigest()) fail("The skill's scripts changed since this audit started. Start a new audit with `readiness init --force`.");
+  const storedAt = join(p.history, "audits", audit.id).replace(p.repo + "/", "");
+  const { report, roadmap, line } = buildSealedReport(audit, rubric, readHistory(p), readRoadmap(p), p.repo, storedAt);
   const errors = [
     ...danglingEvidence(report, audit).map((id) => `the report cites ${id}, which isn't in the audit`),
     ...validatePart1(report, rubric, audit.narration ? allowedNumbers(report) : null),
     ...validateAgainst("report", report).map((e) => `report.json ${e}`),
-    ...validateAgainst("roadmap", rm.roadmap).map((e) => `roadmap.json ${e}`),
+    ...validateAgainst("roadmap", roadmap).map((e) => `roadmap.json ${e}`),
   ];
   if (errors.length) fail(`Seal refused. Fix these and seal again:\n- ${errors.join("\n- ")}`);
   const md = renderMarkdown(report, rubric);
   audit.state = "sealed";
-  audit.sealed = { at: nowIso(), digest: "", reportJsonDigest: sha256(JSON.stringify(report, null, 2) + "\n"), reportMdDigest: sha256(md), roadmapItemsDigest: sha256(stableStringify(rm.roadmap.items)) };
+  audit.sealed = { at: nowIso(), digest: "", reportJsonDigest: sha256(JSON.stringify(report, null, 2) + "\n"), reportMdDigest: sha256(md), roadmapItemsDigest: sha256(stableStringify(roadmap.items)) };
   audit.sealed.digest = auditDigest(audit);
   const auditErrors = validateAgainst("audit", audit);
   if (auditErrors.length) fail(`Internal error: the sealed audit doesn't match its schema:\n- ${auditErrors.join("\n- ")}`);
   const dir = storeAudit(p, audit, report, md);
   writeLatest(p, report, md);
-  writeRoadmap(p, rm.roadmap);
+  writeRoadmap(p, roadmap);
   appendHistory(p, line);
   clearCurrent(p);
   rmSync(join(p.work, audit.id), { recursive: true, force: true });

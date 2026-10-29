@@ -5,10 +5,12 @@ import { fileURLToPath } from "node:url";
 import { compare, summarize, writeJunit } from "./lib/baseline.ts";
 import type { Baseline } from "./lib/baseline.ts";
 import { gradeCase, latestReport } from "./lib/grade.ts";
-import { judge } from "./lib/judge.ts";
+import { renderMarkdown } from "../skill/agent-readiness/scripts/lib/render.ts";
+import { loadRubric } from "../skill/agent-readiness/scripts/lib/rubric.ts";
+import { judge, judgePrompt } from "./lib/judge.ts";
+import { rerenderLatest } from "./lib/rerender.ts";
 import { runWithSdk } from "./lib/sdk.ts";
 import type { CaseRun, EvalCase, Trajectory } from "./lib/types.ts";
-import { judgePrompt } from "./lib/judge.ts";
 import { applyTurnHook, externalPreamble, fillPrompt, loadWorkspace, prepare, skillPreamble } from "./lib/workspace.ts";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -126,6 +128,18 @@ async function main(): Promise<void> {
     const c = all.find((x) => x.id === id)!;
     const applied = applyTurnHook(ws, c.turns[Number(flags.turn ?? 2) - 1]);
     process.stdout.write(applied ? "Applied the user's change for this turn.\n" : "Nothing to apply for this turn.\n");
+    return;
+  }
+  if (typeof flags.rerender === "string") {
+    const root = resolve(flags.rerender);
+    const { ws } = loadWorkspace(root);
+    const r = rerenderLatest(ws);
+    if (!r) throw new Error(`${root} has no sealed audit.`);
+    const out = join(root, "rerender", String(flags.label ?? "current"));
+    mkdirSync(out, { recursive: true });
+    writeFileSync(join(out, "report.md"), renderMarkdown(r, loadRubric(r.audit.rubric)));
+    writeFileSync(join(out, "judge-prompt.txt"), judgePrompt(r));
+    process.stdout.write(`${out}\n`);
     return;
   }
   if (typeof flags.grade === "string") {

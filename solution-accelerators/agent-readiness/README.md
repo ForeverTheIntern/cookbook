@@ -1,8 +1,8 @@
 # Agent Readiness
 
-A Cursor skill that finds what would stop a coding agent in a repository, and helps fix the two things that matter most: a working environment and a way to verify changes.
+A Cursor skill that finds what would stop a coding agent in a repository. It audits and reports; it doesn't change the repo.
 
-It answers one question: what level is this repo at, and each app or component in it, and what are the top three things holding them back? Each of the three comes with a fix that can be proved and the outcome it should deliver.
+It answers one question: what level is this repo at, and each app or component in it, and what are the top three things holding them back? Each of the three comes with what would fix it, how a new audit proves the fix, and the outcome it should deliver.
 
 It is not a gate to pass before you start using agents. When it finds no blocker, the report says so and recommends starting to delegate.
 
@@ -61,15 +61,6 @@ The outcome numbers are a baseline and then a trend, not attribution. Every rate
 - **On the `agent-readiness/history` branch, or CI artifacts:** the sealed `audits/<id>/` folders and `history.jsonl`, one line per audit and recheck. `readiness history push --push` writes them; the scheduled recheck appends there only.
 
 Redaction runs before every write, and a final secret scan blocks anything bound for history.
-
-## Fixing what it finds
-
-Say "fix the primary blocker". The skill then loads [remediate.md](skill/agent-readiness/remediate.md) and produces, each proved before it's offered:
-
-- **An environment setup:** install and start scripts and a `.cursor/environment.json` that uses only `name`, `install` and `start`, proved by a new audit in a clean container. Committing the file doesn't configure Cloud Agents by itself; a team admin points the environment at it.
-- **A verify skill:** `.cursor/skills/verify/SKILL.md`, written by `readiness draft-skill` from commands the audit ran and saw pass, with a failure playbook from failures the audits observed. It refuses commands the audit didn't run.
-
-Tests added to catch planted faults are proved against a fresh set of faults the fixing session never saw.
 
 ## Enterprise repos
 

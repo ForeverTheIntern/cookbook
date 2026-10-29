@@ -137,6 +137,13 @@ describe("part 1 rules", () => {
     assert.deepEqual(validatePart1(r, rubric, allowedNumbers(r)), []);
   });
 
+  test("a gap that unblocks only together with another names its own component", () => {
+    const [api, worker, shared, infra] = mixed.components;
+    const r = reportFor(makeAudit({ ...mixed, components: [api, shared, worker, infra], instructions: [instruction("fail", "pnpm test", "uses pnpm, but the repo uses npm")] }));
+    assert.match(r.roadmap.items.find((i) => i.id === "faults:worker")!.unlocks, /^shared to Level 2, worker to Level 2 together with/);
+    assert.equal(r.executive.gaps.find((g) => g.itemId === "faults:worker")!.blocks, "Blocks Level 2 for worker");
+  });
+
   test("every number compares with what the next level needs, or with the last audit", () => {
     const audit = makeAudit(mixed);
     const [ready, , below] = reportFor(audit).executive.numbers;

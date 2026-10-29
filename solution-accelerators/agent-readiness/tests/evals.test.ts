@@ -8,7 +8,7 @@ import { cases as resilienceCases } from "../evals/cases/resilience.ts";
 import { compare, summarize } from "../evals/lib/baseline.ts";
 import { gradeCase, sealedAudits } from "../evals/lib/grade.ts";
 import type { CaseRun, Trajectory } from "../evals/lib/types.ts";
-import { applyTurnHook, caseEnv, prepare } from "../evals/lib/workspace.ts";
+import { caseEnv, prepare } from "../evals/lib/workspace.ts";
 import { detectRuntime } from "../skill/agent-readiness/scripts/lib/container.ts";
 import { commitAll, readiness } from "../tools/fixture.ts";
 
@@ -38,18 +38,11 @@ describe("eval grader", { skip: detectRuntime("auto") ? false : "no container ru
     assert.match(gradeCase(ws, none, healthy)[4].detail, /installed skill's scripts, rubric/);
   });
 
-  test("re-audit: the harness's turn commit is not the agent's, and scripted audits pass every gate", { timeout: 15 * 60 * 1000 }, () => {
-    const reAudit = { ...resilienceCases.find((c) => c.id === "re-audit")!, id: "resilience/re-audit" };
-    const ws = prepare(reAudit);
-    const cli = join(ws.dir, ".cursor/skills/agent-readiness/scripts/readiness.ts");
-    const audit = () => readiness(ws.dir, ["audit", "--tier", "local-exec"], caseEnv(reAudit), cli);
-    assert.equal(audit().code, 0);
-    assert.equal(applyTurnHook(ws, reAudit.turns[1]), true);
-    assert.equal(audit().code, 0);
-    const gates = gradeCase(ws, none, reAudit);
-    assert.deepEqual(gates.filter((g) => !g.pass), [], JSON.stringify(gates));
+  test("an agent's own commit during an audit fails the trajectory gate", () => {
+    const ws = prepare(healthy);
+    assert.equal(readiness(ws.dir, ["audit", "--tier", "local-exec", "--no-mutants"], caseEnv(healthy), join(ws.dir, ".cursor/skills/agent-readiness/scripts/readiness.ts")).code, 0);
     commitAll(ws.dir, "Agent commit", 0, ws.now);
-    assert.match(gradeCase(ws, none, reAudit)[4].detail, /made commits during an audit/);
+    assert.match(gradeCase(ws, none, healthy)[4].detail, /made commits during an audit/);
   });
 
   test("phantom-command: adding a documented command the repo doesn't define fails two gates", { timeout: 15 * 60 * 1000 }, () => {

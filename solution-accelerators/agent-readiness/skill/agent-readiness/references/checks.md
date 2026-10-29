@@ -72,7 +72,7 @@ Part 4 lists five signals read from files. None of them sets a level, adds a roa
 - **Worktree and port isolation:** fixed ports and machine-specific absolute paths in package scripts, the environment setup, Makefiles, shell scripts and compose files, which collide when two agents work in separate worktrees.
 - **AGENTS.md length:** the root AGENTS.md's word count, marked long over 900 words, since agents load all of it on every task.
 
-An environment setup whose install or start uses `sudo` is listed in the agent assets as not a working setup, and `draft-skill` never puts a sudo command into agent setup.
+An environment setup whose install or start uses `sudo` is listed in the agent assets as not a working setup.
 
 ## Met, not met, blocked and unknown
 
@@ -84,7 +84,7 @@ The report names each condition that holds the level where it is, and gives a co
 
 ## Why scripts own the results
 
-The session that audits may later remediate. Factory's GDAL result reports 89.8% on a held-out suite with a separate validation system, against 35.8% for the same model working as a single agent. Caveat: one reported task ([repo](https://github.com/Factory-AI/pb-gdal-fable), [write-up](https://factory.ai/news/what-it-takes-for-coding-agents-to-complete-large-software-tasks)). So this skill keeps the grading out of the agent's hands: scripts create the evidence, plant the faults, compute the levels, seal the audit with a digest of the scripts and rubric, and flag weakened tests in `diff`.
+An agent grading its own work is the weak point. Factory's GDAL result reports 89.8% on a held-out suite with a separate validation system, against 35.8% for the same model working as a single agent. Caveat: one reported task ([repo](https://github.com/Factory-AI/pb-gdal-fable), [write-up](https://factory.ai/news/what-it-takes-for-coding-agents-to-complete-large-software-tasks)). So this skill keeps the grading out of the agent's hands: scripts create the evidence, plant the faults, compute the levels, seal the audit with a digest of the scripts and rubric, and flag weakened tests in `diff`.
 
 ## Not assessed by this rubric
 

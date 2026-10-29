@@ -43,7 +43,7 @@ A scenario swaps in its own Level 2 bar and is reported under each component it 
 - **Features and refactors (`features`):** the same bar as the standard Level 2.
 - **Repo-wide changes (`repo_wide`):** the bug-fix bar, plus pinned toolchain versions and a frozen install that reproduces the lockfile.
 
-Use one when the team wants a specific kind of work judged, for example `repo_wide` before handing an agent an upgrade, or `bug_fixes` for a component whose instructions are still being rewritten.
+Use one when the team wants a specific kind of work judged, for example `bug_fixes` for a component whose instructions are still being rewritten.
 
 ## The roadmap
 
@@ -51,7 +51,7 @@ Every roadmap opens with "Name an owner for agent readiness" until one is record
 
 1. **Reach Level 1:** fix the clean install, build and tests. The usual items: set up a service, remove a production credential from tests, commit a lockfile, pass registry credentials.
 2. **Reach Level 2:** fix failing commands, make the tests catch planted faults, and fix stale instructions.
-3. **Roll out:** for each component at Level 2, "Give agents work in <component>". Pick 3 to 5 real tasks, have agents run the verify skill before they push, and review as usual. The team decides who reviews agent PRs and what it watches.
+3. **Roll out:** for each component at Level 2, "Give agents work in <component>". Pick 3 to 5 real tasks, have agents run the component's build, lint and test commands before they push, and review as usual. The team decides who reviews agent PRs and what it watches.
 4. **Set Level 3 targets:** merge rate, first-time CI pass rate and the most change requests you accept, always compared with other PRs in the same window.
 5. **Reach Level 4:** hold the targets for two consecutive windows while agent PR volume at least doubles.
 

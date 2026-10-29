@@ -109,7 +109,7 @@ describe("regressions from the four-model review of the mock report", () => {
     assert.equal(readiness(repo, ["seal"]).code, 0);
     const report = readFileSync(join(repo, ".agent-readiness/latest/report.json"), "utf8") + readFileSync(join(repo, ".agent-readiness/latest/report.md"), "utf8");
     for (const m of draft.mutants) assert.ok(!report.includes(m.after.trim()), "the report never shows a planted edit");
-    assert.equal(readiness(repo, ["draft-skill", "--remediate"]).code, 0);
+    assert.equal(readiness(repo, ["draft-skill", "--remediate"], { READINESS_ENABLE_REMEDIATION: "1" }).code, 0);
     const skill = readFileSync(join(repo, ".cursor/skills/verify/SKILL.md"), "utf8");
     for (const m of draft.mutants) assert.ok(!skill.includes(m.after.trim()));
 

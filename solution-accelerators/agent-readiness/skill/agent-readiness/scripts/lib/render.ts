@@ -279,6 +279,9 @@ function gapText(item: RoadmapItem): string {
 
 function blocksText(item: RoadmapItem): string {
   if (item.kind !== "fix") return item.template === "targets" ? "Needs a decision" : "Can start now";
+  const own = item.fixes.map((f) => f.component).find((c) => c !== "*");
+  const mine = own ? item.unlocks.match(new RegExp(`(?:^|, )${own.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")} to Level (\\d)`)) : null;
+  if (mine) return `Blocks Level ${mine[1]} for ${own}`;
   const m = item.unlocks.match(/^(.+?) to Level (\d)/);
   if (m) return `Blocks Level ${m[2]} for ${m[1].split(",")[0]}`;
   return "Blocks the next level";

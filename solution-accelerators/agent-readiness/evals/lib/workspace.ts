@@ -72,7 +72,7 @@ export function skillPreamble(dir: string): string {
   return [
     `You are working in the git repository at ${dir}. Run every command from that directory.`,
     "Agent skills available in this repository:",
-    "- agent-readiness (.cursor/skills/agent-readiness/SKILL.md): Audit whether coding agents can work in this repository, from evidence the audit's scripts execute. Use when asked for an agent readiness audit or report, what blocks agents here, or to re-audit after fixes.",
+    "- agent-readiness (.cursor/skills/agent-readiness/SKILL.md): Audit whether coding agents can work in this repository, from evidence the audit's scripts execute. Use when asked for an agent readiness audit or report, what blocks agents here, or to re-audit.",
     "",
   ].join("\n");
 }

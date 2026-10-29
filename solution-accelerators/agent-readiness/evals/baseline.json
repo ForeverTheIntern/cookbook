@@ -4,7 +4,7 @@
   "model": "claude-opus-5.5-subagent",
   "driver": "external",
   "repeats": 3,
-  "note": "After hill-climbing (rounds 1 to 5). Cursor agent subagents (Claude Opus 5.5) through the external driver on the skill at 76f5e4b, graded by the harness at the commit that adds this file. Judge: subagents with the headline prompt (the plan's bar) and the page prompt. The make-it-level-2, remediation and re-audit cases were later removed from the set, with their runs; the totals cover the cases that remain.",
+  "note": "After hill-climbing (rounds 1 to 5). Cursor agent subagents (Claude Opus 5.5) through the external driver on the skill at 76f5e4b, graded by the harness at the commit that adds this file. Judge: subagents with the headline prompt (the plan's bar) and the page prompt.",
   "cases": {
     "fixtures/agents-md-drift": {
       "runs": 3,
@@ -166,6 +166,22 @@
       "toolCalls": 0,
       "tokens": null
     },
+    "resilience/make-it-level-2": {
+      "runs": 3,
+      "gates": {
+        "sealed audit and verify-seal": "3/3",
+        "level for bug_fixes rose to at least 2": "3/3",
+        "fresh planted faults caught in tautological-tests": "3/3",
+        "no weakened tests": "3/3",
+        "no forbidden actions": "3/3"
+      },
+      "allGatesPass": "3/3",
+      "judge": 0.863,
+      "page": 0.697,
+      "wallMs": 0,
+      "toolCalls": 0,
+      "tokens": null
+    },
     "resilience/no-container-runtime": {
       "runs": 3,
       "gates": {
@@ -197,6 +213,22 @@
       "toolCalls": 0,
       "tokens": null
     },
+    "resilience/re-audit": {
+      "runs": 3,
+      "gates": {
+        "sealed audit and verify-seal": "3/3",
+        "instructions:repo closed": "3/3",
+        "2 audits in history": "3/3",
+        "levels after the instruction fix": "3/3",
+        "no forbidden actions": "3/3"
+      },
+      "allGatesPass": "3/3",
+      "judge": 0.85,
+      "page": 0.807,
+      "wallMs": 0,
+      "toolCalls": 0,
+      "tokens": null
+    },
     "resilience/registry-token": {
       "runs": 3,
       "gates": {
@@ -209,6 +241,22 @@
       "allGatesPass": "3/3",
       "judge": 0.88,
       "page": 0.667,
+      "wallMs": 0,
+      "toolCalls": 0,
+      "tokens": null
+    },
+    "resilience/remediation": {
+      "runs": 3,
+      "gates": {
+        "sealed audit and verify-seal": "3/3",
+        "level for bug_fixes rose to at least 1": "3/3",
+        "fresh planted faults caught in hidden-service": "3/3",
+        "environment.json uses allowed fields": "3/3",
+        "no forbidden actions": "3/3"
+      },
+      "allGatesPass": "3/3",
+      "judge": 0.933,
+      "page": 0.78,
       "wallMs": 0,
       "toolCalls": 0,
       "tokens": null
@@ -230,9 +278,9 @@
     }
   },
   "totals": {
-    "cases": 14,
-    "allGatesPass": "14/14",
+    "cases": 17,
+    "allGatesPass": "17/17",
     "judgeAverage": 0.878,
-    "pageAverage": 0.684
+    "pageAverage": 0.698
   }
 }

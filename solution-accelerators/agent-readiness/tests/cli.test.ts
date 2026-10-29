@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, test } from "node:test";
 import { detectRuntime } from "../skill/agent-readiness/scripts/lib/container.ts";
@@ -15,7 +15,6 @@ function hostAudit(fixture: string, extra: string[] = [], env: Record<string, st
   return repo;
 }
 
-const REMEDIATION = { SA_READINESS_ENABLE_REMEDIATION: "1" };
 const sealedDir = (repo: string) => {
   const dir = join(repo, ".agent-readiness/history/audits");
   return join(dir, readdirSync(dir).sort().pop()!);
@@ -203,34 +202,22 @@ describe("CLI", { concurrency: 4 }, () => {
     assert.match(readiness(repo, ["outcomes"]).out, /needs the external-systems tier/);
     assert.match(readiness(repo, ["roadmap", "targets", "--merge-rate", "0.7", "--first-pass", "0.6", "--max-changes-requested", "0.3", "--min-prs", "5"]).out, /can't go below 10/);
     assert.equal(readiness(repo, ["roadmap", "targets", "--merge-rate", "0.7", "--first-pass", "0.6", "--max-changes-requested", "0.3"]).code, 0);
-    assert.match(readiness(repo, ["draft-skill"], REMEDIATION).out, /pass --remediate/);
+    assert.match(readiness(repo, ["draft-skill"]).out, /pass --remediate/);
     assert.match(readiness(repo, ["assets", "--org", "example-org"]).out, /needs --tier external-systems/);
     assert.match(readiness(repo, ["init", "--registry-env", "npm_token=abc"]).out, /takes variable names, not values/);
   });
 
-  test("remediation is off by default: draft-env and draft-skill refuse and change nothing", () => {
-    const repo = hostAudit("healthy-node", ["--no-mutants"]);
-    for (const cmd of ["draft-env", "draft-skill"]) {
-      const r = readiness(repo, [cmd, "--remediate"]);
-      assert.equal(r.code, 1, cmd);
-      assert.match(r.out, new RegExp(`${cmd} is off in this release, which only audits`));
-    }
-    assert.ok(!existsSync(join(repo, ".cursor/environment.json")) && !existsSync(join(repo, ".cursor/skills/verify")));
-    assert.doesNotMatch(readiness(repo, ["help"]).out, /draft-/);
-    assert.match(readiness(repo, ["help"], REMEDIATION).out, /draft-env --remediate/);
-  });
-
   test("draft-env writes only allowed files once, and draft-skill writes only passing commands", () => {
     const repo = hostAudit("healthy-node", ["--no-mutants"]);
-    assert.equal(readiness(repo, ["draft-env", "--remediate"], REMEDIATION).code, 0);
+    assert.equal(readiness(repo, ["draft-env", "--remediate"]).code, 0);
     const env = JSON.parse(readFileSync(join(repo, ".cursor/environment.json"), "utf8"));
     assert.deepEqual(Object.keys(env).sort(), ["install", "name", "start"]);
-    assert.match(readiness(repo, ["draft-env", "--remediate"], REMEDIATION).out, /already exists/);
-    assert.equal(readiness(repo, ["draft-skill", "--remediate"], REMEDIATION).code, 0);
+    assert.match(readiness(repo, ["draft-env", "--remediate"]).out, /already exists/);
+    assert.equal(readiness(repo, ["draft-skill", "--remediate"]).code, 0);
     const skill = readFileSync(join(repo, ".cursor/skills/verify/SKILL.md"), "utf8");
     assert.match(skill, /^---\nname: verify\ndescription: /);
     assert.match(skill, /npm run lint/);
-    assert.match(readiness(repo, ["draft-skill", "--remediate", "--force", "--include", "cmd-made-up"], REMEDIATION).out, /no passing run/);
+    assert.match(readiness(repo, ["draft-skill", "--remediate", "--force", "--include", "cmd-made-up"]).out, /no passing run/);
   });
 
   test("feedback bundles hold the check, digests and note, and no source code", () => {

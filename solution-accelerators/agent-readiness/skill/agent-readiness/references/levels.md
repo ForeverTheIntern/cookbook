@@ -51,7 +51,7 @@ Every roadmap opens with "Name an owner for agent readiness" until one is record
 
 1. **Reach Level 1:** fix the clean install, build and tests. The usual items: set up a service, remove a production credential from tests, commit a lockfile, pass registry credentials.
 2. **Reach Level 2:** fix failing commands, make the tests catch planted faults, and fix stale instructions.
-3. **Roll out:** for each component at Level 2, "Give agents work in <component>". Pick 3 to 5 real tasks, have agents run the component's build, lint and test commands before they push, and review as usual. The team decides who reviews agent PRs and what it watches.
+3. **Roll out:** for each component at Level 2, "Give agents work in <component>". Pick 3 to 5 real tasks, have agents run the verify skill before they push, and review as usual. The team decides who reviews agent PRs and what it watches.
 4. **Set Level 3 targets:** merge rate, first-time CI pass rate and the most change requests you accept, always compared with other PRs in the same window.
 5. **Reach Level 4:** hold the targets for two consecutive windows while agent PR volume at least doubles.
 

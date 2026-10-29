@@ -1,10 +1,10 @@
 {
-  "ranAt": "2026-10-29T20:11:54.274Z",
+  "ranAt": "2026-10-29T21:24:43.444Z",
   "results": [
     {
       "id": "slugify",
       "sha": "3b17b2e84b97624a683aafaa38184bf2746fab22",
-      "minutes": 0.6,
+      "minutes": 0.7,
       "repoLevel": 2,
       "outcome": "proven",
       "levels": {
@@ -16,7 +16,7 @@
     {
       "id": "express",
       "sha": "1c6f1b0fe4000977b9a7b4f34097e4d527dd9824",
-      "minutes": 10.6,
+      "minutes": 10.7,
       "repoLevel": 1,
       "outcome": "proven",
       "levels": {
@@ -28,7 +28,7 @@
     {
       "id": "starlette",
       "sha": "2745bbc5afa2f8ce900d290bedca2bc5d3f3cfe8",
-      "minutes": 4.7,
+      "minutes": 4.8,
       "repoLevel": 2,
       "outcome": "proven",
       "levels": {

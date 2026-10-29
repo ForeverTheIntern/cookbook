@@ -200,8 +200,8 @@
       "why": "In a clean container, {component}'s tests fail because nothing starts {service}: {diagnosis}.",
       "doneWhen": "`readiness replay --component {component}` passes every test.",
       "steps": [
-        { "title": "Add install and start scripts", "detail": "Install {service}, start it and wait until it's ready, from scripts a `.cursor/environment.json` points at." },
-        { "title": "Prove it", "detail": "`readiness replay --component {component}` must pass every test." },
+        { "title": "Ask the agent to fix it", "detail": "Say \"fix the primary blocker\". It drafts install and start scripts and a `.cursor/environment.json` with `readiness draft-env`." },
+        { "title": "The agent proves it", "detail": "`readiness replay --component {component}` must pass every test before the fix is offered." },
         { "title": "Review and merge", "detail": "Check that the start script only starts local services and names no production URLs." },
         { "title": "Point Cloud Agents at it", "detail": "A team admin sets the Cloud Agent environment to read `.cursor/environment.json`; committing the file alone changes no environment." },
         { "title": "Re-audit", "detail": "The next audit confirms Level 1 and can now plant faults in {component}." }
@@ -364,7 +364,7 @@
       "doneWhen": "Agent PRs in {component} appear in the outcome numbers.",
       "steps": [
         { "title": "Pick 3 to 5 real tasks", "detail": "Well-scoped tasks that touch only {component}." },
-        { "title": "Hand them to agents", "detail": "Agents run {component}'s build, lint and test commands before they push." },
+        { "title": "Hand them to agents", "detail": "Agents run the verify skill before they push." },
         { "title": "Review as usual", "detail": "The next audit counts these PRs by component." }
       ]
     },

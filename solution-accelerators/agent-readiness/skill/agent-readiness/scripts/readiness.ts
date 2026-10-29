@@ -455,15 +455,7 @@ function latestOrDraft(repo: string, ref?: string): Audit {
   return loadSealedAudit(paths(repo), "latest").audit;
 }
 
-// Remediation drafts files into the repo. This release only audits, so it stays off unless turned on.
-const REMEDIATION_ON = process.env.SA_READINESS_ENABLE_REMEDIATION === "1";
-
-function requireRemediation(cmd: string): void {
-  if (!REMEDIATION_ON) fail(`${cmd} is off in this release, which only audits. Set SA_READINESS_ENABLE_REMEDIATION=1 to turn it on.`);
-}
-
 function cmdDraftSkill(a: Args): void {
-  requireRemediation("draft-skill");
   if (!a.flags.remediate) fail("draft-skill writes into the repo, so it only runs in remediate mode: pass --remediate.");
   const repo = repoOf(a);
   const audit = latestOrDraft(repo, opt(a, "audit"));
@@ -479,7 +471,6 @@ function cmdDraftSkill(a: Args): void {
 }
 
 function cmdDraftEnv(a: Args): void {
-  requireRemediation("draft-env");
   if (!a.flags.remediate) fail("draft-env writes into the repo, so it only runs in remediate mode: pass --remediate.");
   const repo = repoOf(a);
   const audit = latestOrDraft(repo, opt(a, "audit"));
@@ -572,10 +563,6 @@ async function cmdAudit(a: Args): Promise<void> {
   cmdSeal(a);
 }
 
-const REMEDIATION_HELP = `  draft-skill --remediate [--out .cursor/skills/verify/SKILL.md] [--include cmd-id,...] [--force]
-  draft-env --remediate [--service postgres,redis] [--dockerfile] [--force]
-`;
-
 const HELP = `readiness <command> [options]
 
 Audit
@@ -598,6 +585,8 @@ After an audit
   diff [from] [to] [--json]
   history [--json] | history push [--push] [--remote origin]
   roadmap [show|owner "<team>"|targets --merge-rate R --first-pass R --max-changes-requested R [--min-prs N]]
+  draft-skill --remediate [--out .cursor/skills/verify/SKILL.md] [--include cmd-id,...] [--force]
+  draft-env --remediate [--service postgres,redis] [--dockerfile] [--force]
   assets [--org owner --tier external-systems]
   feedback <check-id> --note "..." [--component C]
   version [--upstream owner/repo --tier external-systems]
@@ -619,7 +608,7 @@ async function main(): Promise<void> {
   const a = parse(process.argv.slice(2));
   const cmd = a.positional[0];
   if (!cmd || a.flags.help || cmd === "help") {
-    process.stdout.write(REMEDIATION_ON ? HELP.replace("  assets [", REMEDIATION_HELP + "  assets [") : HELP);
+    process.stdout.write(HELP);
     return;
   }
   const table: Record<string, (a: Args) => void | Promise<void>> = {

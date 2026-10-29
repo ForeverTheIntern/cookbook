@@ -2,18 +2,18 @@
   "schema": "agent-readiness/report@1",
   "repo": "monorepo-mixed",
   "audit": {
-    "id": "aud-2026-11-30-9b5563d-467f",
+    "id": "aud-2026-11-30-9a2c092-ae7a",
     "date": "2026-11-30",
-    "commit": "9b5563d",
+    "commit": "9a2c092",
     "dirtyTree": false,
     "rubric": "2026-10-alpha",
     "tier": "local-exec",
-    "scriptsDigest": "86495f7765bdd5d62fb76960e16793ef262b3b559c8aff3131ab55c70d1f2080",
+    "scriptsDigest": "fe180c43767fead5e28e6b27882505b3fe6110ac6b68ddcc3de2392e8a6eb221",
     "seedPinned": true,
     "sealStatus": "Seal verified against release agent-readiness-v0.1.0",
     "staleCopy": null,
-    "previous": "aud-2026-10-30-fceaef2-3194",
-    "storedAt": ".agent-readiness/history/audits/aud-2026-11-30-9b5563d-467f"
+    "previous": "aud-2026-10-30-7e84b7e-c404",
+    "storedAt": ".agent-readiness/history/audits/aud-2026-11-30-9a2c092-ae7a"
   },
   "goal": "bug_fixes",
   "goalLabel": "bug fixes",
@@ -71,12 +71,12 @@
   },
   "executive": {
     "heading": "Level 1 of 4, bootable, for bug fixes",
-    "headline": "Agents can build and test worker, but its checks can't yet catch wrong bug fixes, and 59% of recent changes land there. api and shared are already ready for bug fixes.",
+    "headline": "Agents can build and test worker, but its tests can't yet catch wrong bug fixes, and 25% of recent changes land there. api and shared are already ready for bug fixes.",
     "numbers": [
       {
-        "label": "Active components ready for bug fixes",
+        "label": "Components ready for bug fixes",
         "value": "2 of 3",
-        "comparison": "Active means at least 10% of recent changes"
+        "comparison": "Last audit: 2 of 3"
       },
       {
         "label": "Agent PRs that pass CI the first time",
@@ -85,8 +85,8 @@
       },
       {
         "label": "Recent changes in components below Level 2",
-        "value": "59%",
-        "comparison": "Changes in the last 90 days"
+        "value": "25%",
+        "comparison": "Last audit: 27%, counting the last 90 days"
       }
     ],
     "nextLine": "Next: Level 2, verifiable. Met: build, lint, type-check and test commands pass and normal work needs no production access. Not yet: worker tests catch planted faults.",
@@ -99,7 +99,7 @@
       }
     ],
     "ask": "Decision needed: what the untested behavior in packages/worker/src/retry.js should be.",
-    "coverage": "The level covers 3 components and ignores infra (4% of changes, Terraform isn't supported by this rubric). Agent PRs are matched by head branch starting with cursor/.",
+    "coverage": "The level covers 3 components and ignores infra (0% of changes, Terraform isn't supported by this rubric). Agent PRs are matched by head branch starting with cursor/.",
     "noBlocker": false
   },
   "actions": [
@@ -109,14 +109,14 @@
       "title": "Make worker's tests catch wrong behavior",
       "startNow": false,
       "why": "The audit planted 5 faults in worker in a throwaway copy, and the tests caught 0.",
-      "movesTheNeedle": "Takes worker to Level 2 for bug fixes, covering 59% of recent changes. Changes in worker get a real pass-or-fail signal, so reviewers catch less by hand.",
-      "watch": "Share of agent PRs touching worker where a reviewer requested changes. Now: 2 of 3 (too few for a rate), Sep 27 to Oct 27, 2026.",
+      "movesTheNeedle": "Takes worker to Level 2 for bug fixes, covering 25% of recent changes. Changes in worker get a real pass-or-fail signal, so reviewers catch less by hand.",
+      "watch": "Share of agent PRs touching worker where a reviewer requested changes. Baseline: 2 of 3 (too few for a rate), Sep 27 to Oct 27, 2026. Now: 50% (3 of 6), Oct 31 to Nov 30, 2026.",
       "research": "In DeployBench, 53.9% of failed runs passed generic checks and failed only task-specific ones. 51 research-artifact deployment tasks. https://deploybench.vercel.app/",
       "effortAndOwner": "Medium: tests in worker only. Component owner.",
       "decision": "What the untested behavior in packages/worker/src/retry.js should be",
       "doneWhen": "A new audit's fresh planted faults in worker are all caught.",
       "dependsOn": [],
-      "impact": 0.587,
+      "impact": 0.254,
       "effort": "medium"
     }
   ],
@@ -131,7 +131,7 @@
       {
         "label": "1. Make worker's tests catch wrong behavior",
         "x": 0.55,
-        "y": 0.587,
+        "y": 0.254,
         "itemId": "faults:worker"
       }
     ]
@@ -260,7 +260,7 @@
         "date": "2026-11-13",
         "kind": "recheck",
         "result": "failed",
-        "note": "npm run lint failed: npm error command sh -c node ../../scripts/lint.mjs src",
+        "note": "npm run lint failed: src/money.js: remove console.log",
         "levels": {
           "api": 2,
           "shared": 1,
@@ -301,19 +301,19 @@
         "title": "2. Set up Postgres for agents in api",
         "closed": "2026-10-30",
         "expected": "Agents can run api's checks before they push, so fewer agent PRs fail CI the first time. Watch: Share of agent PRs touching api that pass CI the first time, 20% (1 of 5).",
-        "observed": "20% (1 of 5) to 78% (7 of 9) (shared with step 1, step 4 and step 5)"
+        "observed": "20% (1 of 5) to 78% (7 of 9) (shared with step 4 and step 5)"
       },
       {
         "title": "4. Fix the stale agent instructions",
         "closed": "2026-10-30",
         "expected": "Agents stop following stale steps, such as running pnpm in a repo that doesn't use it. Watch: Agent PRs that add a stray pnpm-lock.yaml, 11% (1 of 9).",
-        "observed": "11% (1 of 9) to 0% (0 of 17) (shared with step 1, step 2 and step 5)"
+        "observed": "11% (1 of 9) to 0% (0 of 17) (shared with step 2 and step 5)"
       },
       {
         "title": "5. Check api's tests with planted faults",
         "closed": "2026-10-30",
         "expected": "Changes in api get a real pass-or-fail signal, so reviewers catch less by hand. Watch: Share of agent PRs touching api where a reviewer requested changes, 40% (2 of 5).",
-        "observed": "40% (2 of 5) to 11% (1 of 9) (shared with step 1, step 2 and step 4)"
+        "observed": "40% (2 of 5) to 11% (1 of 9) (shared with step 2 and step 4)"
       }
     ],
     "weakening": "No test files changed since the last audit. No test files were deleted. No test cases were removed overall. No skip markers were added. The CI workflow is unchanged. The lockfile is unchanged.",
@@ -519,7 +519,7 @@
       "components": [
         {
           "id": "api",
-          "changeShare": 0,
+          "changeShare": 0.592,
           "active": true,
           "levels": {
             "first_pr": 2,
@@ -530,7 +530,7 @@
         },
         {
           "id": "shared",
-          "changeShare": 0.37,
+          "changeShare": 0.155,
           "active": true,
           "levels": {
             "first_pr": 2,
@@ -541,7 +541,7 @@
         },
         {
           "id": "worker",
-          "changeShare": 0.587,
+          "changeShare": 0.254,
           "active": true,
           "levels": {
             "first_pr": 2,
@@ -561,7 +561,7 @@
       "unassessed": [
         {
           "id": "infra",
-          "changeShare": 0.043,
+          "changeShare": 0,
           "reason": "Terraform isn't supported by this rubric"
         }
       ]
@@ -884,28 +884,28 @@
         "id": "ev-013",
         "check": "verify.behavioral_oracle",
         "component": "api",
-        "ran": "caught 5 of 5 planted faults (change_constant, drop_throw_or_return, boundary_flip, negate_condition)",
+        "ran": "caught 5 of 5 planted faults (boundary_flip, change_constant, drop_throw_or_return, negate_condition)",
         "where": "ran in a clean container",
         "result": "pass",
-        "summary": "caught 5 of 5 planted faults (change_constant, drop_throw_or_return, boundary_flip, negate_condition)"
+        "summary": "caught 5 of 5 planted faults (boundary_flip, change_constant, drop_throw_or_return, negate_condition)"
       },
       {
         "id": "ev-014",
         "check": "verify.behavioral_oracle",
         "component": "shared",
-        "ran": "caught 5 of 5 planted faults (change_constant, drop_throw_or_return, negate_condition)",
+        "ran": "caught 5 of 5 planted faults (boundary_flip, change_constant, negate_condition, drop_throw_or_return)",
         "where": "ran in a clean container",
         "result": "pass",
-        "summary": "caught 5 of 5 planted faults (change_constant, drop_throw_or_return, negate_condition)"
+        "summary": "caught 5 of 5 planted faults (boundary_flip, change_constant, negate_condition, drop_throw_or_return)"
       },
       {
         "id": "ev-015",
         "check": "verify.behavioral_oracle",
         "component": "worker",
-        "ran": "caught 0 of 5 planted faults (negate_condition, swap_return, boundary_flip, change_constant); uncaught in packages/worker/src/retry.js",
+        "ran": "caught 0 of 5 planted faults (change_constant); uncaught in packages/worker/src/retry.js",
         "where": "ran in a clean container",
         "result": "fail",
-        "summary": "caught 0 of 5 planted faults (negate_condition, swap_return, boundary_flip, change_constant); uncaught in packages/worker/src/retry.js"
+        "summary": "caught 0 of 5 planted faults (change_constant); uncaught in packages/worker/src/retry.js"
       },
       {
         "id": "ev-016",
@@ -956,11 +956,11 @@
     "record": [
       {
         "label": "Audit",
-        "value": "aud-2026-11-30-9b5563d-467f"
+        "value": "aud-2026-11-30-9a2c092-ae7a"
       },
       {
         "label": "Commit",
-        "value": "9b5563d (clean tree)"
+        "value": "9a2c092 (clean tree)"
       },
       {
         "label": "Rubric",
@@ -976,7 +976,7 @@
       },
       {
         "label": "Skill digest",
-        "value": "86495f7765bd"
+        "value": "fe180c43767f"
       },
       {
         "label": "Planted-fault seed",
@@ -988,7 +988,7 @@
       },
       {
         "label": "Stored in",
-        "value": ".agent-readiness/history/audits/aud-2026-11-30-9b5563d-467f"
+        "value": ".agent-readiness/history/audits/aud-2026-11-30-9a2c092-ae7a"
       }
     ]
   }

@@ -2,18 +2,18 @@
   "schema": "agent-readiness/report@1",
   "repo": "monorepo-mixed",
   "audit": {
-    "id": "aud-2026-10-27-9f2ed83-33c1",
+    "id": "aud-2026-10-27-7070f44-e101",
     "date": "2026-10-27",
-    "commit": "9f2ed83",
+    "commit": "7070f44",
     "dirtyTree": false,
     "rubric": "2026-10-alpha",
     "tier": "local-exec",
-    "scriptsDigest": "86495f7765bdd5d62fb76960e16793ef262b3b559c8aff3131ab55c70d1f2080",
+    "scriptsDigest": "fe180c43767fead5e28e6b27882505b3fe6110ac6b68ddcc3de2392e8a6eb221",
     "seedPinned": true,
     "sealStatus": "Seal verified against release agent-readiness-v0.1.0",
     "staleCopy": null,
     "previous": null,
-    "storedAt": ".agent-readiness/history/audits/aud-2026-10-27-9f2ed83-33c1"
+    "storedAt": ".agent-readiness/history/audits/aud-2026-10-27-7070f44-e101"
   },
   "goal": "bug_fixes",
   "goalLabel": "bug fixes",
@@ -71,12 +71,12 @@
   },
   "executive": {
     "heading": "Level 0 of 4, not bootable, for bug fixes",
-    "headline": "Agents can't pass the tests in api from a clean checkout, and 56% of recent changes land there. shared is already ready for bug fixes.",
+    "headline": "Agents can't pass the tests in api from a clean checkout because its tests need Postgres running, which the setup doesn't start, and 56% of recent changes land there. shared is already ready for bug fixes.",
     "numbers": [
       {
-        "label": "Active components ready for bug fixes",
+        "label": "Components ready for bug fixes",
         "value": "1 of 3",
-        "comparison": "Active means at least 10% of recent changes"
+        "comparison": "Level 2 needs 3 of 3"
       },
       {
         "label": "Agent PRs that pass CI the first time",
@@ -86,7 +86,7 @@
       {
         "label": "Recent changes in components below Level 1",
         "value": "56%",
-        "comparison": "Changes in the last 90 days"
+        "comparison": "Level 1 needs 0%, counting the last 90 days"
       }
     ],
     "nextLine": "Next: Level 1, bootable. Met: installs from the lockfile in a clean container and builds in a clean container. Not yet: api passes every test in a clean container.",
@@ -841,19 +841,19 @@
         "id": "ev-016",
         "check": "verify.behavioral_oracle",
         "component": "shared",
-        "ran": "caught 5 of 5 planted faults (change_constant, drop_throw_or_return, negate_condition)",
+        "ran": "caught 5 of 5 planted faults (drop_throw_or_return, change_constant, negate_condition)",
         "where": "ran in a clean container",
         "result": "pass",
-        "summary": "caught 5 of 5 planted faults (change_constant, drop_throw_or_return, negate_condition)"
+        "summary": "caught 5 of 5 planted faults (drop_throw_or_return, change_constant, negate_condition)"
       },
       {
         "id": "ev-017",
         "check": "verify.behavioral_oracle",
         "component": "worker",
-        "ran": "caught 0 of 5 planted faults (negate_condition, swap_return, boundary_flip, change_constant); uncaught in packages/worker/src/retry.js",
+        "ran": "caught 0 of 5 planted faults (change_constant); uncaught in packages/worker/src/retry.js",
         "where": "ran in a clean container",
         "result": "fail",
-        "summary": "caught 0 of 5 planted faults (negate_condition, swap_return, boundary_flip, change_constant); uncaught in packages/worker/src/retry.js"
+        "summary": "caught 0 of 5 planted faults (change_constant); uncaught in packages/worker/src/retry.js"
       },
       {
         "id": "ev-018",
@@ -877,11 +877,11 @@
     "record": [
       {
         "label": "Audit",
-        "value": "aud-2026-10-27-9f2ed83-33c1"
+        "value": "aud-2026-10-27-7070f44-e101"
       },
       {
         "label": "Commit",
-        "value": "9f2ed83 (clean tree)"
+        "value": "7070f44 (clean tree)"
       },
       {
         "label": "Rubric",
@@ -897,7 +897,7 @@
       },
       {
         "label": "Skill digest",
-        "value": "86495f7765bd"
+        "value": "fe180c43767f"
       },
       {
         "label": "Planted-fault seed",
@@ -909,7 +909,7 @@
       },
       {
         "label": "Stored in",
-        "value": ".agent-readiness/history/audits/aud-2026-10-27-9f2ed83-33c1"
+        "value": ".agent-readiness/history/audits/aud-2026-10-27-7070f44-e101"
       }
     ]
   }

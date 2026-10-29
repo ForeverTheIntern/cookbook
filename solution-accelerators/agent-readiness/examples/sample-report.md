@@ -4,13 +4,13 @@
 
 ## 1. Where you stand: Level 1 of 4, bootable, for bug fixes
 
-Audited Nov 30, 2026 at 9b5563d
+Audited Nov 30, 2026 at 9a2c092
 
-**Agents can build and test worker, but its checks can't yet catch wrong bug fixes, and 59% of recent changes land there. api and shared are already ready for bug fixes.**
+**Agents can build and test worker, but its tests can't yet catch wrong bug fixes, and 25% of recent changes land there. api and shared are already ready for bug fixes.**
 
-- **Active components ready for bug fixes:** 2 of 3. Active means at least 10% of recent changes.
+- **Components ready for bug fixes:** 2 of 3. Last audit: 2 of 3.
 - **Agent PRs that pass CI the first time:** 65% (11 of 17). Other PRs: 71% (27 of 38), Oct 31 to Nov 30, 2026.
-- **Recent changes in components below Level 2:** 59%. Changes in the last 90 days.
+- **Recent changes in components below Level 2:** 25%. Last audit: 27%, counting the last 90 days.
 
 Level 0 Not bootable > [Level 1 Bootable] > Level 2 Verifiable > Level 3 Delegable > Level 4 Scalable
 
@@ -20,17 +20,17 @@ Next: Level 2, verifiable. Met: build, lint, type-check and test commands pass a
 
 > **Recommendation:** Decision needed: what the untested behavior in packages/worker/src/retry.js should be.
 
-The level covers 3 components and ignores infra (4% of changes, Terraform isn't supported by this rubric). Agent PRs are matched by head branch starting with cursor/.
+The level covers 3 components and ignores infra (0% of changes, Terraform isn't supported by this rubric). Agent PRs are matched by head branch starting with cursor/.
 
 ## 2. Next actions and how they move the needle
 
-Effort against impact (impact is the share of recent changes an action unblocks): 1. Make worker's tests catch wrong behavior (effort medium, 59%).
+Effort against impact (impact is the share of recent changes an action unblocks): 1. Make worker's tests catch wrong behavior (effort medium, 25%).
 
 ### 1. Make worker's tests catch wrong behavior
 
 - **Why it matters:** The audit planted 5 faults in worker in a throwaway copy, and the tests caught 0.
-- **How it moves the needle:** Takes worker to Level 2 for bug fixes, covering 59% of recent changes. Changes in worker get a real pass-or-fail signal, so reviewers catch less by hand.
-- **What to watch:** Share of agent PRs touching worker where a reviewer requested changes. Now: 2 of 3 (too few for a rate), Sep 27 to Oct 27, 2026.
+- **How it moves the needle:** Takes worker to Level 2 for bug fixes, covering 25% of recent changes. Changes in worker get a real pass-or-fail signal, so reviewers catch less by hand.
+- **What to watch:** Share of agent PRs touching worker where a reviewer requested changes. Baseline: 2 of 3 (too few for a rate), Sep 27 to Oct 27, 2026. Now: 50% (3 of 6), Oct 31 to Nov 30, 2026.
 - **Research:** In DeployBench, 53.9% of failed runs passed generic checks and failed only task-specific ones. 51 research-artifact deployment tasks. https://deploybench.vercel.app/
 - **Effort and owner:** Medium: tests in worker only. Component owner.
 - **Decision needed:** What the untested behavior in packages/worker/src/retry.js should be.
@@ -56,7 +56,7 @@ Effort against impact (impact is the share of recent changes an action unblocks)
 | Oct 27 | audit | 0 | 0 | 2 | 1 |
 | Oct 30 | audit | 1 | 2 | 2 | 1 |
 | Nov 6 | recheck | 1 | 2 | 2 | 1 |
-| Nov 13 | recheck failed, npm run lint failed: npm error command sh -c node ../../scripts/lint.mjs src | 1 | 2 | 1 | 1 |
+| Nov 13 | recheck failed, npm run lint failed: src/money.js: remove console.log | 1 | 2 | 1 | 1 |
 | Nov 20 | recheck | 1 | 2 | 2 | 1 |
 | Nov 30 | audit | 1 | 2 | 2 | 1 |
 
@@ -66,9 +66,9 @@ A failed recheck lowers a level and a later passing recheck restores it. Only an
 
 | Step | Closed | Expected | Observed |
 |---|---|---|---|
-| 2. Set up Postgres for agents in api | Oct 30 | Agents can run api's checks before they push, so fewer agent PRs fail CI the first time. Watch: Share of agent PRs touching api that pass CI the first time, 20% (1 of 5). | 20% (1 of 5) to 78% (7 of 9) (shared with step 1, step 4 and step 5) |
-| 4. Fix the stale agent instructions | Oct 30 | Agents stop following stale steps, such as running pnpm in a repo that doesn't use it. Watch: Agent PRs that add a stray pnpm-lock.yaml, 11% (1 of 9). | 11% (1 of 9) to 0% (0 of 17) (shared with step 1, step 2 and step 5) |
-| 5. Check api's tests with planted faults | Oct 30 | Changes in api get a real pass-or-fail signal, so reviewers catch less by hand. Watch: Share of agent PRs touching api where a reviewer requested changes, 40% (2 of 5). | 40% (2 of 5) to 11% (1 of 9) (shared with step 1, step 2 and step 4) |
+| 2. Set up Postgres for agents in api | Oct 30 | Agents can run api's checks before they push, so fewer agent PRs fail CI the first time. Watch: Share of agent PRs touching api that pass CI the first time, 20% (1 of 5). | 20% (1 of 5) to 78% (7 of 9) (shared with step 4 and step 5) |
+| 4. Fix the stale agent instructions | Oct 30 | Agents stop following stale steps, such as running pnpm in a repo that doesn't use it. Watch: Agent PRs that add a stray pnpm-lock.yaml, 11% (1 of 9). | 11% (1 of 9) to 0% (0 of 17) (shared with step 2 and step 5) |
+| 5. Check api's tests with planted faults | Oct 30 | Changes in api get a real pass-or-fail signal, so reviewers catch less by hand. Watch: Share of agent PRs touching api where a reviewer requested changes, 40% (2 of 5). | 40% (2 of 5) to 11% (1 of 9) (shared with step 2 and step 4) |
 
 No test files changed since the last audit. No test files were deleted. No test cases were removed overall. No skip markers were added. The CI workflow is unchanged. The lockfile is unchanged.
 
@@ -99,9 +99,9 @@ Not assessed by this rubric version, which is different from unknown: whether CI
 
 | Component | Share of changes | First PR | Bug fixes | Features and refactors |
 |---|---|---|---|---|
-| `api` | 0% | 2 Verifiable | 2 Verifiable | 2 Verifiable |
-| `shared` | 37% | 2 Verifiable | 2 Verifiable | 2 Verifiable |
-| `worker` | 59% | 2 Verifiable | 1 Bootable | 1 Bootable |
+| `api` | 59% | 2 Verifiable | 2 Verifiable | 2 Verifiable |
+| `shared` | 16% | 2 Verifiable | 2 Verifiable | 2 Verifiable |
+| `worker` | 25% | 2 Verifiable | 1 Bootable | 1 Bootable |
 
 Repo levels: First PR 2, Bug fixes 1, Features and refactors 1, Repo-wide changes 1. The repo level is the lowest level among components that get at least 10% of changes over 90 days; a component joins or leaves that set only after two audits on the same side of the line.
 
@@ -109,7 +109,7 @@ Repo levels: First PR 2, Bug fixes 1, Features and refactors 1, Repo-wide change
 - **Bug fixes:** Level 2 needs: build, lint, type-check and test commands pass, tests catch planted faults and normal work needs no production access.
 - **Features and refactors:** Level 2 needs: build, lint, type-check and test commands pass, tests catch planted faults, normal work needs no production access and agent instructions are accurate.
 - **Repo-wide changes:** Level 2 needs: build, lint, type-check and test commands pass, tests catch planted faults, normal work needs no production access, toolchain versions are pinned and a frozen install reproduces the lockfile.
-- `infra` (4% of changes) is not assessed: Terraform isn't supported by this rubric.
+- `infra` (0% of changes) is not assessed: Terraform isn't supported by this rubric.
 
 ### Agent PR outcomes
 
@@ -163,9 +163,9 @@ Missing: hooks.
 | `ev-010` | `verify.canonical_interface` | worker | npm run lint | ran in a clean container | pass: lint passed |
 | `ev-011` | `bootstrap.cold_replay` | worker | npm run test | ran in a clean container | pass: test passed |
 | `ev-012` | `bootstrap.cold_replay` | repo | frozen install reproduced the lockfile | ran in a clean container | pass: frozen install reproduced the lockfile |
-| `ev-013` | `verify.behavioral_oracle` | api | caught 5 of 5 planted faults (change_constant, drop_throw_or_return, boundary_flip, negate_condition) | ran in a clean container | pass: caught 5 of 5 planted faults (change_constant, drop_throw_or_return, boundary_flip, negate_condition) |
-| `ev-014` | `verify.behavioral_oracle` | shared | caught 5 of 5 planted faults (change_constant, drop_throw_or_return, negate_condition) | ran in a clean container | pass: caught 5 of 5 planted faults (change_constant, drop_throw_or_return, negate_condition) |
-| `ev-015` | `verify.behavioral_oracle` | worker | caught 0 of 5 planted faults (negate_condition, swap_return, boundary_flip, change_constant); uncaught in packages/worker/src/retry.js | ran in a clean container | fail: caught 0 of 5 planted faults (negate_condition, swap_return, boundary_flip, change_constant); uncaught in packages/worker/src/retry.js |
+| `ev-013` | `verify.behavioral_oracle` | api | caught 5 of 5 planted faults (boundary_flip, change_constant, drop_throw_or_return, negate_condition) | ran in a clean container | pass: caught 5 of 5 planted faults (boundary_flip, change_constant, drop_throw_or_return, negate_condition) |
+| `ev-014` | `verify.behavioral_oracle` | shared | caught 5 of 5 planted faults (boundary_flip, change_constant, negate_condition, drop_throw_or_return) | ran in a clean container | pass: caught 5 of 5 planted faults (boundary_flip, change_constant, negate_condition, drop_throw_or_return) |
+| `ev-015` | `verify.behavioral_oracle` | worker | caught 0 of 5 planted faults (change_constant); uncaught in packages/worker/src/retry.js | ran in a clean container | fail: caught 0 of 5 planted faults (change_constant); uncaught in packages/worker/src/retry.js |
 | `ev-016` | `context.instructions_verified` | repo | npm run lint -w api | ran in a clean container | pass: .cursor/rules/style.mdc:6 `npm run lint -w api` replays |
 | `ev-017` | `context.instructions_verified` | repo | node --version && npm --version | ran in a clean container | pass: .cursor/skills/verify/SKILL.md:15 `node --version && npm --version` replays |
 | `ev-018` | `context.instructions_verified` | repo | npm run test | ran in a clean container | pass: .cursor/skills/verify/SKILL.md:56 `npm run test` replays |
@@ -178,12 +178,12 @@ Evidence strength, weakest to strongest: stated in docs, read from files, ran on
 
 ### Audit record
 
-- **Audit:** aud-2026-11-30-9b5563d-467f
-- **Commit:** 9b5563d (clean tree)
+- **Audit:** aud-2026-11-30-9a2c092-ae7a
+- **Commit:** 9a2c092 (clean tree)
 - **Rubric:** 2026-10-alpha
 - **Permission tier:** local-exec
 - **Seal:** Seal verified against release agent-readiness-v0.1.0
-- **Skill digest:** 86495f7765bd
+- **Skill digest:** fe180c43767f
 - **Planted-fault seed:** pinned (eval run; not a production result)
 - **Replay environment:** docker container, readiness-ubuntu-node22
-- **Stored in:** .agent-readiness/history/audits/aud-2026-11-30-9b5563d-467f
+- **Stored in:** .agent-readiness/history/audits/aud-2026-11-30-9a2c092-ae7a

@@ -4,13 +4,13 @@
 
 ## 1. Where you stand: Level 0 of 4, not bootable, for bug fixes
 
-Audited Oct 27, 2026 at 9f2ed83
+Audited Oct 27, 2026 at 7070f44
 
-**Agents can't pass the tests in api from a clean checkout, and 56% of recent changes land there. shared is already ready for bug fixes.**
+**Agents can't pass the tests in api from a clean checkout because its tests need Postgres running, which the setup doesn't start, and 56% of recent changes land there. shared is already ready for bug fixes.**
 
-- **Active components ready for bug fixes:** 1 of 3. Active means at least 10% of recent changes.
+- **Components ready for bug fixes:** 1 of 3. Level 2 needs 3 of 3.
 - **Agent PRs that pass CI the first time:** 33% (3 of 9). Other PRs: 71% (29 of 41), Sep 27 to Oct 27, 2026.
-- **Recent changes in components below Level 1:** 56%. Changes in the last 90 days.
+- **Recent changes in components below Level 1:** 56%. Level 1 needs 0%, counting the last 90 days.
 
 [Level 0 Not bootable] > Level 1 Bootable > Level 2 Verifiable > Level 3 Delegable > Level 4 Scalable
 
@@ -174,8 +174,8 @@ Missing: an environment setup and hooks.
 | `ev-013` | `bootstrap.cold_replay` | worker | npm run test | ran in a clean container | pass: test passed |
 | `ev-014` | `bootstrap.cold_replay` | repo | frozen install reproduced the lockfile | ran in a clean container | pass: frozen install reproduced the lockfile |
 | `ev-015` | `verify.behavioral_oracle` | api | tests must pass before faults can be planted | ran in a clean container | not_run: tests must pass before faults can be planted |
-| `ev-016` | `verify.behavioral_oracle` | shared | caught 5 of 5 planted faults (change_constant, drop_throw_or_return, negate_condition) | ran in a clean container | pass: caught 5 of 5 planted faults (change_constant, drop_throw_or_return, negate_condition) |
-| `ev-017` | `verify.behavioral_oracle` | worker | caught 0 of 5 planted faults (negate_condition, swap_return, boundary_flip, change_constant); uncaught in packages/worker/src/retry.js | ran in a clean container | fail: caught 0 of 5 planted faults (negate_condition, swap_return, boundary_flip, change_constant); uncaught in packages/worker/src/retry.js |
+| `ev-016` | `verify.behavioral_oracle` | shared | caught 5 of 5 planted faults (drop_throw_or_return, change_constant, negate_condition) | ran in a clean container | pass: caught 5 of 5 planted faults (drop_throw_or_return, change_constant, negate_condition) |
+| `ev-017` | `verify.behavioral_oracle` | worker | caught 0 of 5 planted faults (change_constant); uncaught in packages/worker/src/retry.js | ran in a clean container | fail: caught 0 of 5 planted faults (change_constant); uncaught in packages/worker/src/retry.js |
 | `ev-018` | `context.instructions_verified` | repo | npm run lint -w api | ran in a clean container | pass: .cursor/rules/style.mdc:6 `npm run lint -w api` replays |
 | `ev-019` | `context.instructions_verified` | repo | npm run test -w shared | ran in a clean container | pass: AGENTS.md:6 `npm run test -w shared` replays |
 
@@ -185,12 +185,12 @@ Evidence strength, weakest to strongest: stated in docs, read from files, ran on
 
 ### Audit record
 
-- **Audit:** aud-2026-10-27-9f2ed83-33c1
-- **Commit:** 9f2ed83 (clean tree)
+- **Audit:** aud-2026-10-27-7070f44-e101
+- **Commit:** 7070f44 (clean tree)
 - **Rubric:** 2026-10-alpha
 - **Permission tier:** local-exec
 - **Seal:** Seal verified against release agent-readiness-v0.1.0
-- **Skill digest:** 86495f7765bd
+- **Skill digest:** fe180c43767f
 - **Planted-fault seed:** pinned (eval run; not a production result)
 - **Replay environment:** docker container, readiness-ubuntu-node22
-- **Stored in:** .agent-readiness/history/audits/aud-2026-10-27-9f2ed83-33c1
+- **Stored in:** .agent-readiness/history/audits/aud-2026-10-27-7070f44-e101

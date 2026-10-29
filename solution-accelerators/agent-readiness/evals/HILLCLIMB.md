@@ -230,3 +230,17 @@ From the four-model review, not fixed in this PR:
 - **The effort and impact matrix** can put the only recommended action in "Later", because impact is an absolute share and medium effort sits past the midpoint.
 - The page judge sits at 0.70. Its top remaining complaints are the unmeasured pull-request number and rubric condition labels such as "lockfile" and "clean container" (a rubric bump).
 - The model matrix (two more models on `full`) needs the SDK driver and a key.
+
+## Field run: a brownfield repo (October 29, 2026)
+
+The first run on a real repo, with standalone apps under `apps/`, no root workspace, a .NET service and no container runtime, reported Level 0 from an empty component set. Five fixes followed, approved together, each with a regression test that fails on the scripts the run used:
+
+| Finding | Fix | Test |
+| --- | --- | --- |
+| The TypeScript app under `apps/` wasn't found, so 100% of changes went to the .NET service | Standalone Node and Python packages outside a workspace become components with their own install, lockfile and toolchain pins | `nested-apps-dotnet` fixture; `tests/units.test.ts` "standalone packages under apps/" |
+| With nothing assessed, part 1 said "Met", "0 of 0" and "No actions are open" | Part 1 says no component could be assessed and why, and marks no level | `tests/render.test.ts` "with no assessable component" |
+| `contract add --component buyer-web` was accepted and then silently dropped | `contract add` and `run --component` refuse components the scan didn't find or can't assess | `tests/cli.test.ts` "contract add and run refuse components" |
+| `dotnet: command not found` on the host read as a repo defect, and "Level 1 not provable" never reached the report | A missing tool on a host fallback leaves Level 1 unproven, and part 1 says Level 1 isn't provable on this machine | `tests/cli.test.ts` "on a host fallback, a missing tool"; `tests/units.test.ts` "a script's missing tool" |
+| The host fallback would have run `sudo service docker start` | The safety check lists sudo, and the host fallback never runs it | `tests/units.test.ts` "sudo" |
+
+These change discovery and report text but no level rule or `expected.json`; every existing fixture's levels are unchanged. The new fixture joins the full eval set, which hasn't been rerun with the agent since.

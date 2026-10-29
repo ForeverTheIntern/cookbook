@@ -75,7 +75,7 @@ Tests added to catch planted faults are proved against a fresh set of faults the
 - **Private registries:** `--registry-env NPM_TOKEN,PIP_INDEX_URL` passes named variables to the install. Names are recorded and values never are. Without them, a 401 reads "registry credentials not provided", not a repo blocker.
 - **Network:** tests run with networking off after the install.
 - **Base images:** `--image <ref>` replays on an approved internal image. A repo-declared `.cursor/Dockerfile` in `environment.json` is built and used.
-- **No container runtime:** the replay falls back to a fresh copy on the host, and the report says Level 1 can't be proved on that machine. The scheduled workflow on a hosted runner can prove it.
+- **No container runtime:** the replay falls back to a fresh copy on the host, and part 1 says Level 1 can't be proved on that machine. A tool the host lacks is reported as a limit of the machine, not a repo defect, and commands that use `sudo` are listed by the safety check and never run on the host. The scheduled workflow on a hosted runner can prove Level 1.
 - **Budgets:** `--budget-component` and `--budget-total` (15 and 60 minutes). Anything cut off counts as not run.
 - **Org skill builders:** `readiness assets --org <owner> --tier external-systems` lists the top 10 skill authors across GitHub-visible repos, capped at 200 repos.
 
@@ -124,7 +124,8 @@ The evals run the real Cursor agent on each fixture with a pinned prompt and gra
 
 - Not assessed yet: whether CI matches the local commands, flaky tests, the quality of error messages, how easily code can be found, and outcome checks on held-out tasks.
 - Planted faults target files the tests import, most recently changed first. Targeting by coverage is a follow-up. Faults are planted in TypeScript, JavaScript and Python only.
-- Components are found in npm, pnpm and yarn workspaces and in single Node or Python packages. Other toolchains are listed as not assessed.
+- Components are found in npm, pnpm and yarn workspaces, in single Node or Python packages, and in standalone Node or Python packages under folders such as `apps/` when there's no root workspace, each with its own install. Other toolchains are listed as not assessed.
+- The instruction check reads a fenced `npm test` after a `cd apps/web` line as a root command.
 - First-time CI pass is read from the check runs on a PR's first commit.
 - Follow-ups outside this folder: the cookbook index row, a docs page, a blog post, and running the recheck from a Cursor automation.
 

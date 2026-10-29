@@ -108,7 +108,7 @@ function cmdInit(a: Args): void {
   const { audit, local } = initAudit({ repo: repoOf(a), scenarios, tier, registryEnv, inheritEnv: Boolean(a.flags["inherit-env"]), force: Boolean(a.flags.force) });
   log(`Opened ${audit.id} (${tier}) at ${audit.repo.commit.slice(0, 7)}${scenarios.length ? `, with the ${scenarios.map((s) => s.id).join(" and ")} ${scenarios.length > 1 ? "scenarios" : "scenario"} for every component` : ""}${audit.repo.dirtyTree ? "; uncommitted changes are not audited" : ""}.`);
   log(`Audit tree: ${local.tree}`);
-  if (audit.seed.pinned) log("Planted-fault seed is pinned by READINESS_EVAL_SEED: this is an eval run, not a production audit.");
+  if (audit.seed.pinned) log("Planted-fault seed is pinned by SA_READINESS_EVAL_SEED: this is an eval run, not a production audit.");
 }
 
 function cmdScan(a: Args): void {
@@ -238,8 +238,8 @@ async function cmdReplay(a: Args): Promise<void> {
       component: opt(a, "component"),
       mutants: !a.flags["no-mutants"],
       instructions: !a.flags["no-instructions"],
-      runtime: str(a, "runtime", process.env.READINESS_RUNTIME || "auto"),
-      image: opt(a, "image") ?? (process.env.READINESS_IMAGE || undefined),
+      runtime: str(a, "runtime", process.env.SA_READINESS_RUNTIME || "auto"),
+      image: opt(a, "image") ?? (process.env.SA_READINESS_IMAGE || undefined),
       budgetComponentMinutes: Number(str(a, "budget-component", String(rubric.budgets.componentMinutes))),
       budgetTotalMinutes: Number(str(a, "budget-total", String(rubric.budgets.totalMinutes))),
       log,
@@ -392,7 +392,7 @@ function cmdVerify(a: Args): void {
 
 async function cmdRecheck(a: Args): Promise<void> {
   const p = paths(repoOf(a));
-  const r = await recheck(p, { runtime: str(a, "runtime", process.env.READINESS_RUNTIME || "auto"), image: opt(a, "image") ?? (process.env.READINESS_IMAGE || undefined), log });
+  const r = await recheck(p, { runtime: str(a, "runtime", process.env.SA_READINESS_RUNTIME || "auto"), image: opt(a, "image") ?? (process.env.SA_READINESS_IMAGE || undefined), log });
   log(`Recheck ${r.line.id}: ${r.line.result}${r.line.note ? ` (${r.line.note})` : ""}. Repo level: ${r.line.repoLevel}; components: ${JSON.stringify(r.line.levels)}.`);
   if (r.line.result === "failed") process.exitCode = 1;
 }

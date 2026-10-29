@@ -8,7 +8,7 @@
     "dirtyTree": false,
     "rubric": "2026-10-alpha",
     "tier": "local-exec",
-    "scriptsDigest": "548ab08e46e6e350bd95621f29002e9d6bd36507b94be1c02546cf04629654dc",
+    "scriptsDigest": "8c2567e57ec5926c931689bd768d8c48bd01239e3d450f27bce64a337b4ce86f",
     "seedPinned": true,
     "sealStatus": "Scripts match the agent-readiness-v0.1.0 manifest bundled with this copy; the published release isn't checked here",
     "staleCopy": null,
@@ -1002,7 +1002,7 @@
       },
       {
         "label": "Skill digest",
-        "value": "548ab08e46e6"
+        "value": "8c2567e57ec5"
       },
       {
         "label": "Planted faults",

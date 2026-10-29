@@ -1,10 +1,10 @@
 {
-  "ranAt": "2026-10-29T19:42:34.960Z",
+  "ranAt": "2026-10-29T20:11:54.274Z",
   "results": [
     {
       "id": "slugify",
       "sha": "3b17b2e84b97624a683aafaa38184bf2746fab22",
-      "minutes": 0.7,
+      "minutes": 0.6,
       "repoLevel": 2,
       "outcome": "proven",
       "levels": {
@@ -28,7 +28,7 @@
     {
       "id": "starlette",
       "sha": "2745bbc5afa2f8ce900d290bedca2bc5d3f3cfe8",
-      "minutes": 5,
+      "minutes": 4.7,
       "repoLevel": 2,
       "outcome": "proven",
       "levels": {
@@ -109,7 +109,7 @@
     {
       "id": "serilog",
       "sha": "43105b35095337d77f022561a8f2d3db2f9a7937",
-      "minutes": 0.1,
+      "minutes": 0,
       "repoLevel": null,
       "outcome": "not_assessed",
       "levels": {},

@@ -33,9 +33,9 @@ describe("CLI", { concurrency: 4 }, () => {
     assert.match(status, /"where": "fresh_copy"/);
   });
 
-  test("empty READINESS_IMAGE and READINESS_RUNTIME mean the defaults", { skip: detectRuntime("auto") ? false : "no container runtime" }, () => {
+  test("empty SA_READINESS_IMAGE and SA_READINESS_RUNTIME mean the defaults", { skip: detectRuntime("auto") ? false : "no container runtime" }, () => {
     const repo = materialize("healthy-node");
-    const r = readiness(repo, ["audit", "--tier", "local-exec", "--no-mutants"], { READINESS_IMAGE: "", READINESS_RUNTIME: "" });
+    const r = readiness(repo, ["audit", "--tier", "local-exec", "--no-mutants"], { SA_READINESS_IMAGE: "", SA_READINESS_RUNTIME: "" });
     assert.equal(r.code, 0, r.out);
     assert.doesNotMatch(r.out, /Could not start a container|No container runtime/);
   });
@@ -186,7 +186,7 @@ describe("CLI", { concurrency: 4 }, () => {
   });
 
   test("a pinned eval seed is labeled and never passes as a production result", () => {
-    const repo = hostAudit("healthy-node", ["--no-mutants"], { READINESS_EVAL_SEED: "eval-1" });
+    const repo = hostAudit("healthy-node", ["--no-mutants"], { SA_READINESS_EVAL_SEED: "eval-1" });
     const r = JSON.parse(readFileSync(join(repo, ".agent-readiness/latest/report.json"), "utf8"));
     assert.equal(r.audit.seedPinned, true);
     assert.match(readFileSync(join(repo, ".agent-readiness/latest/report.md"), "utf8"), /pinned seed; not a production result/);

@@ -44,7 +44,7 @@ function run(g: Golden): Result {
     git(dir, ["-c", "advice.detachedHead=false", "checkout", "--quiet", g.sha]);
     const committed = git(dir, ["show", "-s", "--format=%cI", g.sha]).trim();
     const now = new Date(new Date(committed).getTime() + 86400000).toISOString();
-    const r = readiness(dir, ["audit", "--tier", "local-exec"], { READINESS_NOW: now, READINESS_EVAL_SEED: `golden-${g.id}` });
+    const r = readiness(dir, ["audit", "--tier", "local-exec"], { SA_READINESS_NOW: now, SA_READINESS_EVAL_SEED: `golden-${g.id}` });
     if (r.code !== 0) failures.push(`audit exited ${r.code}: ${r.out.slice(-400)}`);
     const report = JSON.parse(readFileSync(join(dir, ".agent-readiness/latest/report.json"), "utf8")) as ReportJson;
     const audits = join(dir, ".agent-readiness/history/audits");

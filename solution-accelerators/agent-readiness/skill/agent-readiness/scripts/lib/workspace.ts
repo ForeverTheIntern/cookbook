@@ -24,7 +24,7 @@ export function resolveRepo(start: string): string {
 
 export function paths(repo: string): Paths {
   const records = join(repo, ".agent-readiness");
-  const history = process.env.READINESS_HISTORY_DIR ? resolve(process.env.READINESS_HISTORY_DIR) : join(records, "history");
+  const history = process.env.SA_READINESS_HISTORY_DIR ? resolve(process.env.SA_READINESS_HISTORY_DIR) : join(records, "history");
   return {
     repo,
     records,
@@ -118,7 +118,7 @@ export function initAudit(opts: InitOptions): { audit: Audit; local: LocalInfo; 
   const current = currentDraftId(p);
   if (current && !opts.force) fail(`A draft audit is already open: ${current}. Seal it, or pass --force to abandon it.`);
   const commit = gitOrThrow(["rev-parse", "HEAD"], opts.repo).trim();
-  const seedEnv = process.env.READINESS_EVAL_SEED;
+  const seedEnv = process.env.SA_READINESS_EVAL_SEED;
   const id = `aud-${today()}-${commit.slice(0, 7)}-${seedEnv ? sha256(`${seedEnv}:${commit}:${nowIso()}`).slice(0, 4) : randomHex(2)}`;
   const tree = join(mkdtempSync(join(tmpdir(), `readiness-${id}-`)), "tree");
   exportTree(opts.repo, commit, tree);

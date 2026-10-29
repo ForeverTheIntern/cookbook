@@ -16,9 +16,9 @@ on:
 permissions:
   contents: read
 env:
-  ACCELERATOR_REPO: cursor/cookbook
-  ACCELERATOR_REF: agent-readiness-v0.1.0
-  READINESS: node --experimental-strip-types --no-warnings .readiness-accelerator/solution-accelerators/agent-readiness/skill/agent-readiness/scripts/readiness.ts
+  SA_ACCELERATOR_REPO: cursor/cookbook
+  SA_ACCELERATOR_REF: agent-readiness-v0.1.0
+  SA_READINESS: node --experimental-strip-types --no-warnings .readiness-accelerator/solution-accelerators/agent-readiness/skill/agent-readiness/scripts/readiness.ts
 jobs:
   static:
     runs-on: ubuntu-latest
@@ -32,11 +32,11 @@ jobs:
       - name: Check out the pinned accelerator
         uses: actions/checkout@v4
         with:
-          repository: ${{ env.ACCELERATOR_REPO }}
-          ref: ${{ env.ACCELERATOR_REF }}
+          repository: ${{ env.SA_ACCELERATOR_REPO }}
+          ref: ${{ env.SA_ACCELERATOR_REF }}
           path: .readiness-accelerator
           sparse-checkout: solution-accelerators/agent-readiness/skill
       - name: Static checks
         run: |
-          $READINESS init --tier read-only
-          $READINESS scan --strict
+          $SA_READINESS init --tier read-only
+          $SA_READINESS scan --strict

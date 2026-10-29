@@ -207,7 +207,7 @@ Evidence strength, weakest to strongest: stated in docs, read from files, ran on
 - **Rubric:** 2026-10-alpha
 - **Permission tier:** local-exec
 - **Seal:** Scripts match the agent-readiness-v0.1.0 manifest bundled with this copy; the published release isn't checked here
-- **Skill digest:** 548ab08e46e6
+- **Skill digest:** 8c2567e57ec5
 - **Planted faults:** seed pinned (eval run; not a production result)
 - **Replay environment:** docker container, node:22-bookworm
 - **Stored in:** .agent-readiness/history/audits/aud-2026-10-27-7070f44-e101

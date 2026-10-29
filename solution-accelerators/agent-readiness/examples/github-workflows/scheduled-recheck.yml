@@ -11,9 +11,9 @@ on:
 permissions:
   contents: write
 env:
-  ACCELERATOR_REPO: cursor/cookbook
-  ACCELERATOR_REF: agent-readiness-v0.1.0
-  READINESS: node --experimental-strip-types --no-warnings .readiness-accelerator/solution-accelerators/agent-readiness/skill/agent-readiness/scripts/readiness.ts
+  SA_ACCELERATOR_REPO: cursor/cookbook
+  SA_ACCELERATOR_REF: agent-readiness-v0.1.0
+  SA_READINESS: node --experimental-strip-types --no-warnings .readiness-accelerator/solution-accelerators/agent-readiness/skill/agent-readiness/scripts/readiness.ts
 jobs:
   recheck:
     runs-on: ubuntu-latest
@@ -29,20 +29,20 @@ jobs:
       - name: Check out the pinned accelerator
         uses: actions/checkout@v4
         with:
-          repository: ${{ env.ACCELERATOR_REPO }}
-          ref: ${{ env.ACCELERATOR_REF }}
+          repository: ${{ env.SA_ACCELERATOR_REPO }}
+          ref: ${{ env.SA_ACCELERATOR_REF }}
           path: .readiness-accelerator
           sparse-checkout: solution-accelerators/agent-readiness/skill
       - name: Verify the last audit's seal against the release
         env:
           GH_TOKEN: ${{ github.token }}
-        run: $READINESS verify-seal latest --release-repo "$ACCELERATOR_REPO" --release-ref "$ACCELERATOR_REF" --tier external-systems
+        run: $SA_READINESS verify-seal latest --release-repo "$SA_ACCELERATOR_REPO" --release-ref "$SA_ACCELERATOR_REF" --tier external-systems
       - name: Recheck
         id: recheck
-        run: $READINESS recheck
+        run: $SA_READINESS recheck
         # Private registries: add `--registry-env NPM_TOKEN` to the audit, and pass the secret here:
         # env:
         #   NPM_TOKEN: ${{ secrets.NPM_READ_TOKEN }}
       - name: Append to the history branch
         if: always() && steps.recheck.outcome != 'skipped'
-        run: $READINESS history push --push
+        run: $SA_READINESS history push --push

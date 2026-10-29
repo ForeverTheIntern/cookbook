@@ -54,7 +54,7 @@ export function readText(path: string): string {
 }
 
 export function nowIso(): string {
-  const fixed = process.env.READINESS_NOW;
+  const fixed = process.env.SA_READINESS_NOW;
   if (fixed) return new Date(fixed).toISOString();
   return new Date().toISOString();
 }

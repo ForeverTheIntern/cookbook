@@ -10,7 +10,7 @@ const repo = materialize("monorepo-mixed", { now: T0 });
 process.stdout.write(`Sample repo: ${repo}\n`);
 
 const cmd = ["audit", "--tier", "local-exec", "--scenario", "bug_fixes", "--outcomes-input", materializePrs("monorepo-mixed", T0), ...(image ? ["--image", image] : [])];
-const r = readiness(repo, cmd, { READINESS_NOW: T0, READINESS_EVAL_SEED: "sample-seed" });
+const r = readiness(repo, cmd, { SA_READINESS_NOW: T0, SA_READINESS_EVAL_SEED: "sample-seed" });
 process.stdout.write(`readiness ${cmd.join(" ")} -> ${r.code}\n`);
 if (r.code !== 0) throw new Error(r.out);
 

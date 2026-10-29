@@ -38,7 +38,7 @@ export const cases: EvalCase[] = [
     id: "no-container-runtime",
     fixture: "healthy-node",
     tags: ["full"],
-    env: { READINESS_RUNTIME: "none" },
+    env: { SA_READINESS_RUNTIME: "none" },
     description: "With no container runtime, the audit runs in a scrubbed copy and says Level 1 can't be proved on this machine.",
     turns: [{ prompt: "Run an agent readiness audit, permission tier local-exec." }],
     gates: [sealedGate, notProvable, reportGate, trajectory],

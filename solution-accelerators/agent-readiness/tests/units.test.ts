@@ -72,17 +72,17 @@ describe("redaction", () => {
 
 describe("scrubbed environment", () => {
   test("the user's environment and credentials don't reach repo commands", () => {
-    process.env.READINESS_TEST_SECRET = "do-not-leak";
+    process.env.SA_READINESS_TEST_SECRET = "do-not-leak";
     process.env.NPM_TOKEN = "registry-value";
     const env = scrubbedEnv({});
-    assert.equal(env.READINESS_TEST_SECRET, undefined);
+    assert.equal(env.SA_READINESS_TEST_SECRET, undefined);
     assert.equal(env.NPM_TOKEN, undefined);
     assert.notEqual(env.HOME, process.env.HOME);
     assert.ok(env.HOME.includes("readiness-home-"));
     assert.equal(env.CI, "1");
     assert.equal(scrubbedEnv({ registryEnv: ["NPM_TOKEN"] }).NPM_TOKEN, "registry-value");
-    assert.equal(scrubbedEnv({ inheritEnv: true }).READINESS_TEST_SECRET, "do-not-leak");
-    delete process.env.READINESS_TEST_SECRET;
+    assert.equal(scrubbedEnv({ inheritEnv: true }).SA_READINESS_TEST_SECRET, "do-not-leak");
+    delete process.env.SA_READINESS_TEST_SECRET;
     delete process.env.NPM_TOKEN;
   });
 

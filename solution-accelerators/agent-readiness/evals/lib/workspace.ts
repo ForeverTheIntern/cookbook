@@ -59,8 +59,8 @@ export function loadWorkspace(root: string): { ws: Workspace; id: string; prompt
 }
 
 export function caseEnv(c: EvalCase): Record<string, string> {
-  const env: Record<string, string> = { READINESS_EVAL_SEED: EVAL_SEED, ...(c.env ?? {}) };
-  if (process.env.READINESS_IMAGE && c.remediation && !env.READINESS_IMAGE) env.READINESS_IMAGE = process.env.READINESS_IMAGE;
+  const env: Record<string, string> = { SA_READINESS_EVAL_SEED: EVAL_SEED, ...(c.env ?? {}) };
+  if (process.env.SA_READINESS_IMAGE && c.remediation && !env.SA_READINESS_IMAGE) env.SA_READINESS_IMAGE = process.env.SA_READINESS_IMAGE;
   return env;
 }
 

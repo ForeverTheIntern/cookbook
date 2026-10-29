@@ -60,7 +60,7 @@ On the same 48 reports, calibration moved the page score from 0.52 to 0.61. The 
 
 These changed the grader or the scripts' rendering, not the skill's instructions, so they aren't rounds. Each has a test.
 
-1. **Python fixtures ran in the wrong image.** `READINESS_IMAGE` went to every case, so `python-unpinned` replayed in a Node image with no Python and failed install. It now goes only to remediation cases. The first three python-unpinned runs were replaced by three runs after the fix.
+1. **Python fixtures ran in the wrong image.** `SA_READINESS_IMAGE` went to every case, so `python-unpinned` replayed in a Node image with no Python and failed install. It now goes only to remediation cases. The first three python-unpinned runs were replaced by three runs after the fix.
 2. **The harness's own commit failed the trajectory gate.** re-audit's second turn commits the user's instruction fix, and the gate read that as "made commits during an audit" in 3 of 3 runs. Commits a turn hook makes are now recorded in `harness-commits.txt` and excluded. The three re-audit workspaces were backfilled from their single hook commit and regraded. Test: `tests/evals.test.ts` "re-audit".
 3. **re-audit graded against the wrong levels.** It compared the second audit with the fixture's `expected.json`, which describes the drifted instructions. Once the instructions are fixed, first PRs reach Level 2 where build and test pass. The case now carries its post-fix levels, and the deterministic test proves them with two scripted audits.
 4. **Double period in narrated gaps.** `report.md` rendered "every time..** Blocks Level 2" whenever a narrated gap ended in a period (13 of 48 judge reasons). The renderer now strips it. Test: `tests/render.test.ts`.
@@ -209,7 +209,7 @@ Four models (Claude Opus 5.5, GPT-5.6 Sol, Gemini 4 Argon, Grok 4.7) reviewed th
 - **Lever:** script text (lever 3).
 - **Change:** each sentence names only what ran; the commands check counts and cites the evidence its condition reads; the seal line says "Scripts match the … manifest bundled with this copy; the published release isn't checked here"; Part 3 reads "What each closed step was expected to move, and what moved after it", with the not-attribution caveat under it; repo-wide conditions carry no component name; a level below 2 with no fix to offer is reported as unproven, with an ask to rerun where a container runtime exists.
 - **New tests:** `tests/render.test.ts` "part 1 and the checks claim only what the audit ran" and "an unproven level isn't reported as nothing blocking". Both fail on the old text.
-- **Also fixed:** an exported but empty `READINESS_IMAGE` was passed to `docker run` as the image name and dropped every level to 0. Test: `tests/cli.test.ts` "empty READINESS_IMAGE and READINESS_RUNTIME mean the defaults".
+- **Also fixed:** an exported but empty `SA_READINESS_IMAGE` was passed to `docker run` as the image name and dropped every level to 0. Test: `tests/cli.test.ts` "empty SA_READINESS_IMAGE and SA_READINESS_RUNTIME mean the defaults".
 
 | Measure | Before | After |
 | --- | --- | --- |

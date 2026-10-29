@@ -51,4 +51,4 @@ The headline says what holds the repo level and where. It doesn't list everythin
 ## The header
 
 - "Seal verified against release vX": the scripts that ran the audit match a tagged release. "Seal not verified" means they don't, or no release manifest shipped with the copy.
-- "Eval run with a pinned seed": the planted-fault seed came from `READINESS_EVAL_SEED`. `readiness verify-seal` won't treat it as a production result.
+- "Eval run with a pinned seed": the planted-fault seed came from `SA_READINESS_EVAL_SEED`. `readiness verify-seal` won't treat it as a production result.

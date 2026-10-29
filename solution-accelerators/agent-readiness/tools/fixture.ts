@@ -41,7 +41,7 @@ function gitc(cwd: string, args: string[], date: string, author: string, email: 
 }
 
 export function materialize(fixture: string, opts: { now?: string; into?: string } = {}): string {
-  const now = opts.now ?? process.env.READINESS_NOW ?? new Date().toISOString();
+  const now = opts.now ?? process.env.SA_READINESS_NOW ?? new Date().toISOString();
   const root = opts.into ?? mkdtempSync(join(tmpdir(), `fixture-${fixture}-`));
   const repo = join(root, fixture);
   mkdirSync(repo, { recursive: true });
@@ -159,7 +159,7 @@ export function auditFixture(fixture: string, run: ExpectedRun, opts: { seed?: s
   const repo = materialize(fixture, { now });
   const args = ["audit", "--tier", "local-exec"];
   if (run.scenarios) args.push("--scenario", run.scenarios.join(","));
-  const env: Record<string, string> = { READINESS_EVAL_SEED: opts.seed ?? "fixture-seed" };
+  const env: Record<string, string> = { SA_READINESS_EVAL_SEED: opts.seed ?? "fixture-seed" };
   if (run.registryEnv) {
     args.push("--registry-env", Object.keys(run.registryEnv).join(","));
     Object.assign(env, run.registryEnv);
@@ -178,7 +178,7 @@ export function fixtureNames(): string[] {
 }
 
 export function commitAll(repo: string, message: string, daysAgo = 0, now?: string): void {
-  const date = at(now ?? process.env.READINESS_NOW ?? new Date().toISOString(), daysAgo);
+  const date = at(now ?? process.env.SA_READINESS_NOW ?? new Date().toISOString(), daysAgo);
   gitc(repo, ["add", "-A"], date, "Contributor B", "b@example.com");
   gitc(repo, ["commit", "-q", "-m", message], date, "Contributor B", "b@example.com");
 }

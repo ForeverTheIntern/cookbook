@@ -16,8 +16,8 @@ import type { CaseRun, EvalCase, Trajectory } from "./lib/types.ts";
 import { applyTurnHook, externalPreamble, fillPrompt, loadWorkspace, prepare, skillPreamble } from "./lib/workspace.ts";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
-const DEFAULT_MODEL = process.env.READINESS_EVAL_MODEL ?? "composer-2";
-const JUDGE_MODEL = process.env.READINESS_JUDGE_MODEL ?? DEFAULT_MODEL;
+const DEFAULT_MODEL = process.env.SA_READINESS_EVAL_MODEL ?? "composer-2";
+const JUDGE_MODEL = process.env.SA_READINESS_JUDGE_MODEL ?? DEFAULT_MODEL;
 
 function args() {
   const a = process.argv.slice(2);

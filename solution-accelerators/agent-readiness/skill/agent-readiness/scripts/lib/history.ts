@@ -42,7 +42,12 @@ export function appendHistory(p: Paths, line: HistoryLine): void {
   const text = JSON.stringify(line) + "\n";
   guardSecrets("the history line", text);
   ensureDir(p.history);
-  const prev = exists(f) ? readText(f) : "";
+  let prev = "";
+  if (exists(f)) prev = readText(f);
+  else {
+    const fromBranch = git(["show", `${HISTORY_BRANCH}:history.jsonl`], p.repo);
+    if (fromBranch.ok) prev = fromBranch.stdout;
+  }
   writeText(f, prev + text);
 }
 

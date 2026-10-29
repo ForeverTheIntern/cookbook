@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { readFileSync, readdirSync, writeFileSync } from "node:fs";
+import { readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, test } from "node:test";
 import { saveDraft } from "../skill/agent-readiness/scripts/lib/workspace.ts";
@@ -114,6 +114,18 @@ describe("CLI", { concurrency: 4 }, () => {
     execFileSync("git", ["add", ".agent-readiness"], { cwd: repo });
     const staged = execFileSync("git", ["diff", "--cached", "--name-only"], { cwd: repo, encoding: "utf8" }).split("\n").filter(Boolean).sort();
     assert.deepEqual(staged, [".agent-readiness/.gitignore", ".agent-readiness/latest/report.json", ".agent-readiness/latest/report.md", ".agent-readiness/roadmap.json"]);
+  });
+
+  test("a run that starts from the history branch appends to it instead of replacing it", () => {
+    const repo = hostAudit("healthy-node", ["--no-mutants"]);
+    readiness(repo, ["history", "push"]);
+    rmSync(join(repo, ".agent-readiness/history"), { recursive: true });
+    assert.equal(readiness(repo, ["audit", "--goal", "bug_fixes", "--runtime", "none", "--no-mutants"]).code, 0);
+    readiness(repo, ["history", "push"]);
+    const lines = execFileSync("git", ["show", "agent-readiness/history:history.jsonl"], { cwd: repo, encoding: "utf8" }).trim().split("\n");
+    assert.equal(lines.length, 2);
+    const report = JSON.parse(readFileSync(join(repo, ".agent-readiness/latest/report.json"), "utf8"));
+    assert.equal(report.progress.history.length, 2);
   });
 
   test("diff flags weakened tests between two audits", () => {

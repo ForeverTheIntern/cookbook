@@ -1,0 +1,66 @@
+# For the repository that hosts this accelerator. Copy to .github/workflows/agent-readiness-evals.yml.
+# Every PR that touches the accelerator runs the deterministic suite. PRs that touch the skill, rubric
+# or evals also run the smoke skill evals against the real Cursor agent; full runs weekly and when the
+# default model changes. Without the CURSOR_API_KEY secret (for example on forks) the skill evals skip
+# with a notice. A hard-gate regression against evals/baseline.json fails the job.
+name: agent-readiness-evals
+on:
+  pull_request:
+    paths:
+      - "solution-accelerators/agent-readiness/**"
+  schedule:
+    - cron: "0 6 * * 1"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: smoke or full
+        default: full
+permissions:
+  contents: read
+defaults:
+  run:
+    working-directory: solution-accelerators/agent-readiness
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: solution-accelerators/agent-readiness/.nvmrc
+      - run: npm ci
+      - run: npm run check
+
+  skill-evals:
+    needs: check
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    env:
+      CURSOR_API_KEY: ${{ secrets.CURSOR_API_KEY }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Decide which set to run
+        id: set
+        run: |
+          if [ -z "$CURSOR_API_KEY" ]; then echo "::notice::CURSOR_API_KEY isn't set, so skill evals are skipped."; echo "tag=" >> "$GITHUB_OUTPUT"; exit 0; fi
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            if git diff --name-only origin/${{ github.base_ref }}...HEAD | grep -qE '^solution-accelerators/agent-readiness/(skill|evals)/'; then echo "tag=smoke" >> "$GITHUB_OUTPUT"; else echo "tag=" >> "$GITHUB_OUTPUT"; fi
+          else
+            echo "tag=${{ github.event.inputs.tag || 'full' }}" >> "$GITHUB_OUTPUT"
+          fi
+      - uses: actions/setup-node@v4
+        if: steps.set.outputs.tag != ''
+        with:
+          node-version-file: solution-accelerators/agent-readiness/.nvmrc
+      - if: steps.set.outputs.tag != ''
+        run: npm ci
+      - name: Skill evals
+        if: steps.set.outputs.tag != ''
+        run: npm run evals -- --tag ${{ steps.set.outputs.tag }} --repeats 3 --concurrency 3 --json evals/runs/result.json --junit evals/runs/junit.xml --compare evals/baseline.json
+      - uses: actions/upload-artifact@v4
+        if: always() && steps.set.outputs.tag != ''
+        with:
+          name: agent-readiness-evals
+          path: solution-accelerators/agent-readiness/evals/runs/

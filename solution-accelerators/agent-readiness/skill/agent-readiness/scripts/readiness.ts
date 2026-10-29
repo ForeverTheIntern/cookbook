@@ -20,7 +20,7 @@ import type { ActivityId, Audit, CommandKind, Narration, Result, Roadmap, Streng
 import { exists, fail, git, nowIso, randomHex, readJson, readText, sha256, today, writeJson } from "./lib/util.ts";
 import { initAudit, loadDraft, paths, releaseManifest, resolveRepo, saveDraft } from "./lib/workspace.ts";
 
-const BOOLEAN = new Set(["force", "remediate", "inherit-env", "no-mutants", "no-instructions", "no-outcomes", "json", "push", "allow-eval", "dockerfile", "instructions", "help"]);
+const BOOLEAN = new Set(["force", "remediate", "inherit-env", "no-mutants", "no-instructions", "no-outcomes", "json", "push", "allow-eval", "dockerfile", "instructions", "strict", "help"]);
 
 interface Args {
   positional: string[];
@@ -111,6 +111,12 @@ function cmdScan(a: Args): void {
   log(`Scanned ${audit.repo.name}: ${profile.repoType}, package manager ${profile.packageManager ?? "none"}.`);
   for (const c of profile.components) log(`  ${c.id.padEnd(14)} ${String(Math.round(c.changeShare * 100)).padStart(3)}% of changes  ${c.assessed ? "assessed" : `not assessed: ${c.notAssessedReason}`}`);
   log(`Contract: ${audit.contract.length} commands. Instructions: ${audit.instructions.length} items, ${audit.instructions.filter((i) => i.result === "fail").length} wrong. Safety: ${blocking.length} blocking, ${audit.safety.length - blocking.length} listed.`);
+  if (a.flags.strict) {
+    const wrong = audit.instructions.filter((i) => i.result === "fail");
+    for (const i of wrong) log(`  wrong instruction ${i.source}:${i.line} \`${i.text}\`: ${i.reason}`);
+    for (const s of blocking) log(`  blocking safety finding ${s.file}${s.line ? ":" + s.line : ""}: ${s.detail}`);
+    if (wrong.length || blocking.length) fail("Static checks failed.", 1);
+  }
 }
 
 function cmdContract(a: Args): void {
@@ -292,7 +298,7 @@ function cmdSeal(a: Args): void {
 function cmdVerify(a: Args): void {
   const p = paths(repoOf(a));
   const { audit } = loadSealedAudit(p, a.positional[1] ?? "latest");
-  const r = verifySeal(p, audit.id, { releaseRepo: opt(a, "release-repo"), releaseRef: opt(a, "release-ref"), tierExternal: audit.tier === "external-systems" });
+  const r = verifySeal(p, audit.id, { releaseRepo: opt(a, "release-repo"), releaseRef: opt(a, "release-ref"), tierExternal: opt(a, "tier") === "external-systems" || audit.tier === "external-systems" });
   for (const l of r.lines) log(l);
   if (!r.ok) fail("Seal verification failed.", 2);
   if (!r.production && !a.flags["allow-eval"]) fail("This is an eval audit (pinned seed), not a production result. Pass --allow-eval to accept it.", 3);
@@ -475,7 +481,7 @@ const HELP = `readiness <command> [options]
 
 Audit
   init --goal <first_pr|bug_fixes|features|repo_wide> --tier <read-only|local-exec|external-systems> [--registry-env A,B] [--force]
-  scan                          profile, agent assets, static checks and the verification contract
+  scan [--strict]               profile, agent assets, static checks and the verification contract; --strict exits 1 on wrong instructions or blocking safety findings
   contract [list|add --kind K --component C --cmd "..." --reason "..." [--cwd D] [--source file:line]]
   replay [--component C] [--no-mutants] [--runtime auto|docker|podman|none] [--image ref] [--budget-component M] [--budget-total M]
   run [--component C] [--id cmd-id] [--instructions] [--cmd "..." --kind K --component C --reason "..."]
@@ -487,7 +493,7 @@ Audit
   audit --goal G --tier T [--outcomes-input f] [--narration f]   init, scan, replay, outcomes and seal in one go
 
 After an audit
-  verify-seal [audit-id|latest] [--release-repo owner/repo] [--release-ref tag] [--allow-eval]
+  verify-seal [audit-id|latest] [--release-repo owner/repo --release-ref tag --tier external-systems] [--allow-eval]
   recheck [--runtime auto|docker|podman|none] [--image ref]
   diff [from] [to] [--json]
   history [--json] | history push [--push] [--remote origin]

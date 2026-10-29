@@ -15,7 +15,7 @@ function hostAudit(fixture: string, extra: string[] = [], env: Record<string, st
   return repo;
 }
 
-const REMEDIATION = { READINESS_ENABLE_REMEDIATION: "1" };
+const REMEDIATION = { SA_READINESS_ENABLE_REMEDIATION: "1" };
 const sealedDir = (repo: string) => {
   const dir = join(repo, ".agent-readiness/history/audits");
   return join(dir, readdirSync(dir).sort().pop()!);

@@ -456,10 +456,10 @@ function latestOrDraft(repo: string, ref?: string): Audit {
 }
 
 // Remediation drafts files into the repo. This release only audits, so it stays off unless turned on.
-const REMEDIATION_ON = process.env.READINESS_ENABLE_REMEDIATION === "1";
+const REMEDIATION_ON = process.env.SA_READINESS_ENABLE_REMEDIATION === "1";
 
 function requireRemediation(cmd: string): void {
-  if (!REMEDIATION_ON) fail(`${cmd} is off in this release, which only audits. Set READINESS_ENABLE_REMEDIATION=1 to turn it on.`);
+  if (!REMEDIATION_ON) fail(`${cmd} is off in this release, which only audits. Set SA_READINESS_ENABLE_REMEDIATION=1 to turn it on.`);
 }
 
 function cmdDraftSkill(a: Args): void {

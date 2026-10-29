@@ -1,0 +1,40 @@
+# AGENTS.md
+
+Rules for agents that change the Agent Readiness accelerator. To run an audit on a repository instead, follow [skill/agent-readiness/SKILL.md](skill/agent-readiness/SKILL.md). This folder is self-contained: the copyable skill, its scripts, fixtures, tests, evals and example CI all live here.
+
+## Secrets and identifiers
+
+- Do not commit credentials, tokens, `.env` files or local override files.
+- Do not commit customer names, tenant ids or real email addresses. Fixtures use placeholder contributors (`Contributor A <a@example.com>`).
+
+## Shape of the code
+
+- TypeScript only, run by Node 22.14 or later with type stripping. Use only erasable syntax: no enums, namespaces or parameter properties, and `import type` for types.
+- `skill/agent-readiness/` is what customers copy. It has no runtime dependencies. `@cursor/sdk` is a dev dependency of `evals/` only.
+- Scripts own evidence, scoring and sealing. A model never decides that a check passed, picks planted faults, or writes a level. Only `readiness run` and `readiness replay` create executed or clean-replay evidence.
+- `scripts/lib/levels.ts` is the only place level rules live, and it reads its thresholds from the rubric. Renderers read everything, including component names, from `report.json`.
+- `gh` is called only from `scripts/lib/gh.ts`. Container runtimes are called only from `scripts/lib/container.ts`.
+
+## Adding or changing a check, level rule or goal pack
+
+1. Add a fixture under `fixtures/` that fails the new check, with an `expected.json`. The `healthy-node` fixture must still pass.
+2. Write the change into a new rubric file, `rubric/<next-version>.json`. Never edit a released rubric; old audits are never rescored.
+3. Add at least one skill eval case under `evals/cases/` that would have failed before the change.
+4. Rerun the full eval set and commit the new `evals/baseline.json`.
+5. Never change an `expected.json` to make a run pass without a written reason in the PR description.
+
+## Field findings
+
+A customer's `readiness feedback` bundle (`.agent-readiness/feedback/*.json`) holds the rubric version, check, evidence digest and a note, and no source code. To act on one:
+
+1. Reproduce it as a fixture that shows the finding.
+2. Decide whether the check is wrong (fix the rule, following the steps above) or the docs are wrong (fix `references/checks.md`).
+3. Link the bundle's id in the PR description.
+
+## Citations
+
+Every number or external claim in the shipped docs links its source and states its caveat. A figure confirmed only from secondary sources is labeled "secondary-confirmed". The verified list lives in `references/checks.md`.
+
+## Before committing
+
+Run `npm run check` from this folder. Run `npm run evals -- --tag smoke` when you change `skill/`, the rubric or `evals/`.

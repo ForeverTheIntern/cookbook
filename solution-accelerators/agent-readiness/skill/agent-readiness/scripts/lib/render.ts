@@ -112,27 +112,57 @@ function headlineFor(input: RenderInput, ready: string[], setByShare: number): s
   const { goalLevel, rubric, goal } = input;
   const top = input.top;
   const label = goalLabel(rubric, goal);
+  const active = [...input.active];
   if (top.length === 0 || top.every((t) => t.kind !== "fix")) {
     if (goalLevel.level >= 3) return `Agent PRs meet your Level 3 targets for ${label}. Keep the weekly recheck running and widen the work agents take.`;
-    return `Nothing in the repo blocks agents from ${label}. Start delegating: give agents a few real ${label} this week.`;
+    const one = active.length === 1;
+    const where = active.length <= 3 ? list(active) : `all ${active.length} active components`;
+    const faults = rubric.activities.find((a) => a.id === goal)?.level2.includes("faults") ? `, and ${one ? "its" : "their"} tests caught the planted bugs` : "";
+    return `Nothing blocks ${label} in ${where}: from a clean checkout ${one ? "it installs, builds and passes its" : "they install, build and pass their"} tests${faults}. Start delegating ${label} to agents.`;
   }
   if (goalLevel.setBy.length === 0) {
     const repoConds = (["toolchain", "lockfile", "instructions", "safety"] as CondId[]).filter((c) => [...input.states.values()][0]?.[c].state === "not_met");
     const what = repoConds.length ? list(repoConds.map((c) => condLabel(rubric, c).replace(/^a /, "").replace(/versions are pinned/, "versions aren't pinned").replace(/reproduces the lockfile/, "doesn't reproduce the lockfile"))) : "a repo-wide check fails";
-    return goalLevel.level === 0 ? `Agents can't pass the tests from a clean checkout, so ${label} can't start yet.` : `Every component builds and passes its tests, but ${label} aren't reproducible yet: ${what}.`;
+    const who = active.length === 1 ? `${active[0]} builds and passes its tests` : active.length <= 3 ? `${list(active)} build and pass their tests` : "Every component builds and passes its tests";
+    return goalLevel.level === 0 ? `Agents can't pass the tests from a clean checkout, so ${label} can't start yet.` : `${who}, but ${label} aren't reproducible yet: ${what}.`;
   }
   const names = list(goalLevel.setBy);
-  const share = `${pct(setByShare, 1)}% of recent changes land there`;
+  const share = active.length > 1 ? `, and ${pct(setByShare, 1)}% of recent changes land there` : "";
   const readyLine = ready.length ? ` ${list(ready)} ${ready.length > 1 ? "are" : "is"} already ready for ${label}.` : "";
+  const many = goalLevel.setBy.length > 1;
+  const their = many ? "their" : "its";
+  const fit = (...candidates: string[]) => candidates.find((c) => wordCount(c) <= rubric.part1.maxHeadlineWords) ?? candidates[candidates.length - 1];
   if (goalLevel.level === 0) {
     const blockers = new Set(top.filter((t) => t.kind === "fix" && t.fixes.some((f) => goalLevel.setBy.includes(f.component) || f.component === "*")).map((t) => t.template));
-    const many = goalLevel.setBy.length > 1;
-    if (blockers.has("clean.install")) return `The repo doesn't install from a clean checkout, so agents can't build or test anything yet.${readyLine}`;
-    if (blockers.has("clean.test:missing")) return `${names} ${many ? "have" : "has"} no tests, so agents can't check their own changes, and ${share}.${readyLine}`;
-    if (blockers.has("clean.build")) return `${names} ${many ? "don't" : "doesn't"} build from a clean checkout, and ${share}.${readyLine}`;
-    return `Agents can't pass the tests in ${names} from a clean checkout, and ${share}.${readyLine}`;
+    if (blockers.has("clean.install")) {
+      const why = because(input, "clean.install", their);
+      return fit(`${names} ${many ? "don't" : "doesn't"} install from a clean checkout${why}, so agents can't build or test ${many ? "them" : "it"} yet.${readyLine}`, `${names} ${many ? "don't" : "doesn't"} install from a clean checkout, so agents can't build or test ${many ? "them" : "it"} yet.${readyLine}`);
+    }
+    if (blockers.has("clean.test:missing")) return `${names} ${many ? "have" : "has"} no tests, so agents can't check their own changes${share}.${readyLine}`;
+    if (blockers.has("clean.build")) return fit(`${names} ${many ? "don't" : "doesn't"} build from a clean checkout${because(input, "clean.build", their)}${share}.${readyLine}`, `${names} ${many ? "don't" : "doesn't"} build from a clean checkout${share}.${readyLine}`);
+    return fit(`Agents can't pass the tests in ${names} from a clean checkout${because(input, "clean.test", their)}${share}.${readyLine}`, `Agents can't pass the tests in ${names} from a clean checkout${share}.${readyLine}`);
   }
-  return `Agents can build and test ${names}, but its checks can't yet catch wrong ${label}, and ${share}.${readyLine}`;
+  const failingKinds = [...new Set(input.audit.contract.filter((c) => goalLevel.setBy.includes(c.component) && ["build", "lint", "typecheck", "test"].includes(c.kind) && [...input.audit.evidence].reverse().find((e) => e.contractId === c.id)?.result === "fail").map((c) => (c.kind === "typecheck" ? "type-check" : c.kind)))];
+  const why: Partial<Record<CondId, string>> = {
+    commands: failingKinds.length ? `${their} ${list(failingKinds)} ${failingKinds.length > 1 ? "commands fail" : "command fails"}` : `${their} checks don't all pass`,
+    faults: `${their} tests can't yet catch wrong ${label}`,
+    instructions: `${their} agent instructions don't match the repo`,
+    safety: "normal work needs production access",
+  };
+  const level2 = rubric.activities.find((a) => a.id === goal)?.level2 ?? [];
+  const failing = level2.filter((c) => why[c] && goalLevel.setBy.some((id) => input.states.get(id)?.[c].state !== "met")).map((c) => why[c]!);
+  return `Agents can build and test ${names}, but ${failing.length ? list(failing) : `${their} checks can't yet catch wrong ${label}`}${share}.${readyLine}`;
+}
+
+function because(input: RenderInput, cond: CondId, their: string): string {
+  const fails = input.audit.evidence.filter((e) => e.condition === cond && e.result === "fail" && e.diagnosis);
+  const d = (fails.filter((e) => input.goalLevel.setBy.includes(e.component ?? "")).at(-1) ?? fails.at(-1))?.diagnosis;
+  if (!d) return "";
+  if (d.cause === "service") return ` because ${their} tests need ${d.service ?? "a service"} running, which the setup doesn't start`;
+  if (d.cause === "registry") return " because private registry credentials weren't provided";
+  if (d.cause === "credential") return ` because it ${d.detail}`;
+  if (d.cause === "unknown") return "";
+  return ` because ${d.detail}`;
 }
 
 function gapText(item: RoadmapItem): string {

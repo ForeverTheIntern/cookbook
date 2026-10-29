@@ -6,7 +6,7 @@ import { loadRubric } from "../skill/agent-readiness/scripts/lib/rubric.ts";
 import { validateAgainst } from "../skill/agent-readiness/scripts/lib/schema.ts";
 import type { HistoryLine, PrRecord, ReportJson } from "../skill/agent-readiness/scripts/lib/types.ts";
 import type { AuditSpec } from "./helpers.ts";
-import { makeAudit, outcomes, reportFor, stats } from "./helpers.ts";
+import { instruction, makeAudit, outcomes, reportFor, stats } from "./helpers.ts";
 
 const rubric = loadRubric("2026-10-alpha");
 
@@ -147,6 +147,19 @@ describe("part 1 rules", () => {
     const later = reportFor(audit, [prev]).executive.numbers;
     assert.equal(later[0].comparison, "Last audit: 0 of 3");
     assert.equal(later[2].comparison, "Last audit: 98%, counting the last 90 days");
+  });
+
+  test("default headlines name the component and what works, and skip the share when there is one component", () => {
+    const ready = reportFor(makeAudit({ components: [{ id: "app", share: 1, faults: "pass" }] })).executive;
+    assert.equal(ready.noBlocker, true);
+    assert.equal(ready.headline, "Nothing blocks bug fixes in app: from a clean checkout it installs, builds and passes its tests, and its tests caught the planted bugs. Start delegating bug fixes to agents.");
+    assert.equal(reportFor(makeAudit({ components: [{ id: "app", share: 1, test: "fail", faults: "not_run" }] })).executive.headline, "Agents can't pass the tests in app from a clean checkout.");
+    assert.equal(reportFor(makeAudit(mixed)).executive.headline, "Agents can't pass the tests in api from a clean checkout because its tests need Postgres running, which the setup doesn't start, and 56% of recent changes land there. shared is already ready for bug fixes.");
+    const registry = makeAudit({ install: "fail", components: [{ id: "app", share: 1, test: "not_run", faults: "not_run" }] });
+    for (const e of registry.evidence) if (e.condition === "clean.install") e.diagnosis = { cause: "registry", detail: "registry credentials not provided" };
+    assert.equal(reportFor(registry).executive.headline, "app doesn't install from a clean checkout because private registry credentials weren't provided, so agents can't build or test it yet.");
+    const drift = reportFor(makeAudit({ goal: "features", components: [{ id: "app", share: 1, faults: "pass" }], instructions: [instruction("fail", "npm run typecheck", 'no "typecheck" script')] })).executive.headline;
+    assert.equal(drift, "Agents can build and test app, but its agent instructions don't match the repo.");
   });
 
   test("a narrated ask still asks for an owner when none is recorded, once", () => {

@@ -26,6 +26,10 @@ Rules for agents that change the Agent Readiness accelerator. To run an audit on
 4. Rerun the full eval set and commit the new `evals/baseline.json`.
 5. Never change an `expected.json` to make a run pass without a written reason in the PR description.
 
+## Changing SKILL.md, the references or the report wording
+
+These change what the agent does or what the reader sees, so they follow the hill-climb rule in [evals/HILLCLIMB.md](evals/HILLCLIMB.md): one failure mode and one lever per change, a case or test that would have failed before it, and a new round in the log with before and after on the same cases. Keep a change only if its target improves and no hard gate drops.
+
 ## Field findings
 
 A customer's `readiness feedback` bundle (`.agent-readiness/feedback/*.json`) holds the rubric version, check, evidence digest and a note, and no source code. To act on one:

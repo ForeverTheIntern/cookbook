@@ -111,6 +111,15 @@ npm run release-manifest # after changing the skill's scripts, rubric, schemas o
 
 Nine fixtures under `fixtures/`, each a tiny repo with one planted defect and an `expected.json`, are the diagnostic ground truth. [AGENTS.md](AGENTS.md) holds the rule for adding checks and goal packs, and for turning field feedback bundles into fixtures.
 
+### Skill evals
+
+The evals run the real Cursor agent on each fixture with a pinned prompt and grade what the scripts wrote: at most five hard gates per case (a sealed audit that `verify-seal` accepts, levels, top items, the part 1 rules, no forbidden action), plus two soft judge scores for part 1. The headline judge carries the bar of 0.8; the page judge is tracked.
+
+- `npm run evals -- --tag smoke|full --repeats 3 --json out.json --junit out.xml --compare evals/baseline.json` drives the agent through `@cursor/sdk` and needs a `CURSOR_API_KEY`. CI runs this.
+- Without a key, any agent can be the driver: `--prepare` builds the workspaces and a manifest of prompts, the agent runs each prompt, `--grade <root>` grades one workspace, and `--collect <dir>` summarizes. `--rerender <root>` rebuilds a run's report with the current scripts, so a rendering change can be judged on earlier runs.
+
+[evals/baseline.json](evals/baseline.json) is the result CI compares against, and [evals/HILLCLIMB.md](evals/HILLCLIMB.md) logs how it was reached, one failure mode per round.
+
 ## Known gaps
 
 - Not assessed yet: whether CI matches the local commands, flaky tests, the quality of error messages, how easily code can be found, and outcome checks on held-out tasks.

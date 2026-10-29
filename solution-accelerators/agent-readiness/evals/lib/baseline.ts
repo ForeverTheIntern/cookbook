@@ -6,6 +6,7 @@ export interface CaseSummary {
   gates: Record<string, string>;
   allGatesPass: string;
   judge: number | null;
+  page: number | null;
   wallMs: number;
   toolCalls: number;
   tokens: number | null;
@@ -19,7 +20,7 @@ export interface Baseline {
   repeats: number;
   note?: string;
   cases: Record<string, CaseSummary>;
-  totals: { cases: number; allGatesPass: string; judgeAverage: number | null };
+  totals: { cases: number; allGatesPass: string; judgeAverage: number | null; pageAverage: number | null };
 }
 
 function avg(xs: number[]): number | null {
@@ -32,6 +33,7 @@ export function summarize(runs: CaseRun[], model: string, driver: string, repeat
   const cases: Record<string, CaseSummary> = {};
   let allPass = 0;
   const judges: number[] = [];
+  const pages: number[] = [];
   for (const [id, list] of [...byCase.entries()].sort()) {
     const gateNames = [...new Set(list.flatMap((r) => r.grade.gates.map((g) => g.name)))];
     const gates: Record<string, string> = {};
@@ -40,17 +42,20 @@ export function summarize(runs: CaseRun[], model: string, driver: string, repeat
     if (passing === list.length) allPass++;
     const js = list.map((r) => r.grade.soft.judge).filter((x): x is number => x !== null);
     judges.push(...js);
+    const ps = list.map((r) => r.grade.soft.page).filter((x): x is number => x !== null && x !== undefined);
+    pages.push(...ps);
     cases[id] = {
       runs: list.length,
       gates,
       allGatesPass: `${passing}/${list.length}`,
       judge: avg(js),
+      page: avg(ps),
       wallMs: Math.round(avg(list.map((r) => r.grade.soft.wallMs)) ?? 0),
       toolCalls: Math.round(avg(list.map((r) => r.grade.soft.toolCalls)) ?? 0),
       tokens: avg(list.map((r) => r.grade.soft.tokens).filter((x): x is number => x !== null)),
     };
   }
-  return { schema: "agent-readiness/eval-baseline@1", recordedAt: new Date().toISOString(), model, driver, repeats, note, cases, totals: { cases: byCase.size, allGatesPass: `${allPass}/${byCase.size}`, judgeAverage: avg(judges) } };
+  return { schema: "agent-readiness/eval-baseline@1", recordedAt: new Date().toISOString(), model, driver, repeats, note, cases, totals: { cases: byCase.size, allGatesPass: `${allPass}/${byCase.size}`, judgeAverage: avg(judges), pageAverage: avg(pages) } };
 }
 
 function ratio(s: string): number {
@@ -66,6 +71,7 @@ export function compare(current: Baseline, base: Baseline): { regressions: strin
     if (!b) continue;
     for (const [g, v] of Object.entries(c.gates)) if (b.gates[g] && ratio(v) < ratio(b.gates[g])) regressions.push(`${id}: "${g}" ${b.gates[g]} -> ${v}`);
     if (b.judge !== null && c.judge !== null && b.judge - c.judge > 0.1) flags.push(`${id}: judge ${b.judge} -> ${c.judge}`);
+    if (b.page != null && c.page != null && b.page - c.page > 0.1) flags.push(`${id}: page judge ${b.page} -> ${c.page}`);
   }
   return { regressions, flags };
 }

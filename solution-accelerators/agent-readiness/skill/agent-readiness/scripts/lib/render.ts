@@ -480,6 +480,10 @@ function levelWord(rubric: Rubric, l: number): string {
   return `${l} ${rubric.scale[l].name}`;
 }
 
+export function scaleLine(r: ReportJson): string {
+  return r.scale.map((s) => (s.level === r.maturity.level ? `[Level ${s.level} ${s.name}]` : `Level ${s.level} ${s.name}`)).join(" > ");
+}
+
 export function renderMarkdown(r: ReportJson, rubric: Rubric): string {
   const out: string[] = [];
   const ex = r.executive;
@@ -488,8 +492,7 @@ export function renderMarkdown(r: ReportJson, rubric: Rubric): string {
   out.push(`## 1. Where you stand: ${ex.heading}`, "", `Audited ${fmtDate(r.audit.date)} at ${r.audit.commit}`, "", `**${ex.headline}**`, "");
   for (const n of ex.numbers) out.push(`- **${n.label}:** ${n.value}. ${n.comparison}.`);
   out.push("");
-  const marker = r.scale.map((s) => (s.level === r.maturity.level ? `[Level ${s.level} ${s.name}]` : `Level ${s.level} ${s.name}`)).join(" > ");
-  out.push(marker, "", ex.nextLine, "");
+  out.push(scaleLine(r), "", ex.nextLine, "");
   if (ex.gaps.length) {
     for (const g of ex.gaps) out.push(`${g.rank}. **${g.text}.** ${g.blocks}.`);
     out.push("");

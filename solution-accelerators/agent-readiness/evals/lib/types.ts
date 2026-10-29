@@ -34,7 +34,7 @@ export interface GateResult {
 
 export interface Grade {
   gates: GateResult[];
-  soft: { judge: number | null; judgeReasons: string[]; wallMs: number; toolCalls: number; tokens: number | null };
+  soft: { judge: number | null; judgeReasons: string[]; page: number | null; pageReasons: string[]; wallMs: number; toolCalls: number; tokens: number | null };
 }
 
 export type Gate = (ws: Workspace, t: Trajectory, c: EvalCase) => GateResult;

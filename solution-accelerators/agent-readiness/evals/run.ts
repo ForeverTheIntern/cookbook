@@ -7,7 +7,9 @@ import type { Baseline } from "./lib/baseline.ts";
 import { gradeCase, latestReport } from "./lib/grade.ts";
 import { renderMarkdown } from "../skill/agent-readiness/scripts/lib/render.ts";
 import { loadRubric } from "../skill/agent-readiness/scripts/lib/rubric.ts";
-import { judge, judgePrompt } from "./lib/judge.ts";
+import type { ReportJson } from "../skill/agent-readiness/scripts/lib/types.ts";
+import { PROMPTS, judge } from "./lib/judge.ts";
+import type { JudgeResult } from "./lib/judge.ts";
 import { rerenderLatest } from "./lib/rerender.ts";
 import { runWithSdk } from "./lib/sdk.ts";
 import type { CaseRun, EvalCase, Trajectory } from "./lib/types.ts";
@@ -51,6 +53,14 @@ function select(all: EvalCase[], flags: Record<string, string | true>): EvalCase
   return all.filter((c) => (!tag || c.tags.includes(tag as "smoke" | "full")) && (!only || only.some((o) => c.id === o || c.id.endsWith("/" + o))));
 }
 
+function writeJudgePrompts(dir: string, r: ReportJson): void {
+  for (const [kind, prompt] of Object.entries(PROMPTS)) writeFileSync(join(dir, `${kind}-prompt.txt`), prompt(r));
+}
+
+function readJudge(file: string): JudgeResult {
+  return existsSync(file) ? (JSON.parse(readFileSync(file, "utf8")) as JudgeResult) : { score: null, reasons: ["judge not run"] };
+}
+
 function externalTrajectory(root: string, wallMs: number): Trajectory {
   const reply = join(root, "reply.md");
   return { driver: "external", toolCalls: [], text: existsSync(reply) ? readFileSync(reply, "utf8") : "", durationMs: wallMs, tokens: null, error: null };
@@ -63,8 +73,8 @@ async function worker(flags: Record<string, string | true>): Promise<void> {
   const ws = prepare(c);
   const t = await runWithSdk(ws, c, model, process.env.CURSOR_API_KEY!, Number(flags["timeout-min"] ?? 30) * 60000);
   const gates = gradeCase(ws, t, c);
-  const j = await judge(latestReport(ws), JUDGE_MODEL, process.env.CURSOR_API_KEY);
-  const run: CaseRun = { id: c.id, repeat: Number(flags.repeat), model, driver: "sdk", workspace: ws.dir, grade: { gates, soft: { judge: j.score, judgeReasons: j.reasons, wallMs: t.durationMs, toolCalls: t.toolCalls.length, tokens: t.tokens } }, error: t.error };
+  const [h, p] = await Promise.all((["headline", "page"] as const).map((k) => judge(k, latestReport(ws), JUDGE_MODEL, process.env.CURSOR_API_KEY)));
+  const run: CaseRun = { id: c.id, repeat: Number(flags.repeat), model, driver: "sdk", workspace: ws.dir, grade: { gates, soft: { judge: h.score, judgeReasons: h.reasons, page: p.score, pageReasons: p.reasons, wallMs: t.durationMs, toolCalls: t.toolCalls.length, tokens: t.tokens } }, error: t.error };
   writeFileSync(String(flags.out), JSON.stringify({ run, trajectory: t }, null, 2));
 }
 
@@ -90,8 +100,8 @@ function collect(dir: string): CaseRun[] {
 
 function report(runs: CaseRun[], flags: Record<string, string | true>, model: string, driver: string, repeats: number): number {
   const summary = summarize(runs, model, driver, repeats, typeof flags.note === "string" ? flags.note : undefined);
-  for (const [id, s] of Object.entries(summary.cases)) process.stdout.write(`${s.allGatesPass.padStart(5)}  ${id.padEnd(48)} judge ${s.judge ?? "n/a"}  ${Object.entries(s.gates).filter(([, v]) => !v.startsWith(String(s.runs))).map(([g, v]) => `${g} ${v}`).join("; ")}\n`);
-  process.stdout.write(`All gates passed in ${summary.totals.allGatesPass} cases. Judge average ${summary.totals.judgeAverage ?? "n/a"}.\n`);
+  for (const [id, s] of Object.entries(summary.cases)) process.stdout.write(`${s.allGatesPass.padStart(5)}  ${id.padEnd(48)} judge ${s.judge ?? "n/a"} page ${s.page ?? "n/a"}  ${Object.entries(s.gates).filter(([, v]) => !v.startsWith(String(s.runs))).map(([g, v]) => `${g} ${v}`).join("; ")}\n`);
+  process.stdout.write(`All gates passed in ${summary.totals.allGatesPass} cases. Headline judge average ${summary.totals.judgeAverage ?? "n/a"}; page judge average ${summary.totals.pageAverage ?? "n/a"}.\n`);
   if (typeof flags.json === "string") {
     mkdirSync(dirname(resolve(flags.json)), { recursive: true });
     writeFileSync(resolve(flags.json), JSON.stringify({ summary, runs }, null, 2));
@@ -138,7 +148,7 @@ async function main(): Promise<void> {
     const out = join(root, "rerender", String(flags.label ?? "current"));
     mkdirSync(out, { recursive: true });
     writeFileSync(join(out, "report.md"), renderMarkdown(r, loadRubric(r.audit.rubric)));
-    writeFileSync(join(out, "judge-prompt.txt"), judgePrompt(r));
+    writeJudgePrompts(out, r);
     process.stdout.write(`${out}\n`);
     return;
   }
@@ -149,10 +159,10 @@ async function main(): Promise<void> {
     const t = externalTrajectory(root, Number(flags["wall-ms"] ?? 0));
     const gates = gradeCase(ws, t, c);
     const report = latestReport(ws);
-    if (report) writeFileSync(join(root, "judge-prompt.txt"), judgePrompt(report));
-    const judgeFile = typeof flags["judge-file"] === "string" ? flags["judge-file"] : join(root, "judge.json");
-    const j = existsSync(judgeFile) ? (JSON.parse(readFileSync(judgeFile, "utf8")) as { score: number; reasons: string[] }) : { score: null, reasons: ["judge not run"] };
-    const run: CaseRun = { id, repeat: Number(flags.repeat ?? 1), model: String(flags.model ?? "external"), driver: "external", workspace: ws.dir, grade: { gates, soft: { judge: j.score, judgeReasons: j.reasons, wallMs: t.durationMs, toolCalls: 0, tokens: null } }, error: null };
+    if (report) writeJudgePrompts(root, report);
+    const h = readJudge(join(root, "headline.json"));
+    const p = readJudge(join(root, "page.json"));
+    const run: CaseRun = { id, repeat: Number(flags.repeat ?? 1), model: String(flags.model ?? "external"), driver: "external", workspace: ws.dir, grade: { gates, soft: { judge: h.score, judgeReasons: h.reasons, page: p.score, pageReasons: p.reasons, wallMs: t.durationMs, toolCalls: 0, tokens: null } }, error: null };
     writeFileSync(join(root, "result.json"), JSON.stringify({ run }, null, 2));
     for (const g of gates) process.stdout.write(`${g.pass ? "PASS" : "FAIL"}  ${g.name}: ${g.detail}\n`);
     return;

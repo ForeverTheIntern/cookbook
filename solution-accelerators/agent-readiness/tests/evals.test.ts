@@ -89,12 +89,12 @@ describe("eval cases and baseline", () => {
     assert.deepEqual(fixtureCases.filter((c) => c.tags.includes("smoke")).map((c) => c.id).sort(), ["agents-md-drift", "healthy-node", "hidden-service", "tautological-tests"]);
   });
 
-  test("a hard-gate drop is a regression and a judge drop over 0.1 is flagged", () => {
-    const run = (pass: boolean, judge: number): CaseRun => ({ id: "x", repeat: 1, model: "m", driver: "sdk", workspace: "", error: null, grade: { gates: [{ name: "g", pass, detail: "" }], soft: { judge, judgeReasons: [], wallMs: 1, toolCalls: 1, tokens: null } } });
-    const base = summarize([run(true, 0.9), run(true, 0.9)], "m", "sdk", 2);
-    const worse = summarize([run(true, 0.7), run(false, 0.7)], "m", "sdk", 2);
+  test("a hard-gate drop is a regression and a headline or page judge drop over 0.1 is flagged", () => {
+    const run = (pass: boolean, judge: number, page: number): CaseRun => ({ id: "x", repeat: 1, model: "m", driver: "sdk", workspace: "", error: null, grade: { gates: [{ name: "g", pass, detail: "" }], soft: { judge, judgeReasons: [], page, pageReasons: [], wallMs: 1, toolCalls: 1, tokens: null } } });
+    const base = summarize([run(true, 0.9, 0.8), run(true, 0.9, 0.8)], "m", "sdk", 2);
+    const worse = summarize([run(true, 0.7, 0.75), run(false, 0.7, 0.6)], "m", "sdk", 2);
     const c = compare(worse, base);
     assert.deepEqual(c.regressions, ['x: "g" 2/2 -> 1/2']);
-    assert.equal(c.flags.length, 1);
+    assert.deepEqual(c.flags, ["x: judge 0.9 -> 0.7", "x: page judge 0.8 -> 0.675"]);
   });
 });

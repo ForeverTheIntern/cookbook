@@ -1,22 +1,11 @@
 {
-  "goal": "first_pr",
   "purpose": "The README setup steps use the wrong package manager, a missing Make target and a missing doc.",
   "runs": [
     {
       "name": "default",
       "level": 1,
       "levels": {
-        "stale-setup-docs": {
-          "first_pr": 1,
-          "bug_fixes": 2,
-          "features": 1
-        }
-      },
-      "repoLevels": {
-        "first_pr": 1,
-        "bug_fixes": 2,
-        "features": 1,
-        "repo_wide": 2
+        "stale-setup-docs": 1
       },
       "top": [
         "instructions:repo"

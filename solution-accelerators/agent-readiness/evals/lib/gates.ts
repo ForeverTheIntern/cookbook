@@ -3,13 +3,13 @@ import { join } from "node:path";
 import { historyLines, latestReport, readiness, roadmap, sealedAudits } from "./grade.ts";
 import type { Gate } from "./types.ts";
 
-export function levelRose(activity: string, atLeast: number): Gate {
+export function levelRose(atLeast: number): Gate {
   return (ws) => {
     const audits = historyLines(ws).filter((h) => h.kind === "audit");
-    const first = audits[0]?.repoLevels[activity];
-    const last = audits[audits.length - 1]?.repoLevels[activity];
+    const first = audits[0]?.repoLevel;
+    const last = audits[audits.length - 1]?.repoLevel;
     const pass = audits.length >= 2 && last !== undefined && first !== undefined && last > first && last >= atLeast;
-    return { name: `level for ${activity} rose to at least ${atLeast}`, pass, detail: `${audits.length} audits: ${first} -> ${last}` };
+    return { name: `repo level rose to at least ${atLeast}`, pass, detail: `${audits.length} audits: ${first} -> ${last}` };
   };
 }
 
@@ -73,10 +73,18 @@ export const noPhantomCommands: Gate = (ws) => {
   return { name: "no wrong instruction in the contract", pass: added.length === 0, detail: added.length ? `contract runs ${added.join(", ")}, which the scan flagged as wrong instructions` : `${wrong.size} wrong instruction commands left out` };
 };
 
-export function repoLevelIs(activity: string, level: number): Gate {
+export function repoLevelIs(level: number): Gate {
   return (ws) => {
-    const got = (latestReport(ws)?.details.levels.repoLevels as Record<string, number> | undefined)?.[activity];
-    return { name: `${activity} at Level ${level}`, pass: got === level, detail: `Level ${got ?? "none"}` };
+    const r = latestReport(ws);
+    const got = r && r.maturity.outcome !== "not_assessed" ? r.maturity.level : undefined;
+    return { name: `repo at Level ${level}`, pass: got === level, detail: `Level ${got ?? "none"}` };
+  };
+}
+
+export function checkPasses(id: string): Gate {
+  return (ws) => {
+    const c = latestReport(ws)?.details.checks.find((x) => x.id === id);
+    return { name: `${id} passes`, pass: c?.ok === true, detail: c ? c.result : "no report" };
   };
 }
 

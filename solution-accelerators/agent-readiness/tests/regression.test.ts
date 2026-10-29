@@ -30,7 +30,7 @@ describe("regressions from the four-model review of the mock report", () => {
     const audit = makeAudit({ components: [{ id: "api", share: 0.6, test: "fail", faults: "not_run" }, { id: "worker", share: 0.4, faults: "fail" }] });
     const comps = audit.profile!.components;
     const states = new Map(comps.map((c) => [c.id, componentStates(audit, rubric, c.id)]));
-    const r = updateRoadmap(null, { audit, rubric, goal: "bug_fixes", components: comps, states, active: activeComponents(rubric, comps, []), outcomes: null });
+    const r = updateRoadmap(null, { audit, rubric, components: comps, states, active: activeComponents(rubric, comps, []), outcomes: null });
     const get = (id: string) => r.roadmap.items.find((i) => i.id === id)!;
     assert.equal(get("clean.test:api").impact, 0.6);
     assert.equal(get("faults:worker").impact, 0.4);
@@ -40,12 +40,12 @@ describe("regressions from the four-model review of the mock report", () => {
 
   test("a lint failure in a recheck gives Level 1", () => {
     const base = statesOf(componentStates(makeAudit({ components: [{ id: "a", share: 1, lint: "pass", faults: "pass" }] }), rubric, "a"));
-    assert.equal(componentLevel(rubric, recheckStates(base, new Set(["lint"])), "bug_fixes").level, 1);
+    assert.equal(componentLevel(rubric, recheckStates(base, new Set(["lint"]))).level, 1);
   });
 
   test("the 10% rule only changes membership after two consecutive audits", () => {
     const comps = makeAudit({ components: [{ id: "a", share: 0.95 }, { id: "b", share: 0.05 }] }).profile!.components;
-    const h = (id: string, b: number, active: string[]): HistoryLine => ({ id, kind: "audit", date: "2026-10-01", commit: "x", rubric: "2026-10-alpha", scriptsDigest: "x", result: "sealed", goal: "bug_fixes", levels: {}, repoLevels: {}, shares: { a: 1 - b, b }, active, seedPinned: false });
+    const h = (id: string, b: number, active: string[]): HistoryLine => ({ id, kind: "audit", date: "2026-10-01", commit: "x", rubric: "2026-10-alpha", scriptsDigest: "x", result: "sealed", levels: {}, repoLevel: 0, scenarioLevels: {}, shares: { a: 1 - b, b }, active, seedPinned: false });
     assert.ok(activeComponents(rubric, comps, [h("1", 0.2, ["a", "b"])]).has("b"));
     assert.ok(!activeComponents(rubric, comps, [h("1", 0.2, ["a", "b"]), h("2", 0.05, ["a", "b"])]).has("b"));
   });
@@ -54,7 +54,7 @@ describe("regressions from the four-model review of the mock report", () => {
     const spec = { components: [{ id: "api", share: 0.6, test: "fail" as const, faults: "not_run" as const }, { id: "shared", share: 0.4, faults: "pass" as const }], outcomes: outcomes("2026-09-27", "2026-10-27", stats(9, 7, 3, 4), stats(41, 35, 29, 7), { api: stats(5, 4, 1, 2) }) };
     const ctx = (a: ReturnType<typeof makeAudit>) => {
       const comps = a.profile!.components;
-      return { audit: a, rubric, goal: a.goal, components: comps, states: new Map(comps.map((c) => [c.id, componentStates(a, rubric, c.id)])), active: activeComponents(rubric, comps, []), outcomes: a.outcomes };
+      return { audit: a, rubric, components: comps, states: new Map(comps.map((c) => [c.id, componentStates(a, rubric, c.id)])), active: activeComponents(rubric, comps, []), outcomes: a.outcomes };
     };
     const first = updateRoadmap(null, ctx(makeAudit(spec)));
     const fixed = { ...spec, components: [{ id: "api", share: 0.6, faults: "pass" as const }, spec.components[1]] };
@@ -92,9 +92,9 @@ describe("regressions from the four-model review of the mock report", () => {
 
   test("mutant locations never reach remediate mode, the flake guard holds, and the seed changes each audit", () => {
     const repo = materialize("healthy-node");
-    assert.equal(readiness(repo, ["init", "--goal", "bug_fixes"]).code, 0);
+    assert.equal(readiness(repo, ["init"]).code, 0);
     const firstSeed = JSON.parse(readFileSync(join(repo, ".agent-readiness/work", readFileSync(join(repo, ".agent-readiness/work/CURRENT"), "utf8").trim(), "audit.json"), "utf8")).seed;
-    assert.equal(readiness(repo, ["init", "--goal", "bug_fixes", "--force"]).code, 0);
+    assert.equal(readiness(repo, ["init", "--force"]).code, 0);
     const id = readFileSync(join(repo, ".agent-readiness/work/CURRENT"), "utf8").trim();
     const secondSeed = JSON.parse(readFileSync(join(repo, ".agent-readiness/work", id, "audit.json"), "utf8")).seed;
     assert.equal(firstSeed.pinned, false);
@@ -130,7 +130,7 @@ describe("regressions from the four-model review of the mock report", () => {
     const repo = materialize("healthy-node");
     const cli = join(copy, "scripts/readiness.ts");
     const run = (args: string[]) => readiness(repo, args, {}, cli);
-    assert.equal(run(["audit", "--goal", "bug_fixes", "--runtime", "none", "--no-mutants"]).code, 0);
+    assert.equal(run(["audit", "--runtime", "none", "--no-mutants"]).code, 0);
     const v = run(["verify-seal"]);
     assert.equal(v.code, 2, v.out);
     assert.match(v.out, /don't match the release manifest/);
@@ -141,7 +141,7 @@ describe("regressions from the four-model review of the mock report", () => {
   test("registry variable names are recorded and their values never are", () => {
     const repo = materialize("needs-private-registry");
     const value = "registry-value-" + "7d3f9a".repeat(3);
-    const r = readiness(repo, ["audit", "--goal", "bug_fixes", "--runtime", "none", "--no-mutants", "--registry-env", "NPM_TOKEN"], { NPM_TOKEN: value });
+    const r = readiness(repo, ["audit", "--runtime", "none", "--no-mutants", "--registry-env", "NPM_TOKEN"], { NPM_TOKEN: value });
     assert.equal(r.code, 0, r.out);
     const dir = join(repo, ".agent-readiness/history/audits");
     const audit = readFileSync(join(dir, readdirSync(dir)[0], "audit.json"), "utf8");

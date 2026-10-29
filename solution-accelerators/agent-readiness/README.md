@@ -2,7 +2,7 @@
 
 A Cursor skill that finds what would stop a coding agent in a repository, and helps fix the two things that matter most: a working environment and a way to verify changes.
 
-It answers one question: for an activity (first PR, bug fixes, features and refactors, or repo-wide changes), what level is this repo and each of its components at, and what are the top three things holding it back? Each of the three comes with a fix that can be proved and the outcome it should deliver.
+It answers one question: what level is this repo at, and each app or component in it, and what are the top three things holding them back? Each of the three comes with a fix that can be proved and the outcome it should deliver.
 
 It is not a gate to pass before you start using agents. When it finds no blocker, the report says so and recommends starting to delegate.
 
@@ -10,14 +10,15 @@ It is not a gate to pass before you start using agents. When it finds no blocker
 
 - **It scores only what it ran.** Scripts install, build and test the repo in a clean container, plant faults its tests should catch, and replay every command in AGENTS.md, rules, skills and the README. The presence of a file never passes a check.
 - **The agent can't grade its own work.** The skill's scripts create the evidence, choose the planted faults, compute every level and seal the audit with a digest of the scripts and rubric. The agent picks the scope, explains the result and stops.
-- **Levels follow the work.** Each component gets a level per activity, and the repo level is the lowest among components that get at least 10% of recent changes. A monorepo can be ready for bug fixes in one package and not bootable in another.
+- **Levels follow the work, in three tiers.** The repo gets one rollup level. Each app or component the scan finds gets one standard level, and part 4 lists every component included or left out, with the reason. Scenarios, such as bug fixes or repo-wide changes, are optional breakdowns nested under the components they cover, present only when someone adds them. A monorepo can be at Level 2 in one package and not bootable in another.
+- **The rollup rule is explicit.** The repo level is the lowest standard level among active components: the assessed ones with at least 10% of changes over 90 days, where a component joins or leaves that set only after two audits on the same side of the line. Components the audit can't assess never set it, and scenarios never change it. With no real check result there is no level at any tier. See [references/levels.md](skill/agent-readiness/references/levels.md).
 - **It keeps score over time.** A roadmap with stable item IDs, a weekly recheck, and agent PR outcomes against other PRs show whether fixes paid off.
 
 | Level | Name | Measured by |
 |---|---|---|
 | 0 | Not bootable | audit |
 | 1 | Bootable: a clean checkout installs, builds and passes every test | audit |
-| 2 | Verifiable: everything the activity needs to check an agent's work passes | audit |
+| 2 | Verifiable: the commands pass, the tests catch planted faults, the instructions are accurate and normal work needs no production access | audit |
 | 3 | Delegable: agent PRs meet the outcome targets your team set | outcomes |
 | 4 | Scalable: those targets held while agent PR volume at least doubled | outcomes |
 
@@ -31,14 +32,14 @@ Copy the skill into the repository you want to audit:
 cp -R solution-accelerators/agent-readiness/skill/agent-readiness <repo>/.cursor/skills/agent-readiness
 ```
 
-Then ask the agent in that repo: "Run an agent readiness audit for bug fixes."
+Then ask the agent in that repo: "Run an agent readiness audit." To see one kind of work broken out, ask for it, for example "and break out bug fixes for web".
 
 It needs Node 22.14 or later and no packages. Docker or Podman proves Level 1; without one, the audit still runs in a scrubbed throwaway copy and says "Level 1 not provable on this machine".
 
 To run it without an agent, from the repo root:
 
 ```bash
-node --experimental-strip-types --no-warnings .cursor/skills/agent-readiness/scripts/readiness.ts audit --goal bug_fixes --tier local-exec
+node --experimental-strip-types --no-warnings .cursor/skills/agent-readiness/scripts/readiness.ts audit --tier local-exec
 ```
 
 ## Reading the report
@@ -48,7 +49,7 @@ node --experimental-strip-types --no-warnings .cursor/skills/agent-readiness/scr
 1. **Where you stand.** One screen: the level and what it means, a one-message headline that names the component setting the level, three numbers each with a comparison, the scale, at most three gaps and one ask.
 2. **Next actions and how they move the needle.** Effort against impact, where impact is the share of recent changes in components whose level rises when only that action's checks flip to passing. Each action names the metric to watch and its baseline.
 3. **Where you are on the roadmap.** Every step and its status, and from the second audit on, levels over time and what each closed step delivered against what it was expected to.
-4. **Details.** Exact steps, every check with why it matters and its evidence, levels by component and activity, agent PR outcomes, agent assets and their authors, and the evidence log.
+4. **Details.** Exact steps, every check with why it matters and its evidence, levels by component with any scenarios nested under each, the repo level and its rule, agent PR outcomes, agent assets and their authors, and the evidence log.
 
 `report.json` (schema `agent-readiness/report@1`) is the view model. The markdown and any other renderer are views of it. See [references/report.md](skill/agent-readiness/references/report.md).
 
@@ -97,7 +98,7 @@ Repo commands get an allowlisted environment: `PATH`, a temporary `HOME` and iso
 
 ## How this differs from checklist tools
 
-Most open-source readiness tools we found score what's in the repo's files: [AgentReady](https://github.com/napetrov/agentready), [agentsmd-check](https://github.com/7y-9/agentsmd-check), [agent-pipx](https://github.com/kyizinlatt/agent-pipx), [RepoReady](https://github.com/shidesheng0218/repo-ready), and the OpenHands [`agent-readiness-report`](https://github.com/OpenHands/extensions/tree/main/plugins/onboarding/skills/agent-readiness-report) skill, which gathers filesystem signals across 5 pillars and 74 features. Some tools also have an agent try the setup or the checks, and grade that attempt. [Factory's Agent Readiness](https://github.com/Factory-AI/factory/blob/main/docs/web/agent-readiness/overview.mdx) uses 5 levels, 9 pillars and an 80% gate. This skill borrows their detector lists and safety patterns, but scores only evidence its scripts produced by running the repo's commands, never the agent's own grade. It grades per component and activity instead of one percentage, and never acts as a gate.
+Most open-source readiness tools we found score what's in the repo's files: [AgentReady](https://github.com/napetrov/agentready), [agentsmd-check](https://github.com/7y-9/agentsmd-check), [agent-pipx](https://github.com/kyizinlatt/agent-pipx), [RepoReady](https://github.com/shidesheng0218/repo-ready), and the OpenHands [`agent-readiness-report`](https://github.com/OpenHands/extensions/tree/main/plugins/onboarding/skills/agent-readiness-report) skill, which gathers filesystem signals across 5 pillars and 74 features. Some tools also have an agent try the setup or the checks, and grade that attempt. [Factory's Agent Readiness](https://github.com/Factory-AI/factory/blob/main/docs/web/agent-readiness/overview.mdx) uses 5 levels, 9 pillars and an 80% gate. This skill borrows their detector lists and safety patterns, but scores only evidence its scripts produced by running the repo's commands, never the agent's own grade. It grades each component and rolls the repo up by a stated rule instead of one percentage, and never acts as a gate.
 
 ## Develop
 
@@ -109,7 +110,7 @@ npm run sample           # regenerate examples/ from the monorepo-mixed fixture
 npm run release-manifest # after changing the skill's scripts, rubric, schemas or templates
 ```
 
-Fourteen fixtures under `fixtures/`, each a tiny repo with one planted defect or repo shape and an `expected.json`, are the diagnostic ground truth. Four cover repo shapes from the field: standalone apps next to .NET projects with no root package (`standalone-nested-mixed`), a setup that needs a tool only the declared image installs (`declared-image-missing-toolchain`), a start command that runs sudo (`sudo-start`), and a toolchain the rubric doesn't support (`unsupported-go-service`). Two of them also run with no container runtime. [AGENTS.md](AGENTS.md) holds the rule for adding checks and goal packs, and for turning field feedback bundles into fixtures.
+Fourteen fixtures under `fixtures/`, each a tiny repo with one planted defect or repo shape and an `expected.json`, are the diagnostic ground truth. Four cover repo shapes from the field: standalone apps next to .NET projects with no root package (`standalone-nested-mixed`), a setup that needs a tool only the declared image installs (`declared-image-missing-toolchain`), a start command that runs sudo (`sudo-start`), and a toolchain the rubric doesn't support (`unsupported-go-service`). Two of them also run with no container runtime. [AGENTS.md](AGENTS.md) holds the rule for adding checks and scenarios, and for turning field feedback bundles into fixtures.
 
 ### Skill evals
 

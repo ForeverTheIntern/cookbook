@@ -1,13 +1,12 @@
 import { expected, fixtureNames } from "../../tools/fixture.ts";
 import type { EvalCase } from "../lib/types.ts";
 
-const GOAL_WORDS: Record<string, string> = { first_pr: "a first PR", bug_fixes: "bug fixes", features: "features and refactors", repo_wide: "repo-wide changes" };
 const SMOKE = new Set(["healthy-node", "hidden-service", "tautological-tests", "agents-md-drift"]);
 
 export const cases: EvalCase[] = fixtureNames().flatMap((fixture) => {
   const exp = expected(fixture);
   return exp.runs.filter((run) => !run.registryEnv).map((run) => {
-    let prompt = `Run an agent readiness audit for ${GOAL_WORDS[exp.goal]}, permission tier local-exec.`;
+    let prompt = "Run an agent readiness audit, permission tier local-exec.";
     if (exp.outcomes) prompt += " For outcomes, use the recorded PR list at {root}/prs.json.";
     if (run.registryEnv) prompt += ` Our private registry token is in the ${Object.keys(run.registryEnv).join(", ")} environment variable.`;
     return {

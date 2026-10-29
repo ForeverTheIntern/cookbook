@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "agent-readiness audit",
   "type": "object",
-  "required": ["schema", "id", "kind", "createdAt", "state", "repo", "goal", "tier", "rubric", "skill", "seed", "environment", "profile", "assets", "contract", "instructions", "safety", "evidence", "mutants", "outcomes", "narration"],
+  "required": ["schema", "id", "kind", "createdAt", "state", "repo", "scenarios", "tier", "rubric", "skill", "seed", "environment", "profile", "assets", "contract", "instructions", "safety", "evidence", "mutants", "outcomes", "narration"],
   "properties": {
     "schema": { "const": "agent-readiness/audit@1" },
     "id": { "type": "string", "pattern": "^aud-" },
@@ -13,7 +13,14 @@
       "required": ["name", "commit", "dirtyTree"],
       "properties": { "name": { "type": "string" }, "commit": { "type": "string" }, "dirtyTree": { "type": "boolean" } }
     },
-    "goal": { "enum": ["first_pr", "bug_fixes", "features", "repo_wide"] },
+    "scenarios": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "components"],
+        "properties": { "id": { "enum": ["first_pr", "bug_fixes", "features", "repo_wide"] }, "components": { "type": "array", "minItems": 1, "items": { "type": "string", "minLength": 1 } } }
+      }
+    },
     "tier": { "enum": ["read-only", "local-exec", "external-systems"] },
     "skill": {
       "type": "object",

@@ -108,13 +108,22 @@ export async function runContract(
   const offlineCmds = contract.filter((c) => !order.includes(c.kind) && wanted(c));
   const failedInstalls = new Set<string>();
   const blockedInstalls = new Set<string>();
+  const blockedIds = new Set<string>();
+  // Components whose own frozen install passed after the shared install was blocked.
+  const rescued = new Set<string>();
+  const gated = (cmd: ContractCommand) => {
+    if (cmd.kind === "doctor" || cmd.fallbackFor) return false;
+    if (failedInstalls.has(cmd.component) && !rescued.has(cmd.component)) return true;
+    return failedInstalls.has("*") && !rescued.has(cmd.component) && !rescued.has("*");
+  };
   const run = async (cmd: ContractCommand) => {
+    if (cmd.fallbackFor && !blockedIds.has(cmd.fallbackFor)) return;
     if (overBudget(opts.budget, cmd.component)) {
       push({ cmd, status: "not_run", outcome: null, diagnosis: null, note: "cut off by the time budget" });
       return;
     }
-    if (cmd.kind !== "doctor" && (failedInstalls.has("*") || failedInstalls.has(cmd.component))) {
-      const blocked = blockedInstalls.has("*") || blockedInstalls.has(cmd.component);
+    if (gated(cmd)) {
+      const blocked = blockedInstalls.has(cmd.component) || (blockedInstalls.has("*") && !failedInstalls.has(cmd.component));
       push({ cmd, status: "not_run", outcome: null, diagnosis: null, note: blocked ? INSTALL_BLOCKED : "not run because the install failed", blocked: blocked ? "the install was blocked on this machine" : undefined });
       return;
     }
@@ -122,6 +131,7 @@ export async function runContract(
       if (cmd.kind === "install") {
         failedInstalls.add(cmd.component);
         blockedInstalls.add(cmd.component);
+        blockedIds.add(cmd.id);
       }
       push({ cmd, status: "not_run", outcome: null, diagnosis: null, note: SUDO_REFUSED, blocked: `the ${cmd.kind} command uses sudo, which the audit never runs on the host` });
       return;
@@ -133,9 +143,13 @@ export async function runContract(
     const blocked = !ok && ex.where !== "container" && diagnosis?.cause === "missing_tool" ? `${diagnosis.detail} on this machine` : undefined;
     if (!ok && cmd.kind === "install") {
       failedInstalls.add(cmd.component);
-      if (blocked) blockedInstalls.add(cmd.component);
+      if (blocked) {
+        blockedInstalls.add(cmd.component);
+        blockedIds.add(cmd.id);
+      }
     }
-    push({ cmd, status: ok ? "pass" : "fail", outcome: out, diagnosis, note: "", blocked });
+    if (ok && cmd.kind === "install" && cmd.fallbackFor) rescued.add(cmd.component);
+    push({ cmd, status: ok ? "pass" : "fail", outcome: out, diagnosis, note: cmd.fallbackFor && ok ? "ran on its own because the shared install was blocked on this machine" : "", blocked });
   };
   for (const cmd of online) await run(cmd);
   const wentOffline = ex.offline();
@@ -151,7 +165,7 @@ export function evidenceFromPhase(audit: Audit, ex: Executor, r: PhaseResult, re
   const redacted = r.outcome ? redact(r.outcome.output, registryValues) : "";
   let summary: string;
   if (r.status === "pass") summary = `${r.cmd.kind} passed`;
-  else if (r.status === "not_run") summary = `${r.cmd.kind} not run: ${r.note}`;
+  else if (r.status === "not_run") summary = r.note.startsWith("not run") ? `${r.cmd.kind} ${r.note}` : `${r.cmd.kind} not run: ${r.note}`;
   else summary = `${r.cmd.kind} failed: ${r.diagnosis?.detail ?? "non-zero exit"}`;
   if (r.status === "fail" && r.diagnosis?.cause === "registry" && audit.environment.registryEnv.length === 0) summary = `${r.cmd.kind} failed: registry credentials not provided (pass them with --registry-env)`;
   return addEvidence(audit, {
@@ -328,7 +342,11 @@ export function makeExecutor(audit: Audit, copyDir: string, runtimePref: string,
 
 export async function replay(audit: Audit, repo: string, tree: string, rubric: Rubric, opts: ReplayOptions): Promise<void> {
   if (audit.tier === "read-only") fail("The read-only tier doesn't run repo code. Re-init with --tier local-exec.");
-  if (!audit.profile || audit.contract.length === 0) fail("Run `readiness scan` before `readiness replay`.");
+  if (!audit.profile) fail("Run `readiness scan` before `readiness replay`.");
+  if (!audit.profile.components.some((c) => c.assessed)) {
+    opts.log("Nothing to replay: no component could be assessed. The report says why and gives no level.");
+    return;
+  }
   const profile = audit.profile;
   const copyDir = join(mkdtempSync(join(tmpdir(), "readiness-replay-")), "work");
   cpSync(tree, copyDir, { recursive: true });
@@ -358,7 +376,9 @@ export async function replay(audit: Audit, repo: string, tree: string, rubric: R
         audit.safety.push({ id: `saf-${String(audit.safety.length + 1).padStart(3, "0")}`, kind: "credential_needed", file: ev.id, detail: `tests ${r.diagnosis.detail}`, blocking: true });
       }
     }
-    const installs = results.filter((r) => r.cmd.kind === "install");
+    const allInstalls = results.filter((r) => r.cmd.kind === "install");
+    // When this machine blocked the shared install, the components' own frozen installs stand in for it.
+    const installs = allInstalls.some((r) => r.cmd.fallbackFor) ? allInstalls.filter((r) => r.cmd.fallbackFor || !r.blocked) : allInstalls;
     const installed = installs.length > 0 && installs.every((r) => r.status === "pass");
     if (installed) lockfileEvidence(audit, ex, profile, copyDir, before, installs.map((r) => r.cmd));
     else if (installs.some((r) => r.blocked) && installs.every((r) => r.status === "pass" || r.blocked)) {

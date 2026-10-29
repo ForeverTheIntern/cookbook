@@ -81,15 +81,20 @@ export interface LevelChange {
   to: number | null;
 }
 
+// activity is "standard" for a component's own level, or the scenario id for a scenario under it.
 export function levelChanges(a: HistoryLine, b: HistoryLine): LevelChange[] {
   const out: LevelChange[] = [];
-  const comps = new Set([...Object.keys(a.levels), ...Object.keys(b.levels)]);
-  for (const c of comps) {
-    const acts = new Set([...Object.keys(a.levels[c] ?? {}), ...Object.keys(b.levels[c] ?? {})]);
-    for (const act of acts) {
-      const from = (a.levels[c] ?? {})[act as keyof (typeof a.levels)[string]] ?? null;
-      const to = (b.levels[c] ?? {})[act as keyof (typeof b.levels)[string]] ?? null;
-      if (from !== to) out.push({ component: c, activity: act, from, to });
+  const level = (h: HistoryLine, c: string) => (h.noLevel ? null : (h.levels?.[c] ?? null));
+  if ((a.noLevel ? null : a.repoLevel) !== (b.noLevel ? null : b.repoLevel)) out.push({ component: "*", activity: "standard", from: a.noLevel ? null : a.repoLevel, to: b.noLevel ? null : b.repoLevel });
+  for (const c of new Set([...Object.keys(a.levels ?? {}), ...Object.keys(b.levels ?? {})])) {
+    if (level(a, c) !== level(b, c)) out.push({ component: c, activity: "standard", from: level(a, c), to: level(b, c) });
+  }
+  for (const c of new Set([...Object.keys(a.scenarioLevels ?? {}), ...Object.keys(b.scenarioLevels ?? {})])) {
+    const ids = new Set([...Object.keys(a.scenarioLevels?.[c] ?? {}), ...Object.keys(b.scenarioLevels?.[c] ?? {})]);
+    for (const id of ids) {
+      const from = (a.scenarioLevels?.[c] as Record<string, number> | undefined)?.[id] ?? null;
+      const to = (b.scenarioLevels?.[c] as Record<string, number> | undefined)?.[id] ?? null;
+      if (from !== to) out.push({ component: c, activity: id, from, to });
     }
   }
   return out;

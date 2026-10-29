@@ -149,13 +149,22 @@ function categorize(cmd: string): InstructionItem["category"] {
   return "replay";
 }
 
+const FUTURE = /\b(will (be )?(add|creat|live|hold|contain)\w*|(to be|not yet) (added|created)|(added|created|coming) later|later on|planned|upcoming|in the future|doesn't exist yet|does not exist yet|TODO)\b/i;
+
 export function instructionItems(tree: string, profile: Profile): InstructionItem[] {
   const items: InstructionItem[] = [];
   let n = 1;
   let basenames: Set<string> | null = null;
   for (const file of profile.instructionFiles) {
     const fileDir = dirname(file) === "" ? "." : dirname(file);
-    for (const e of extractFromMarkdown(readText(join(tree, file)))) {
+    const text = readText(join(tree, file));
+    const lines = text.split("\n");
+    for (const e of extractFromMarkdown(text)) {
+      // A path the docs say comes later isn't drift: it can't mislead an agent into using it now.
+      if (e.kind === "path" && FUTURE.test(lines[e.line - 1] ?? "")) {
+        const rel = e.text.replace(/\/$/, "");
+        if (!exists(join(tree, normalize(join(fileDir, rel)))) && !exists(join(tree, rel))) continue;
+      }
       if (e.kind === "path") {
         const rel = e.text.replace(/\/$/, "");
         const fromFile = normalize(join(fileDir, rel));

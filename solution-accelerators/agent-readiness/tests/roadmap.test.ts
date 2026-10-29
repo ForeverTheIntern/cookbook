@@ -16,7 +16,6 @@ function ctxFor(audit: Audit): RoadmapContext {
   return {
     audit,
     rubric,
-    goal: audit.goal,
     components: comps,
     states: new Map(comps.filter((c) => c.assessed).map((c) => [c.id, componentStates(audit, rubric, c.id)])),
     active: activeComponents(rubric, comps, []),
@@ -46,34 +45,39 @@ describe("roadmap", () => {
     assert.match(waiting.unlocks, /first needs Set up Postgres for agents in api/);
   });
 
-  test("top items block the goal's next level, at most three, ordered by impact then effort", () => {
+  test("top items block a component's next standard level, at most three, ordered by impact then effort", () => {
     const r = updateRoadmap(null, ctxFor(makeAudit(mixed)));
     assert.deepEqual(r.top.map((t) => t.id), ["clean.test:api", "faults:worker"]);
-    assert.equal(r.startNow?.id, "delegate:bug_fixes:shared");
+    assert.equal(r.startNow?.id, "delegate:shared");
     assert.ok(r.top.length <= 3);
     for (const t of r.top) assert.equal(t.status, "next");
   });
 
-  test("an item that doesn't matter for the goal is never a top item", () => {
-    const audit = makeAudit({ ...mixed, instructions: [{ id: "ins-1", source: "AGENTS.md", line: 7, kind: "command", text: "pnpm test", category: "replay", staticResult: "fail", result: "fail", reason: "uses pnpm, but the repo uses npm" }] });
+  test("an item the standard level doesn't need is never a top item, even when a scenario would", () => {
+    const audit = makeAudit({ scenarios: [{ id: "repo_wide", components: ["*"] }], components: [{ id: "app", share: 1, faults: "pass" }], toolchainPinned: false, lockfile: "fail" });
     const r = updateRoadmap(null, ctxFor(audit));
-    const ins = r.roadmap.items.find((i) => i.id === "instructions:repo")!;
-    assert.equal(ins.status, "later");
-    assert.ok(!r.top.some((t) => t.id === "instructions:repo"));
+    assert.deepEqual(r.top.map((t) => t.id), ["targets"]);
+    for (const id of ["toolchain:repo", "lockfile:repo"]) {
+      const item = r.roadmap.items.find((i) => i.id === id)!;
+      assert.equal(item.status, "later");
+      assert.equal(item.impact, 0);
+    }
   });
 
   test("co-required items both block and describe what they unlock together", () => {
-    const audit = makeAudit({ goal: "repo_wide", components: [{ id: "app", share: 1, faults: "pass" }], toolchainPinned: false, lockfile: "fail" });
-    const r = updateRoadmap(null, ctxFor(audit));
-    assert.deepEqual(r.top.map((t) => t.id).sort(), ["lockfile:repo", "toolchain:repo"]);
-    const tc = r.roadmap.items.find((i) => i.id === "toolchain:repo")!;
-    assert.deepEqual(tc.dependsOn, []);
-    assert.match(tc.unlocks, /the repo to Level 2 for repo-wide changes together with Make the install reproducible/);
+    const stale = [{ id: "ins-1", source: "AGENTS.md", line: 7, kind: "command" as const, text: "pnpm test", category: "replay" as const, staticResult: "fail" as const, result: "fail" as const, reason: "uses pnpm, but the repo uses npm" }];
+    const r = updateRoadmap(null, ctxFor(makeAudit({ components: [{ id: "app", share: 1, faults: "fail" }], instructions: stale })));
+    assert.deepEqual(r.top.map((t) => t.id).sort(), ["faults:app", "instructions:repo"]);
+    const ins = r.roadmap.items.find((i) => i.id === "instructions:repo")!;
+    assert.deepEqual(ins.dependsOn, []);
+    assert.match(ins.unlocks, /^app to Level 2 together with Make app's tests catch wrong behavior/);
   });
 
   test("the roadmap opens with naming an owner until one is recorded", () => {
     const r = updateRoadmap(null, ctxFor(makeAudit(mixed)));
     assert.equal(r.roadmap.items[0].id, "owner");
+    const blocked = updateRoadmap(null, { ...ctxFor(makeAudit(mixed)), decisionsOnly: true });
+    assert.deepEqual([blocked.roadmap.items.map((i) => i.id), blocked.top, blocked.startNow], [["owner", "targets"], [], null], "with no real results only the decisions stay, so the ask to name an owner matches a roadmap step");
     const owned: Roadmap = { ...r.roadmap, owner: "Platform team" };
     const again = updateRoadmap(owned, ctxFor(makeAudit({ ...mixed, id: "aud-2026-11-01-abc1234-0002" })));
     assert.equal(again.roadmap.items.find((i) => i.id === "owner")!.status, "done");
@@ -81,8 +85,8 @@ describe("roadmap", () => {
 
   test("with no blocker, targets are next and the ready component can start now", () => {
     const r = updateRoadmap(null, ctxFor(makeAudit({ components: [{ id: "app", share: 1, faults: "pass" }] })));
-    assert.deepEqual(r.top.map((t) => t.id), ["targets:bug_fixes"]);
-    assert.equal(r.startNow?.id, "delegate:bug_fixes:app");
+    assert.deepEqual(r.top.map((t) => t.id), ["targets"]);
+    assert.equal(r.startNow?.id, "delegate:app");
   });
 
   test("IDs are stable across audits, and the audit that closes an item records it", () => {

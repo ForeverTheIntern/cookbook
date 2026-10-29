@@ -1,27 +1,16 @@
 {
-  "goal": "bug_fixes",
   "purpose": "A healthy app whose declared start command runs sudo, plus a package script that does. The safety check lists both without blocking. The environment setup isn't counted as a working setup, and with no container runtime the host fallback never runs the sudo command.",
   "runs": [
     {
       "name": "default",
       "level": 2,
       "levels": {
-        "booking-api": {
-          "first_pr": 2,
-          "bug_fixes": 2,
-          "features": 2
-        }
-      },
-      "repoLevels": {
-        "first_pr": 2,
-        "bug_fixes": 2,
-        "features": 2,
-        "repo_wide": 2
+        "booking-api": 2
       },
       "top": [
-        "targets:bug_fixes"
+        "targets"
       ],
-      "startNow": "delegate:bug_fixes:booking-api",
+      "startNow": "delegate:booking-api",
       "noBlocker": true,
       "safety": "pass",
       "outcome": "proven",
@@ -37,17 +26,7 @@
       "runtime": "none",
       "level": 0,
       "levels": {
-        "booking-api": {
-          "first_pr": 0,
-          "bug_fixes": 0,
-          "features": 0
-        }
-      },
-      "repoLevels": {
-        "first_pr": 0,
-        "bug_fixes": 0,
-        "features": 0,
-        "repo_wide": 0
+        "booking-api": 0
       },
       "top": [],
       "startNow": null,

@@ -1,88 +1,114 @@
 import assert from "node:assert/strict";
 import { describe, test } from "node:test";
-import { activeComponents, capAt, componentLevel, outcomeLevel, partialCoverage, recheckStates, repoLevel, repoWideLevel, statesOf, targetsMet } from "../skill/agent-readiness/scripts/lib/levels.ts";
+import { activeComponents, capAt, componentLevel, outcomeLevel, partialCoverage, previousAtLevel3, recheckStates, repoLevel, scenariosFor, statesOf, targetsMet } from "../skill/agent-readiness/scripts/lib/levels.ts";
 import { loadRubric } from "../skill/agent-readiness/scripts/lib/rubric.ts";
+import { compute } from "../skill/agent-readiness/scripts/lib/seal.ts";
 import { componentStates } from "../skill/agent-readiness/scripts/lib/score.ts";
 import type { HistoryLine } from "../skill/agent-readiness/scripts/lib/types.ts";
-import { instruction, makeAudit, outcomes, stats } from "./helpers.ts";
+import { instruction, makeAudit, outcomes, reportFor, stats } from "./helpers.ts";
 
 const rubric = loadRubric("2026-10-alpha");
 
 function levelsOf(spec: Parameters<typeof makeAudit>[0], comp: string) {
   const audit = makeAudit(spec);
   const s = statesOf(componentStates(audit, rubric, comp));
-  return { first_pr: componentLevel(rubric, s, "first_pr"), bug_fixes: componentLevel(rubric, s, "bug_fixes"), features: componentLevel(rubric, s, "features") };
+  return { standard: componentLevel(rubric, s), first_pr: componentLevel(rubric, s, "first_pr"), bug_fixes: componentLevel(rubric, s, "bug_fixes"), repo_wide: componentLevel(rubric, s, "repo_wide") };
 }
 
-function line(id: string, shares: Record<string, number>, active: string[]): HistoryLine {
-  return { id, kind: "audit", date: "2026-10-01", commit: "x", rubric: "2026-10-alpha", scriptsDigest: "x", result: "sealed", goal: "bug_fixes", levels: {}, repoLevels: {}, shares, active, seedPinned: false };
+function line(id: string, shares: Record<string, number>, active: string[], levels: Record<string, 0 | 1 | 2 | 3 | 4> = {}): HistoryLine {
+  return { id, kind: "audit", date: "2026-10-01", commit: "x", rubric: "2026-10-alpha", scriptsDigest: "x", result: "sealed", levels, repoLevel: 0, scenarioLevels: {}, shares, active, seedPinned: false };
 }
 
-describe("level rules", () => {
+describe("standard level", () => {
   test("a clean-container pass of install, build and tests gives Level 1", () => {
-    const l = levelsOf({ components: [{ id: "a", share: 1, faults: "fail" }] }, "a");
-    assert.equal(l.bug_fixes.level, 1);
+    assert.equal(levelsOf({ components: [{ id: "a", share: 1, faults: "fail" }] }, "a").standard.level, 1);
   });
 
   test("a pass on the host only is not proven, so the level is 0 with a could-be note", () => {
-    const l = levelsOf({ components: [{ id: "a", share: 1, where: "fresh_copy", faults: "pass" }] }, "a");
-    assert.equal(l.bug_fixes.level, 0);
-    assert.equal(l.bug_fixes.couldBe, 1);
+    const l = levelsOf({ components: [{ id: "a", share: 1, where: "fresh_copy", faults: "pass" }] }, "a").standard;
+    assert.deepEqual([l.level, l.couldBe], [0, 1]);
   });
 
   test("tests that run but fail give Level 0", () => {
-    const l = levelsOf({ components: [{ id: "a", share: 1, test: "fail", faults: "not_run" }] }, "a");
-    assert.equal(l.first_pr.level, 0);
-    assert.equal(l.bug_fixes.level, 0);
-    assert.equal(l.bug_fixes.couldBe, null);
+    const l = levelsOf({ components: [{ id: "a", share: 1, test: "fail", faults: "not_run" }] }, "a").standard;
+    assert.deepEqual([l.level, l.couldBe], [0, null]);
   });
 
   test("a component with no test command can't reach Level 1", () => {
-    const l = levelsOf({ components: [{ id: "a", share: 1, test: "missing" }] }, "a");
-    assert.equal(l.bug_fixes.level, 0);
+    assert.equal(levelsOf({ components: [{ id: "a", share: 1, test: "missing" }] }, "a").standard.level, 0);
   });
 
-  test("0 of N planted faults caught is never Level 2 for an activity that needs them", () => {
-    const l = levelsOf({ components: [{ id: "a", share: 1, faults: "fail" }] }, "a");
-    assert.equal(l.bug_fixes.level, 1);
-    assert.equal(l.features.level, 1);
-    assert.equal(l.first_pr.level, 2);
-    const audit = makeAudit({ components: [{ id: "a", share: 1, faults: "fail" }] });
-    const maps = new Map([["a", statesOf(componentStates(audit, rubric, "a"))]]);
-    assert.equal(repoWideLevel(rubric, maps).level, 1);
+  test("Level 2 needs the commands, caught planted faults, accurate instructions and no production access", () => {
+    assert.deepEqual(rubric.level2, ["commands", "faults", "instructions", "safety"]);
+    assert.equal(levelsOf({ components: [{ id: "a", share: 1, faults: "pass" }] }, "a").standard.level, 2);
+    assert.equal(levelsOf({ components: [{ id: "a", share: 1, faults: "fail" }] }, "a").standard.level, 1, "0 of N planted faults caught is never Level 2");
+    const drift = levelsOf({ components: [{ id: "a", share: 1, faults: "pass" }], instructions: [instruction("fail", "pnpm test", "uses pnpm, but the repo uses npm")] }, "a");
+    assert.equal(drift.standard.level, 1, "stale instructions hold the standard level at 1");
   });
 
   test("faults that couldn't be planted read as could-be, not as passed", () => {
-    const l = levelsOf({ components: [{ id: "a", share: 1, faults: "not_run" }] }, "a");
-    assert.equal(l.bug_fixes.level, 1);
-    assert.equal(l.bug_fixes.couldBe, 2);
+    const l = levelsOf({ components: [{ id: "a", share: 1, faults: "not_run" }] }, "a").standard;
+    assert.deepEqual([l.level, l.couldBe], [1, 2]);
+  });
+});
+
+describe("scenarios", () => {
+  test("a scenario swaps in its own Level 2 bar and never changes the standard level", () => {
+    const drift = levelsOf({ components: [{ id: "a", share: 1, faults: "pass" }], instructions: [instruction("fail", "pnpm test", "uses pnpm, but the repo uses npm")] }, "a");
+    assert.deepEqual([drift.standard.level, drift.bug_fixes.level, drift.first_pr.level], [1, 2, 1]);
+    const unpinned = levelsOf({ components: [{ id: "a", share: 1, faults: "pass" }], toolchainPinned: false, lockfile: "pass" }, "a");
+    assert.deepEqual([unpinned.standard.level, unpinned.repo_wide.level], [2, 1], "repo-wide changes also need pinned toolchains");
   });
 
-  test("features also need accurate instructions; bug fixes don't", () => {
-    const l = levelsOf({ components: [{ id: "a", share: 1, faults: "pass" }], instructions: [instruction("fail", "pnpm test", "uses pnpm, but the repo uses npm")] }, "a");
-    assert.equal(l.bug_fixes.level, 2);
-    assert.equal(l.features.level, 1);
-    assert.equal(l.first_pr.level, 1);
+  test("a scenario applies only to the components it names", () => {
+    const specs = [{ id: "bug_fixes" as const, components: ["web"] }, { id: "repo_wide" as const, components: ["*"] }];
+    assert.deepEqual(scenariosFor(rubric, specs, "web"), ["bug_fixes", "repo_wide"]);
+    assert.deepEqual(scenariosFor(rubric, specs, "api"), ["repo_wide"]);
+    assert.deepEqual(scenariosFor(rubric, [], "web"), []);
   });
 
-  test("repo-wide changes need pinned toolchains and a reproducible lockfile", () => {
-    const audit = makeAudit({ components: [{ id: "a", share: 1, faults: "pass" }], toolchainPinned: false, lockfile: "pass" });
-    const maps = new Map([["a", statesOf(componentStates(audit, rubric, "a"))]]);
-    assert.equal(repoWideLevel(rubric, maps).level, 1);
-    const fixed = makeAudit({ components: [{ id: "a", share: 1, faults: "pass" }], toolchainPinned: true, lockfile: "pass" });
-    assert.equal(repoWideLevel(rubric, new Map([["a", statesOf(componentStates(fixed, rubric, "a"))]])).level, 2);
+  test("two components and one scenario on only one: the scenario nests under that component, and the repo rolls up standard levels only", () => {
+    const audit = makeAudit({
+      scenarios: [{ id: "first_pr", components: ["web"] }],
+      components: [{ id: "web", share: 0.6, faults: "fail" }, { id: "api", share: 0.4, faults: "pass" }],
+    });
+    const c = compute(audit, rubric, []);
+    assert.deepEqual([...c.scenarioLevels.get("web")!.keys()], ["first_pr"]);
+    assert.equal(c.scenarioLevels.get("api")!.size, 0);
+    const r = reportFor(audit);
+    const web = r.components.included.find((x) => x.id === "web")!;
+    const api = r.components.included.find((x) => x.id === "api")!;
+    assert.deepEqual([web.level, web.scenarios.map((s) => [s.id, s.level])], [1, [["first_pr", 2]]], "web is Level 1 standard and Level 2 for a first PR");
+    assert.deepEqual([api.level, api.scenarios], [2, []], "api has no scenario breakdown");
+    assert.equal(r.maturity.level, 1, "the repo rolls up the standard levels, not the scenario");
+    assert.deepEqual(r.maturity.setBy, ["web"]);
+    assert.deepEqual(r.scenarios, [{ id: "first_pr", label: "First PR", components: ["web"] }]);
+    assert.doesNotMatch(r.executive.heading + r.executive.headline, /first PR|bug fixes|for /i, "part 1 carries no activity framing");
+  });
+});
+
+describe("repo rollup", () => {
+  test("the rule is written into the rubric and the report", () => {
+    assert.match(rubric.repoLevel.rule, /^the lowest level among active components/);
+    const r = reportFor(makeAudit({ components: [{ id: "a", share: 1, faults: "pass" }] }));
+    assert.equal(r.maturity.rule, `The repo level is ${rubric.repoLevel.rule}.`);
   });
 
-  test("the repo level is the lowest level among active components", () => {
+  test("the repo level is the lowest standard level among active components", () => {
     const audit = makeAudit({ components: [{ id: "api", share: 0.56, test: "fail" }, { id: "shared", share: 0.38, faults: "pass" }, { id: "docs", share: 0.06, test: "fail" }] });
     const active = activeComponents(rubric, audit.profile!.components, []);
     assert.deepEqual([...active].sort(), ["api", "shared"]);
-    const levels = new Map(["api", "shared", "docs"].map((id) => [id, componentLevel(rubric, statesOf(componentStates(audit, rubric, id)), "bug_fixes")]));
+    const levels = new Map(["api", "shared", "docs"].map((id) => [id, componentLevel(rubric, statesOf(componentStates(audit, rubric, id)))]));
     const r = repoLevel(levels, active);
-    assert.equal(r.level, 0);
-    assert.deepEqual(r.setBy, ["api"]);
-    const withoutApi = repoLevel(levels, new Set(["shared"]));
-    assert.equal(withoutApi.level, 2, "a component under 10% doesn't set the level");
+    assert.deepEqual([r.level, r.setBy], [0, ["api"]]);
+    assert.equal(repoLevel(levels, new Set(["shared"])).level, 2, "a component under 10% doesn't set the level");
+  });
+
+  test("components the audit can't assess never set the level", () => {
+    const r = reportFor(makeAudit({ components: [{ id: "web", share: 0.5, faults: "pass" }, { id: "infra", share: 0.5, assessed: false }] }));
+    assert.equal(r.maturity.level, 2);
+    assert.deepEqual(r.components.excluded.map((c) => c.id), ["infra"]);
+    assert.equal(r.maturity.partialCoverage, true);
   });
 
   test("the 10% rule changes membership only after two consecutive audits", () => {
@@ -106,37 +132,43 @@ describe("level rules", () => {
 
 describe("outcome levels", () => {
   const targets = { mergeRate: 0.7, firstPass: 0.6, maxChangesRequested: 0.3, minAgentPrs: 20 };
+  const window = (agent: ReturnType<typeof stats>, control = stats(40, 35, 30, 5)) => ({ agent, control });
 
-  test("Level 3 needs recorded targets", () => {
-    const o = outcomes("2026-10-01", "2026-10-30", stats(25, 22, 20, 3), stats(40, 35, 30, 5));
-    assert.equal(outcomeLevel(rubric, { level2: true, targets: null, outcomes: o, previous: [], goal: "bug_fixes" }).level, null);
-    assert.equal(outcomeLevel(rubric, { level2: true, targets, outcomes: o, previous: [], goal: "bug_fixes" }).level, 3);
-    assert.equal(outcomeLevel(rubric, { level2: false, targets, outcomes: o, previous: [], goal: "bug_fixes" }).level, null);
+  test("Level 3 needs recorded targets and Level 2 first", () => {
+    const o = window(stats(25, 22, 20, 3));
+    assert.equal(outcomeLevel(rubric, { level2: true, targets: null, outcomes: o, previousAtLevel3: null }).level, null);
+    assert.equal(outcomeLevel(rubric, { level2: true, targets, outcomes: o, previousAtLevel3: null }).level, 3);
+    assert.equal(outcomeLevel(rubric, { level2: false, targets, outcomes: o, previousAtLevel3: null }).level, null);
   });
 
   test("the sample floor holds: fewer than 20 agent PRs can't reach Level 3", () => {
-    const o = outcomes("2026-10-01", "2026-10-30", stats(12, 12, 12, 0), stats(40, 35, 30, 5));
-    const r = targetsMet(rubric, targets, o);
+    const r = targetsMet(rubric, targets, window(stats(12, 12, 12, 0)));
     assert.equal(r.met, false);
     assert.match(r.reasons[0], /only 12 agent PRs/);
   });
 
   test("a team can't lower the floor below 10", () => {
-    const o = outcomes("2026-10-01", "2026-10-30", stats(8, 8, 8, 0), stats(40, 35, 30, 5));
-    assert.equal(targetsMet(rubric, { ...targets, minAgentPrs: 5 }, o).met, false);
+    assert.equal(targetsMet(rubric, { ...targets, minAgentPrs: 5 }, window(stats(8, 8, 8, 0))).met, false);
   });
 
   test("Level 3 always needs a control group", () => {
-    const o = outcomes("2026-10-01", "2026-10-30", stats(25, 22, 20, 3), stats(0, 0, 0, 0));
-    assert.equal(targetsMet(rubric, targets, o).met, false);
+    assert.equal(targetsMet(rubric, targets, window(stats(25, 22, 20, 3), stats(0, 0, 0, 0))).met, false);
   });
 
   test("Level 4 needs agent PR volume to double without change requests rising", () => {
-    const prev: HistoryLine = { ...line("aud-1", {}, []), repoLevels: { bug_fixes: 3 }, outcomes: { window: "w", agent: stats(20, 18, 16, 2), control: stats(40, 35, 30, 5), byComponent: {} } };
-    const doubled = outcomes("2026-10-01", "2026-10-30", stats(42, 38, 34, 4), stats(40, 35, 30, 5));
-    assert.equal(outcomeLevel(rubric, { level2: true, targets, outcomes: doubled, previous: [prev], goal: "bug_fixes" }).level, 4);
-    const moreReviews = outcomes("2026-10-01", "2026-10-30", stats(42, 38, 34, 10), stats(40, 35, 30, 5));
-    assert.equal(outcomeLevel(rubric, { level2: true, targets, outcomes: moreReviews, previous: [prev], goal: "bug_fixes" }).level, 3);
+    const prev = stats(20, 18, 16, 2);
+    assert.equal(outcomeLevel(rubric, { level2: true, targets, outcomes: window(stats(42, 38, 34, 4)), previousAtLevel3: prev }).level, 4);
+    assert.equal(outcomeLevel(rubric, { level2: true, targets, outcomes: window(stats(42, 38, 34, 10)), previousAtLevel3: prev }).level, 3);
+  });
+
+  test("Levels 3 and 4 are measured per component, on the agent PRs that touch it", () => {
+    const o = outcomes("2026-10-01", "2026-10-30", stats(45, 40, 36, 4), stats(40, 35, 30, 5), { web: stats(30, 27, 24, 2), api: stats(15, 13, 12, 2) });
+    const audit = makeAudit({ components: [{ id: "web", share: 0.6, faults: "pass" }, { id: "api", share: 0.4, faults: "pass" }], outcomes: o });
+    const c = compute(audit, rubric, [], targets);
+    assert.deepEqual([c.levels.get("web")!.level, c.levels.get("api")!.level], [3, 2], "api has too few agent PRs of its own");
+    assert.match(c.levels.get("api")!.outcomeReasons[0], /only 15 agent PRs/);
+    assert.equal(c.repo.level, 2, "the repo is as high as its lowest active component");
+    assert.deepEqual(previousAtLevel3([{ ...line("aud-1", {}, ["web"], { web: 3 }), outcomes: { window: "w", agent: o.agent, control: o.control, byComponent: o.byComponent } }], "web"), o.byComponent.web);
   });
 });
 
@@ -144,15 +176,15 @@ describe("recheck rule", () => {
   const base = statesOf(componentStates(makeAudit({ components: [{ id: "a", share: 1, lint: "pass", faults: "pass" }] }), rubric, "a"));
 
   test("a lint failure in a recheck gives Level 1", () => {
-    assert.equal(componentLevel(rubric, recheckStates(base, new Set(["lint"])), "bug_fixes").level, 1);
+    assert.equal(componentLevel(rubric, recheckStates(base, new Set(["lint"]))).level, 1);
   });
 
   test("a failing test in a recheck gives Level 0", () => {
-    assert.equal(componentLevel(rubric, recheckStates(base, new Set(["test"])), "bug_fixes").level, 0);
+    assert.equal(componentLevel(rubric, recheckStates(base, new Set(["test"]))).level, 0);
   });
 
   test("a passing recheck restores the last audit's level and never raises it", () => {
-    assert.equal(componentLevel(rubric, recheckStates(base, new Set()), "bug_fixes").level, 2);
+    assert.equal(componentLevel(rubric, recheckStates(base, new Set())).level, 2);
     assert.equal(capAt(2, 1), 1);
     assert.equal(capAt(0, 1), 0);
   });

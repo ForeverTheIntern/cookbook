@@ -13,11 +13,13 @@ describe("fixtures match expected.json", { concurrency: 3, skip: runtime ? false
         const a = auditFixture(name, run);
         assert.equal(a.code, 0, a.out);
         const r = a.report;
-        assert.equal(r.maturity.level, run.level, "repo level for the goal");
-        const levels: Record<string, Record<string, number>> = {};
-        for (const c of r.details.levels.components) levels[c.id] = c.levels;
-        assert.deepEqual(levels, run.levels, "levels per component and activity");
-        assert.deepEqual(r.details.levels.repoLevels, run.repoLevels, "repo levels per activity");
+        assert.equal(r.maturity.level, run.level, "repo rollup");
+        const levels: Record<string, number> = {};
+        for (const c of r.components.included) levels[c.id] = c.level;
+        assert.deepEqual(levels, run.levels, "one standard level per assessed component");
+        const scenarioLevels: Record<string, Record<string, number>> = {};
+        for (const c of r.components.included) if (c.scenarios.length) scenarioLevels[c.id] = Object.fromEntries(c.scenarios.map((s: { id: string; level: number }) => [s.id, s.level]));
+        assert.deepEqual(scenarioLevels, run.scenarioLevels ?? {}, "scenarios appear only when added, under their components");
         const top = r.actions.filter((x: { startNow: boolean }) => !x.startNow).map((x: { itemId: string }) => x.itemId);
         assert.deepEqual(top, run.top, "top items in order");
         const startNow = r.actions.find((x: { startNow: boolean }) => x.startNow)?.itemId ?? null;
@@ -30,15 +32,15 @@ describe("fixtures match expected.json", { concurrency: 3, skip: runtime ? false
           const item = a.roadmap.items.find((i: { id: string }) => i.id === t);
           for (const f of item.fixes) assert.ok(!passedChecks.has(checkOf(f.condition)), `${t} names a check that passed`);
         }
-        if (run.notAssessed) assert.deepEqual(r.details.levels.unassessed.map((u: { id: string }) => u.id), run.notAssessed);
+        if (run.notAssessed) assert.deepEqual(r.components.excluded.filter((u: { reason: string }) => !u.reason.startsWith("not a component")).map((u: { id: string }) => u.id), run.notAssessed);
         if (run.waiting) for (const w of run.waiting) assert.equal(a.roadmap.items.find((i: { id: string }) => i.id === w)?.status, "waiting", `${w} waits`);
         if (run.diagnosis) assert.ok(r.details.evidence.some((e: { summary: string }) => e.summary.includes(run.diagnosis!)), `evidence says ${run.diagnosis}`);
         if (run.outcome) assert.equal(r.maturity.outcome, run.outcome, "outcome");
         if (run.shares) {
-          const all = [...r.details.scope.included, ...r.details.scope.excluded.filter((c: { reason: string }) => !c.reason.startsWith("not a component"))];
+          const all = [...r.components.included, ...r.components.excluded.filter((c: { reason: string }) => !c.reason.startsWith("not a component"))];
           assert.deepEqual(Object.fromEntries(all.filter((c: { id: string }) => c.id in run.shares!).map((c: { id: string; changeShare: number }) => [c.id, c.changeShare])), run.shares, "share of changes, kept for components that aren't assessed");
         }
-        if (run.satellites) assert.deepEqual(r.details.scope.excluded.filter((c: { reason: string }) => c.reason.startsWith("not a component")).map((c: { path: string }) => c.path), run.satellites, "satellites");
+        if (run.satellites) assert.deepEqual(r.components.excluded.filter((c: { reason: string }) => c.reason.startsWith("not a component")).map((c: { path: string }) => c.path), run.satellites, "satellites");
         if (run.assets) for (const [path, ok] of Object.entries(run.assets)) assert.equal(r.details.assets.find((x: { path: string }) => x.path === path)?.ok, ok, `asset ${path} ok`);
         if (run.listed) assert.deepEqual([...new Set(a.audit.safety.filter((s: { blocking: boolean }) => !s.blocking).map((s: { kind: string }) => s.kind))].sort(), [...run.listed].sort(), "safety findings listed for review");
         if (run.signals) assert.deepEqual(Object.fromEntries(r.details.signals.filter((s: { id: string }) => s.id in run.signals!).map((s: { id: string; found: boolean | null }) => [s.id, s.found])), run.signals, "informational signals");

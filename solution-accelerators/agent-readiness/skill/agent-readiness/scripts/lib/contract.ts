@@ -52,6 +52,26 @@ function pythonTest(tree: string, path: string): string | null {
   return null;
 }
 
+function doctorCommand(profile: Profile): string {
+  const pms = new Set(profile.components.filter((c) => c.assessed).map((c) => c.packageManager ?? (c.path === "." ? profile.packageManager : null)).filter((x): x is NonNullable<Profile["packageManager"]> => Boolean(x)));
+  const parts: string[] = [];
+  if ([...pms].some((p) => p === "npm" || p === "pnpm" || p === "yarn")) parts.push("node --version");
+  if (pms.has("npm")) parts.push("npm --version");
+  if (pms.has("pnpm")) parts.push("corepack pnpm --version");
+  if (pms.has("yarn")) parts.push("corepack yarn --version");
+  if (pms.has("pip") || pms.has("uv") || pms.has("poetry") || profile.components.some((c) => c.assessed && c.language === "py")) parts.push("python3 --version");
+  if (pms.has("uv")) parts.push("uv --version");
+  if (pms.has("poetry")) parts.push("poetry --version");
+  return parts.length ? parts.join(" && ") : "node --version";
+}
+
+// The script a command runs, so `pnpm test` and `corepack pnpm run test` count as one command.
+function scriptOf(command: string): string | null {
+  const m = command.trim().replace(/^corepack\s+/, "").match(/^(npm|pnpm|yarn|bun)\s+(?:run(?:-script)?\s+)?([\w:.-]+)(\s|$)/);
+  if (!m) return null;
+  return ["install", "ci", "add", "exec", "dlx", "x"].includes(m[2]) ? null : m[2];
+}
+
 export function hasNetworkPipedHook(findings: SafetyFinding[]): boolean {
   return findings.some((f) => f.kind === "network_piped" && f.file.endsWith("package.json"));
 }
@@ -60,22 +80,24 @@ export function discoverContract(profile: Profile, tree: string, rubric: Rubric,
   const cmds: ContractCommand[] = [];
   const timeout = rubric.budgets.commandTimeoutSec;
   const pm = profile.packageManager;
-  const isPy = pm === "pip" || pm === "uv" || pm === "poetry";
-  cmds.push({ id: "cmd-repo-doctor", kind: "doctor", component: "*", cwd: ".", command: isPy ? "python3 --version" : pm && pm !== "npm" ? `node --version && corepack ${pm} --version` : "node --version && npm --version", source: "readiness", reason: "toolchain present", timeoutSec: 60 });
+  const assessed = profile.components.filter((c) => c.assessed);
+  if (assessed.length === 0) return cmds;
+  cmds.push({ id: "cmd-repo-doctor", kind: "doctor", component: "*", cwd: ".", command: doctorCommand(profile), source: "readiness", reason: "the toolchains the assessed components use are present", timeoutSec: 60 });
   const ignoreScripts = hasNetworkPipedHook(safety);
   const hookNote = ignoreScripts ? "; install hooks skipped because one pipes the network into a shell" : "";
-  if (profile.environmentJson?.install) {
-    cmds.push({ id: "cmd-repo-install", kind: "install", component: "*", cwd: ".", command: profile.environmentJson.install, source: ".cursor/environment.json install", reason: "the repo's declared install", timeoutSec: timeout });
-  } else {
-    const standalone = profile.components.filter((c) => c.assessed && c.packageManager && c.path !== ".");
-    if (pm || standalone.length === 0) {
-      const install = frozenInstall(pm, tree, ignoreScripts);
-      cmds.push({ id: "cmd-repo-install", kind: "install", component: "*", cwd: ".", command: install.command, source: "readiness", reason: install.reason + hookNote, timeoutSec: timeout });
-    }
-    for (const c of standalone) {
-      const install = frozenInstall(c.packageManager ?? null, join(tree, c.path), ignoreScripts);
-      cmds.push({ id: `cmd-${c.id}-install`, kind: "install", component: c.id, cwd: c.path, command: install.command, source: "readiness", reason: `${install.reason} in ${c.path}${hookNote}`, timeoutSec: timeout });
-    }
+  const standalone = assessed.filter((c) => c.packageManager && c.path !== ".");
+  const declared = profile.environmentJson?.install;
+  if (declared) cmds.push({ id: "cmd-repo-install", kind: "install", component: "*", cwd: ".", command: declared, source: ".cursor/environment.json install", reason: "the repo's declared install", timeoutSec: timeout });
+  // Behind a declared install, the frozen installs run only if this machine blocks it, so one
+  // component's missing toolchain doesn't keep the others from being checked.
+  const fallbackFor = declared ? "cmd-repo-install" : undefined;
+  if (pm || (!declared && standalone.length === 0)) {
+    const install = frozenInstall(pm, tree, ignoreScripts);
+    cmds.push({ id: declared ? "cmd-repo-frozen-install" : "cmd-repo-install", kind: "install", component: "*", cwd: ".", command: install.command, source: "readiness", reason: install.reason + hookNote, timeoutSec: timeout, ...(fallbackFor ? { fallbackFor } : {}) });
+  }
+  for (const c of standalone) {
+    const install = frozenInstall(c.packageManager ?? null, join(tree, c.path), ignoreScripts);
+    cmds.push({ id: `cmd-${c.id}-install`, kind: "install", component: c.id, cwd: c.path, command: install.command, source: "readiness", reason: `${install.reason} in ${c.path}${hookNote}`, timeoutSec: timeout, ...(fallbackFor ? { fallbackFor } : {}) });
   }
   if (profile.environmentJson?.start) {
     cmds.push({ id: "cmd-repo-start", kind: "start", component: "*", cwd: ".", command: profile.environmentJson.start, source: ".cursor/environment.json start", reason: "the repo's declared services", timeoutSec: 180 });
@@ -110,6 +132,10 @@ export function addContractCommand(cmds: ContractCommand[], input: { kind: Comma
   checkComponent(profile, input.component);
   if (!input.reason.trim()) fail("contract add needs --reason");
   if (!/^(agent|[^:]+:\d+|readiness|[^\s]+ scripts\.[\w:-]+)$/.test(input.source)) fail("--source must be `agent` or a file:line where the command was found");
+  const dir = (d: string) => d.replace(/^\.\//, "").replace(/\/+$/, "") || ".";
+  const script = scriptOf(input.command);
+  const same = cmds.find((c) => c.component === input.component && dir(c.cwd) === dir(input.cwd) && (c.command.trim() === input.command.trim() || (script !== null && scriptOf(c.command) === script)));
+  if (same) fail(`${same.id} already runs ${script ? `the ${script} script` : "this command"} for ${input.component === "*" ? "the repo" : input.component} (\`${same.command}\`), so it would run twice. Leave it out of the contract.`);
   const base = `cmd-${input.component === "*" ? "repo" : input.component}-${input.kind}`;
   let id = base;
   let i = 2;

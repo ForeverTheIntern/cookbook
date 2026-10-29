@@ -4,19 +4,17 @@ import { updateRoadmap } from "../skill/agent-readiness/scripts/lib/roadmap.ts";
 import { loadRubric } from "../skill/agent-readiness/scripts/lib/rubric.ts";
 import { compute } from "../skill/agent-readiness/scripts/lib/seal.ts";
 import { noRealResults } from "../skill/agent-readiness/scripts/lib/score.ts";
-import type { ActivityId, Audit, Component, ContractCommand, Diagnosis, Evidence, HistoryLine, InstructionItem, OutcomesSnapshot, ReportJson, SafetyFinding, Where } from "../skill/agent-readiness/scripts/lib/types.ts";
+import type { Audit, Component, ContractCommand, Diagnosis, Evidence, HistoryLine, InstructionItem, OutcomesSnapshot, ReportJson, SafetyFinding, ScenarioSpec, Targets, Where } from "../skill/agent-readiness/scripts/lib/types.ts";
 
-export function reportFor(audit: Audit, history: HistoryLine[] = []): ReportJson {
+// Mirrors the seal's report build without git or files.
+export function reportFor(audit: Audit, history: HistoryLine[] = [], targets: Targets | null = null): ReportJson {
   const rubric = loadRubric("2026-10-alpha");
-  const c = compute(audit, rubric, history);
+  const c = compute(audit, rubric, history, targets);
   const comps = audit.profile!.components;
   const noResults = noRealResults(audit, c.states);
-  const rm = noResults
-    ? { roadmap: { schema: "agent-readiness/roadmap@1" as const, owner: null, targets: null, items: [], updatedBy: audit.id, updatedAt: "2026-10-27T15:00:00.000Z" }, top: [], startNow: null }
-    : updateRoadmap(null, { audit, rubric, goal: audit.goal, components: comps, states: c.states, active: c.active, outcomes: audit.outcomes });
-  const goalRepo = c.repoLevels.get(audit.goal)!;
-  const line: HistoryLine = { id: audit.id, kind: "audit", date: "2026-10-27", commit: "abc", rubric: audit.rubric, scriptsDigest: "x", result: "sealed", goal: audit.goal, levels: {}, repoLevels: {}, shares: {}, active: [...c.active], seedPinned: false };
-  return buildReport({ audit, rubric, goal: audit.goal, components: comps, states: c.states, levels: c.levels, repoLevels: c.repoLevels, goalLevel: { ...goalRepo, outcomeReasons: [] }, active: c.active, roadmap: rm.roadmap, top: rm.top, startNow: rm.startNow, history, currentLine: line, previousOutcomes: null, weakening: null, sealStatus: "Seal verified against release agent-readiness-v0.1.0", staleCopy: null, storedAt: ".agent-readiness/history/audits/x", partial: partialCoverage(rubric, comps), noResults });
+  const rm = updateRoadmap(targets ? { schema: "agent-readiness/roadmap@1", owner: null, targets, items: [], updatedBy: "x", updatedAt: "2026-10-27T15:00:00.000Z" } : null, { audit, rubric, components: comps, states: c.states, active: c.active, outcomes: audit.outcomes, decisionsOnly: Boolean(noResults) });
+  const line: HistoryLine = { id: audit.id, kind: "audit", date: "2026-10-27", commit: "abc", rubric: audit.rubric, scriptsDigest: "x", result: "sealed", levels: Object.fromEntries([...c.levels.entries()].map(([id, l]) => [id, l.level])), repoLevel: c.repo.level, scenarioLevels: {}, shares: {}, active: [...c.active], seedPinned: false };
+  return buildReport({ audit, rubric, components: comps, states: c.states, levels: c.levels, scenarioLevels: c.scenarioLevels, rollup: c.repo, active: c.active, roadmap: rm.roadmap, top: rm.top, startNow: rm.startNow, history, currentLine: line, previousOutcomes: null, weakening: null, sealStatus: "Seal verified against release agent-readiness-v0.1.0", staleCopy: null, storedAt: ".agent-readiness/history/audits/x", partial: partialCoverage(rubric, comps), noResults });
 }
 
 type R = "pass" | "fail";
@@ -35,7 +33,7 @@ export interface CompSpec {
 
 export interface AuditSpec {
   id?: string;
-  goal?: ActivityId;
+  scenarios?: ScenarioSpec[];
   install?: R;
   components: CompSpec[];
   instructions?: InstructionItem[];
@@ -75,7 +73,7 @@ export function makeAudit(spec: AuditSpec): Audit {
     createdAt: at,
     state: "draft",
     repo: { name: "example-org/example", commit: "abc1234def", dirtyTree: false },
-    goal: spec.goal ?? "bug_fixes",
+    scenarios: spec.scenarios ?? [],
     tier: "local-exec",
     rubric: "2026-10-alpha",
     skill: { version: "0.1.0", scriptsDigest: "0".repeat(64), rubricDigest: "0".repeat(64), release: null },

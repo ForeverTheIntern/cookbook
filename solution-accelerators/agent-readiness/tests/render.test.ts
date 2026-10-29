@@ -27,9 +27,9 @@ describe("report.json", () => {
     const r = reportFor(makeAudit(mixed));
     assert.deepEqual(validateAgainst("report", r), []);
     assert.deepEqual(validatePart1(r, rubric, null), []);
-    assert.equal(r.executive.heading, "Level 0 of 4, not bootable, for bug fixes");
+    assert.equal(r.executive.heading, "Level 0 of 4, not bootable");
     assert.match(r.executive.headline, /api/);
-    assert.match(r.executive.headline, /shared is already ready/);
+    assert.match(r.executive.headline, /shared is already at Level 2/);
     assert.equal(r.executive.numbers.length, 3);
     assert.ok(r.executive.gaps.length <= 3);
   });
@@ -145,7 +145,7 @@ describe("part 1 rules", () => {
     const unmeasured = reportFor(makeAudit({ ...mixed, outcomes: null })).executive.numbers[1];
     assert.equal(unmeasured.value, "not measured");
     assert.doesNotMatch(unmeasured.comparison, /tier/);
-    const prev: HistoryLine = { id: "aud-prev", kind: "audit", date: "2026-10-01", commit: "abc", rubric: audit.rubric, scriptsDigest: "x", result: "sealed", goal: "bug_fixes", levels: { api: { bug_fixes: 0 }, worker: { bug_fixes: 0 }, shared: { bug_fixes: 0 } }, repoLevels: { bug_fixes: 0 }, shares: { api: 0.56, worker: 0.27, shared: 0.15 }, active: ["api", "worker", "shared"], seedPinned: false };
+    const prev: HistoryLine = { id: "aud-prev", kind: "audit", date: "2026-10-01", commit: "abc", rubric: audit.rubric, scriptsDigest: "x", result: "sealed", levels: { api: 0, worker: 0, shared: 0 }, repoLevel: 0, scenarioLevels: {}, shares: { api: 0.56, worker: 0.27, shared: 0.15 }, active: ["api", "worker", "shared"], seedPinned: false };
     const later = reportFor(audit, [prev]).executive.numbers;
     assert.equal(later[0].comparison, "Last audit: 0 of 3");
     assert.equal(later[2].comparison, "Last audit: 98%, counting the last 90 days");
@@ -154,13 +154,13 @@ describe("part 1 rules", () => {
   test("default headlines name the component and what works, and skip the share when there is one component", () => {
     const ready = reportFor(makeAudit({ components: [{ id: "app", share: 1, faults: "pass" }] })).executive;
     assert.equal(ready.noBlocker, true);
-    assert.equal(ready.headline, "Nothing blocks bug fixes in app: from a clean checkout it installs, builds and passes its tests, and its tests caught the planted bugs. Start delegating bug fixes to agents.");
+    assert.equal(ready.headline, "Nothing blocks agents in app: from a clean checkout it installs, builds and passes its tests, and its tests caught the planted bugs. Start delegating work to agents.");
     assert.equal(reportFor(makeAudit({ components: [{ id: "app", share: 1, test: "fail", faults: "not_run" }] })).executive.headline, "Agents can't pass the tests in app from a clean checkout.");
-    assert.equal(reportFor(makeAudit(mixed)).executive.headline, "Agents can't pass the tests in api from a clean checkout because its tests need Postgres running, which the setup doesn't start, and 56% of recent changes land there. shared is already ready for bug fixes.");
+    assert.equal(reportFor(makeAudit(mixed)).executive.headline, "Agents can't pass the tests in api from a clean checkout because its tests need Postgres running, which the setup doesn't start, and 56% of recent changes land there. shared is already at Level 2.");
     const registry = makeAudit({ install: "fail", components: [{ id: "app", share: 1, test: "not_run", faults: "not_run" }] });
     for (const e of registry.evidence) if (e.condition === "clean.install") e.diagnosis = { cause: "registry", detail: "registry credentials not provided" };
     assert.equal(reportFor(registry).executive.headline, "app doesn't install from a clean checkout because private registry credentials weren't provided, so agents can't build or test it yet.");
-    const drift = reportFor(makeAudit({ goal: "features", components: [{ id: "app", share: 1, faults: "pass" }], instructions: [instruction("fail", "npm run typecheck", 'no "typecheck" script')] })).executive.headline;
+    const drift = reportFor(makeAudit({ components: [{ id: "app", share: 1, faults: "pass" }], instructions: [instruction("fail", "npm run typecheck", 'no "typecheck" script')] })).executive.headline;
     assert.equal(drift, "Agents can build and test app, but its agent instructions don't match the repo.");
   });
 
@@ -189,27 +189,25 @@ describe("part 1 rules", () => {
     const r = reportFor(audit);
     const ex = r.executive;
     assert.equal(r.maturity.outcome, "blocked");
-    assert.equal(ex.heading, "Level 0 of 4, not bootable, for bug fixes; Level 1 is blocked on this machine");
+    assert.equal(ex.heading, "Level 0 of 4, not bootable; Level 1 is blocked on this machine");
     assert.match(ex.nextLine, /Blocked on this machine: app /);
     assert.doesNotMatch(ex.nextLine, /Not yet: app/);
     assert.equal(r.maturity.confidence.level, "low");
     assert.ok(r.maturity.capReasons.some((c) => c.component === "app" && c.condition === "clean.test" && c.state === "blocked"), JSON.stringify(r.maturity.capReasons));
-    assert.match(renderMarkdown(r, rubric), /What holds the bug fixes level at Level 0:\n\n- `app`: [^\n]+, blocked on this machine \(passed on the host, but Level 1 needs a clean container/);
+    assert.match(renderMarkdown(r, rubric), /What holds the repo at Level 0:\n\n- `app`: [^\n]+, blocked on this machine \(passed on the host, but Level 1 needs a clean container/);
     assert.equal(ex.noBlocker, false);
     assert.equal(ex.headline, "Level 1 couldn't be proved for app because this machine has no container runtime. A rerun where Docker or Podman is available, such as CI, can prove it.");
     assert.match(ex.ask, /^Decision needed: where to rerun this audit/);
-    const unpinned = reportFor(makeAudit({ goal: "repo_wide", toolchainPinned: false, components: [{ id: "app", share: 1, faults: "pass" }] })).executive.nextLine;
-    assert.match(unpinned, /Not yet: toolchain versions are pinned/);
-    const repoWide = reportFor(makeAudit({ goal: "repo_wide", toolchainPinned: false, components: [{ id: "app", share: 1, faults: "pass" }] })).executive.numbers[0];
-    assert.equal(repoWide.value, "0 of 1");
+    const stale = reportFor(makeAudit({ components: [{ id: "app", share: 1, faults: "pass" }], instructions: [instruction("fail", "pnpm test", "uses pnpm, but the repo uses npm")] })).executive.nextLine;
+    assert.match(stale, /Not yet: agent instructions are accurate\./, "a repo-wide condition names no component");
   });
 
   test("with no assessable component, part 1 says so instead of Met, 0 of 0 or no open actions", () => {
     const r = reportFor(makeAudit({ components: [{ id: "services", share: 1, assessed: false }] }));
     const ex = r.executive;
     assert.equal(r.maturity.assessedComponents, 0);
-    assert.equal(ex.heading, "Not assessed for bug fixes: no component could be assessed");
-    assert.equal(ex.headline, "No component could be assessed for bug fixes, so this audit can't give a level yet: it skipped services (100% of changes) because Terraform isn't supported by this rubric.");
+    assert.equal(ex.heading, "Not assessed: no component could be assessed");
+    assert.equal(ex.headline, "No component could be assessed, so this audit can't give a level yet: it skipped services (100% of changes) because Terraform isn't supported by this rubric.");
     assert.equal(ex.nextLine, "Next: Level 1, bootable, once a component can be assessed. No condition has been checked yet.");
     assert.deepEqual(ex.numbers.map((n) => n.value), ["none assessed", "not measured", "100%"]);
     assert.doesNotMatch(JSON.stringify(ex), /Met:|0 of 0/);
@@ -231,8 +229,8 @@ describe("part 1 rules", () => {
     const r = reportFor(audit);
     const ex = r.executive;
     assert.equal(r.maturity.outcome, "not_assessed");
-    assert.equal(ex.heading, "Not assessed for bug fixes: no check could run on this machine");
-    assert.equal(ex.headline, "Nothing could be checked for bug fixes on this machine, so this audit gives no level: dotnet is not installed on this machine. A rerun where Docker or Podman is available, such as CI, can give one.");
+    assert.equal(ex.heading, "Not assessed: no check could run on this machine");
+    assert.equal(ex.headline, "Nothing could be checked on this machine, so this audit gives no level: dotnet is not installed on this machine. A rerun where Docker or Podman is available, such as CI, can give one.");
     assert.equal(ex.nextLine, "Next: Level 1, bootable, once a check can run. No condition has been checked yet.");
     assert.deepEqual(ex.numbers.map((n) => n.value), ["none checked", "not measured", "100%"]);
     assert.deepEqual([r.actions.length, ex.gaps.length, r.matrix.points.length, ex.noBlocker], [0, 0, 0, false]);
@@ -244,6 +242,14 @@ describe("part 1 rules", () => {
     const md = renderMarkdown(r, rubric);
     assert.match(md, /No actions can be planned yet: this audit has no real check results to plan from/);
     assert.match(md, /This audit added no steps/);
+    assert.ok(r.components.included.every((c) => c.level === null && c.capReasons.length === 0), "no component level when part 1 has none");
+    assert.match(md, /\| `buyer-web` \| `buyer-web` \|[^\n]*\| not assessed \|/);
+    assert.match(md, /Repo level: not assessed\./);
+    assert.doesNotMatch(md, /\| 0 Not bootable/);
+    assert.deepEqual(r.roadmap.items.map((i) => i.id), ["owner", "targets"], "the owner step stays, so the ask to name one has a step behind it");
+    assert.match(ex.ask, /Also name an owner for agent readiness\.$/);
+    assert.match(md, /Recent changes this audit couldn't check:\*\* 100%\. Counting the last 90 days/);
+    assert.doesNotMatch(md, /blocked: blocked:/);
     assert.deepEqual(validatePart1(r, rubric, null), []);
     assert.deepEqual(validateAgainst("report", r), []);
   });
@@ -256,7 +262,7 @@ describe("part 1 rules", () => {
     assert.equal(partial.maturity.level, healthy.maturity.level);
     assert.equal(partial.maturity.confidence.level, "medium");
     assert.match(partial.maturity.confidence.reasons.join(" "), /30% of recent changes aren't assessed/);
-    assert.match(renderMarkdown(partial, rubric), /Confidence: medium, because 30% of recent changes aren't assessed\./);
+    assert.match(renderMarkdown(partial, rubric), /Confidence: medium \(30% of recent changes aren't assessed\)\./);
   });
 
   test("part 4 lists the components found, the ones left out and why, and satellites that aren't components", () => {
@@ -264,12 +270,16 @@ describe("part 1 rules", () => {
     audit.profile!.components.find((c) => c.id === "core")!.notAssessedReason = ".NET isn't supported by this rubric";
     audit.profile!.satellites = [{ path: "examples/starter", manifest: "examples/starter/package.json", toolchain: "Node", reason: "it sits under examples/, which usually holds tests, samples or tooling rather than the product" }];
     const r = reportFor(audit);
-    assert.deepEqual(r.details.scope.included.map((c) => c.id), ["web"]);
-    assert.deepEqual(r.details.scope.excluded.map((c) => [c.id, c.reason]), [["core", ".NET isn't supported by this rubric"], ["starter", "not a component: it sits under examples/, which usually holds tests, samples or tooling rather than the product"]]);
+    assert.deepEqual(r.components.included.map((c) => c.id), ["web"]);
+    assert.deepEqual(r.components.excluded.map((c) => [c.id, c.reason]), [["core", ".NET isn't supported by this rubric"], ["starter", "not a component: it sits under examples/, which usually holds tests, samples or tooling rather than the product"]]);
     const md = renderMarkdown(r, rubric);
-    assert.match(md, /### Components found/);
-    assert.match(md, /\| `core` \| `core` \| .* \| 20% \| no: \.NET isn't supported by this rubric \|/);
-    assert.match(md, /\| `starter` \| `examples\/starter` \| Node \| .* \| n\/a \| no: not a component/);
+    assert.match(md, /### Levels by component/);
+    assert.match(md, /\| `web` \| `web` \| [^\n]* \| 80% \| 2 Verifiable \|/);
+    assert.match(md, /\| `core` \| `core` \| .* \| 20% \| not assessed: \.NET isn't supported by this rubric \|/);
+    assert.match(md, /\| `starter` \| `examples\/starter` \| Node \| .* \| n\/a \| not assessed: not a component/);
+    assert.match(md, /Repo level: 2 Verifiable\. The repo level is the lowest level among active components/);
+    audit.safety = [{ id: "saf-001", kind: "elevated", file: ".cursor/environment.json", detail: "start runs sudo", blocking: false }];
+    assert.match(reportFor(audit).details.checks.find((c) => c.id === "safety.execution_boundary")!.result, /^passed; 1 item listed for review$/);
   });
 
   test("the seal's consistency pass names any component, evidence or narration key the scan doesn't know", () => {
@@ -291,8 +301,11 @@ describe("part 1 rules", () => {
     assert.match(errors[4], /retitles clean\.test:ghost, which isn't a roadmap item/);
   });
 
-  test("activity labels keep their acronyms", () => {
-    assert.equal(reportFor(makeAudit({ ...mixed, goal: "first_pr" })).executive.heading, "Level 0 of 4, not bootable, for first PR");
+  test("scenario labels keep their acronyms, and the heading carries no activity", () => {
+    const r = reportFor(makeAudit({ ...mixed, scenarios: [{ id: "first_pr", components: ["*"] }] }));
+    assert.equal(r.executive.heading, "Level 0 of 4, not bootable");
+    assert.equal(r.components.included[0].scenarios[0].label, "First PR");
+    assert.match(renderMarkdown(r, rubric), /\| `api` › First PR \|/);
   });
 
   test("a narrated gap that ends in a period renders with one period", () => {

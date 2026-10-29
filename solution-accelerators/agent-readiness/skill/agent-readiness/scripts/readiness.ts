@@ -6,19 +6,18 @@ import { compareAudits, weakeningFlags } from "./lib/diff.ts";
 import { addEvidence, recordObservation } from "./lib/evidence.ts";
 import { ghAvailable, ghJson } from "./lib/gh.ts";
 import { auditIds, loadSealedAudit, pushHistory, readHistory, readRoadmap, writeRoadmap } from "./lib/history.ts";
-import { componentLevel, statesOf } from "./lib/levels.ts";
 import { computeOutcomes, fetchPrs, loadPrsFile } from "./lib/outcomes.ts";
 import { buildProfile } from "./lib/profile.ts";
 import { redact } from "./lib/redact.ts";
 import { evidenceFromPhase, hostExecutor, newBudget, replay, runContract } from "./lib/replay.ts";
 import { latestRubricVersion, loadRubric } from "./lib/rubric.ts";
 import { validateAgainst } from "./lib/schema.ts";
-import { componentStates } from "./lib/score.ts";
+import { blockedBy, componentStates } from "./lib/score.ts";
 import { buildSealedReport, recheck, seal, verifySeal } from "./lib/seal.ts";
 import { renderEnvFiles, renderVerifySkill, serviceKey, writeFiles } from "./lib/skill.ts";
 import { staticSignals } from "./lib/signals.ts";
 import { instructionItems, safetyScan } from "./lib/static.ts";
-import type { ActivityId, Audit, CommandKind, Narration, Result, Roadmap, Strength, Tier } from "./lib/types.ts";
+import type { Audit, CommandKind, Narration, Result, Roadmap, ScenarioId, ScenarioSpec, Strength, Tier } from "./lib/types.ts";
 import { exists, fail, git, nowIso, randomHex, readJson, readText, sha256, today, writeJson } from "./lib/util.ts";
 import { initAudit, loadDraft, paths, releaseManifest, resolveRepo, saveDraft } from "./lib/workspace.ts";
 
@@ -65,7 +64,7 @@ function csv(v: string | undefined): string[] {
   return v ? v.split(",").map((s) => s.trim()).filter(Boolean) : [];
 }
 
-const GOALS: ActivityId[] = ["first_pr", "bug_fixes", "features", "repo_wide"];
+const SCENARIOS: ScenarioId[] = ["first_pr", "bug_fixes", "features", "repo_wide"];
 const TIERS: Tier[] = ["read-only", "local-exec", "external-systems"];
 
 const log = (s: string) => process.stdout.write(s + "\n");
@@ -78,15 +77,26 @@ function requireTier(audit: Audit, needed: Tier, what: string): void {
   if (TIERS.indexOf(audit.tier) < TIERS.indexOf(needed)) fail(`${what} needs the ${needed} tier; this audit is ${audit.tier}.`);
 }
 
+// Scenarios are optional: every audit reports one standard level per component and a repo rollup.
+function scenarioIds(a: Args): ScenarioId[] {
+  const ids = csv(opt(a, "scenario"));
+  const goal = opt(a, "goal");
+  if (goal) {
+    log(`--goal is now --scenario: added the ${goal} scenario for every component. Levels are standard without it.`);
+    ids.push(goal);
+  }
+  for (const id of ids) if (!SCENARIOS.includes(id as ScenarioId)) fail(`--scenario takes ${SCENARIOS.join(", ")}; got ${id}.`);
+  return [...new Set(ids)] as ScenarioId[];
+}
+
 function cmdInit(a: Args): void {
-  const goal = str(a, "goal", "bug_fixes") as ActivityId;
+  const scenarios: ScenarioSpec[] = scenarioIds(a).map((id) => ({ id, components: ["*"] }));
   const tier = str(a, "tier", "local-exec") as Tier;
-  if (!GOALS.includes(goal)) fail(`--goal must be one of ${GOALS.join(", ")}`);
   if (!TIERS.includes(tier)) fail(`--tier must be one of ${TIERS.join(", ")}`);
   const registryEnv = csv(opt(a, "registry-env"));
   for (const k of registryEnv) if (!/^[A-Z_][A-Z0-9_]*$/.test(k)) fail(`--registry-env takes variable names, not values: ${k}`);
-  const { audit, local } = initAudit({ repo: repoOf(a), goal, tier, registryEnv, inheritEnv: Boolean(a.flags["inherit-env"]), force: Boolean(a.flags.force) });
-  log(`Opened ${audit.id} for ${goal} (${tier}) at ${audit.repo.commit.slice(0, 7)}${audit.repo.dirtyTree ? "; uncommitted changes are not audited" : ""}.`);
+  const { audit, local } = initAudit({ repo: repoOf(a), scenarios, tier, registryEnv, inheritEnv: Boolean(a.flags["inherit-env"]), force: Boolean(a.flags.force) });
+  log(`Opened ${audit.id} (${tier}) at ${audit.repo.commit.slice(0, 7)}${scenarios.length ? `, with the ${scenarios.map((s) => s.id).join(" and ")} ${scenarios.length > 1 ? "scenarios" : "scenario"} for every component` : ""}${audit.repo.dirtyTree ? "; uncommitted changes are not audited" : ""}.`);
   log(`Audit tree: ${local.tree}`);
   if (audit.seed.pinned) log("Planted-fault seed is pinned by READINESS_EVAL_SEED: this is an eval run, not a production audit.");
 }
@@ -105,7 +115,7 @@ function cmdScan(a: Args): void {
   }
   const blocking = audit.safety.filter((s) => s.blocking);
   addEvidence(audit, { checkId: "safety.execution_boundary", condition: "safety", strength: "static", where: "static", result: blocking.length ? "fail" : "pass", summary: blocking.length ? blocking.map((b) => `${b.file}${b.line ? ":" + b.line : ""} ${b.detail}`).join("; ") : `no blocking findings; ${audit.safety.length} items listed for review` });
-  addEvidence(audit, { checkId: "bootstrap.cold_replay", condition: "toolchain", component: "*", strength: "static", where: "static", result: profile.toolchain.pinned ? "pass" : "fail", summary: profile.toolchain.pinned ? `toolchain pinned in ${profile.toolchain.files.join(", ")}` : `missing ${profile.toolchain.missing.join(" and ")}` });
+  if (profile.components.some((c) => c.assessed)) addEvidence(audit, { checkId: "bootstrap.cold_replay", condition: "toolchain", component: "*", strength: "static", where: "static", result: profile.toolchain.pinned ? "pass" : "fail", summary: profile.toolchain.pinned ? `toolchain pinned in ${profile.toolchain.files.join(", ")}` : `missing ${profile.toolchain.missing.join(" and ")}` });
   audit.assets = inventory(repo, local.tree, audit.instructions);
   const assessedIds = new Set(profile.components.filter((c) => c.assessed).map((c) => c.id));
   const agentCmds = audit.contract.filter((c) => c.source !== "readiness" && !c.source.includes("scripts.") && !c.source.startsWith(".cursor/environment.json"));
@@ -142,6 +152,29 @@ function cmdContract(a: Args): void {
     return;
   }
   for (const c of audit.contract) log(`${c.id.padEnd(24)} ${c.kind.padEnd(9)} ${c.cwd.padEnd(18)} ${c.command}   (${c.source})`);
+}
+
+function cmdScenario(a: Args): void {
+  const repo = repoOf(a);
+  const { audit, paths: p } = loadDraft(repo);
+  const sub = a.positional[1] ?? "list";
+  audit.scenarios ??= [];
+  if (sub === "add" || sub === "remove") {
+    const id = a.positional[2] as ScenarioId;
+    if (!SCENARIOS.includes(id)) fail(`Usage: readiness scenario ${sub} <${SCENARIOS.join("|")}>${sub === "add" ? " [--components a,b]" : ""}`);
+    audit.scenarios = audit.scenarios.filter((s) => s.id !== id);
+    if (sub === "add") {
+      const components = csv(opt(a, "components"));
+      if (components.length && !audit.profile) fail("Run `readiness scan` first: a scenario names components the scan found.");
+      for (const c of components) checkComponent(audit.profile, c);
+      audit.scenarios.push({ id, components: components.length ? components : ["*"] });
+      log(`Added the ${id} scenario for ${components.length ? components.join(", ") : "every assessed component"}. It's reported under ${components.length === 1 ? "that component" : "those components"}, next to the standard level.`);
+    } else log(`Removed the ${id} scenario.`);
+    saveDraft(p, audit);
+    return;
+  }
+  if (audit.scenarios.length === 0) log("No scenarios: the report gives one standard level per component and a repo rollup.");
+  for (const s of audit.scenarios) log(`${s.id}: ${s.components.includes("*") ? "every assessed component" : s.components.join(", ")}`);
 }
 
 async function cmdRun(a: Args): Promise<void> {
@@ -265,23 +298,27 @@ function cmdStatus(a: Args): void {
   // The ids narration may use, from the report the seal would build right now.
   const preview = audit.profile ? buildSealedReport(JSON.parse(JSON.stringify(audit)) as Audit, rubric, readHistory(p), readRoadmap(p), repo, "") : null;
   const part1 = preview ? { heading: preview.report.executive.heading, gaps: preview.report.executive.gaps.map((g) => ({ itemId: g.itemId, text: g.text })), roadmapItems: preview.roadmap.items.map((i) => i.id) } : null;
+  const levels = preview?.report.components.included ?? [];
   const summary = {
     id: audit.id,
-    goal: audit.goal,
     tier: audit.tier,
     commit: audit.repo.commit.slice(0, 7),
     environment: audit.environment,
+    repoLevel: preview ? (preview.report.maturity.outcome === "not_assessed" ? "not assessed" : preview.report.maturity.level) : null,
+    scenarios: audit.scenarios ?? [],
     components: comps.map((c) => {
       const s = componentStates(audit, rubric, c.id);
+      const row = levels.find((x) => x.id === c.id);
       return {
         id: c.id,
         changeShare: c.changeShare,
         conditions: Object.fromEntries(Object.entries(s).map(([k, v]) => [k, `${v.state}: ${v.reason}`])),
-        levels: Object.fromEntries(rubric.activities.filter((x) => x.scope === "component").map((x) => [x.id, componentLevel(rubric, statesOf(s), x.id).level])),
+        level: row?.level ?? "not assessed",
+        scenarios: Object.fromEntries((row?.scenarios ?? []).map((x) => [x.id, x.level ?? "not assessed"])),
       };
     }),
     contract: audit.contract.map((c) => `${c.id}: ${c.command}`),
-    evidence: audit.evidence.map((e) => `${e.id} ${e.checkId} ${e.component ?? ""} ${e.result} (${e.strength}): ${e.summary}`),
+    evidence: audit.evidence.map((e) => `${e.id} ${e.checkId} ${e.component ?? ""} ${blockedBy(e) ? `blocked (${blockedBy(e)})` : `${e.result} (${e.result === "not_run" ? "not run" : e.strength})`}: ${e.summary}`),
     instructionsWrong: audit.instructions.filter((i) => i.result === "fail").map((i) => `${i.source}:${i.line} ${i.text}: ${i.reason}`),
     safety: audit.safety.map((s) => `${s.blocking ? "BLOCKING" : "listed"} ${s.kind} ${s.file}${s.line ? ":" + s.line : ""}: ${s.detail}`),
     outcomes: audit.outcomes ? { window: audit.outcomes.window, agent: audit.outcomes.agent.opened, control: audit.outcomes.control.opened } : null,
@@ -289,8 +326,8 @@ function cmdStatus(a: Args): void {
   };
   if (a.flags.json) log(JSON.stringify(summary, null, 2));
   else {
-    log(`${summary.id} (${summary.goal}, ${summary.tier}) at ${summary.commit}`);
-    for (const c of summary.components) log(`  ${c.id}: ${JSON.stringify(c.levels)}\n    ${Object.entries(c.conditions).map(([k, v]) => `${k} ${v}`).join("\n    ")}`);
+    log(`${summary.id} (${summary.tier}) at ${summary.commit}. Repo level: ${summary.repoLevel ?? "not computed"}`);
+    for (const c of summary.components) log(`  ${c.id}: level ${c.level}${Object.keys(c.scenarios).length ? `; scenarios ${Object.entries(c.scenarios).map(([k, v]) => `${k} ${v}`).join(", ")}` : ""}\n    ${Object.entries(c.conditions).map(([k, v]) => `${k} ${v}`).join("\n    ")}`);
     if (summary.instructionsWrong.length) log(`Wrong instructions:\n  ${summary.instructionsWrong.join("\n  ")}`);
     if (summary.safety.length) log(`Safety:\n  ${summary.safety.join("\n  ")}`);
     if (part1) {
@@ -321,7 +358,7 @@ function cmdVerify(a: Args): void {
 async function cmdRecheck(a: Args): Promise<void> {
   const p = paths(repoOf(a));
   const r = await recheck(p, { runtime: str(a, "runtime", process.env.READINESS_RUNTIME || "auto"), image: opt(a, "image") ?? (process.env.READINESS_IMAGE || undefined), log });
-  log(`Recheck ${r.line.id}: ${r.line.result}${r.line.note ? ` (${r.line.note})` : ""}. Repo levels: ${JSON.stringify(r.line.repoLevels)}.`);
+  log(`Recheck ${r.line.id}: ${r.line.result}${r.line.note ? ` (${r.line.note})` : ""}. Repo level: ${r.line.repoLevel}; components: ${JSON.stringify(r.line.levels)}.`);
   if (r.line.result === "failed") process.exitCode = 1;
 }
 
@@ -349,7 +386,7 @@ function cmdHistory(a: Args): void {
   }
   const lines = readHistory(p);
   if (a.flags.json) log(JSON.stringify(lines, null, 2));
-  else for (const h of lines) log(`${h.date} ${h.kind.padEnd(7)} ${h.result.padEnd(6)} ${h.id} repo ${JSON.stringify(h.repoLevels)}${h.note ? ` (${h.note})` : ""}`);
+  else for (const h of lines) log(`${h.date} ${h.kind.padEnd(7)} ${h.result.padEnd(6)} ${h.id} repo ${h.noLevel ? "not assessed" : h.repoLevel}${h.note ? ` (${h.note})` : ""}`);
 }
 
 function cmdRoadmap(a: Args): void {
@@ -494,9 +531,10 @@ async function cmdAudit(a: Args): Promise<void> {
 const HELP = `readiness <command> [options]
 
 Audit
-  init --goal <first_pr|bug_fixes|features|repo_wide> --tier <read-only|local-exec|external-systems> [--registry-env A,B] [--force]
+  init --tier <read-only|local-exec|external-systems> [--scenario first_pr,bug_fixes,features,repo_wide] [--registry-env A,B] [--force]
   scan [--strict]               profile, agent assets, static checks and the verification contract; --strict exits 1 on wrong instructions or blocking safety findings
   contract [list|add --kind K --component C --cmd "..." --reason "..." [--cwd D] [--source file:line]]
+  scenario [list|add <id> [--components a,b]|remove <id>]   optional breakdowns reported under the components they name
   replay [--component C] [--no-mutants] [--runtime auto|docker|podman|none] [--image ref] [--budget-component M] [--budget-total M]
   run [--component C] [--id cmd-id] [--instructions] [--cmd "..." --kind K --component C --reason "..."]
   record --check ID --result pass|fail|not_run --summary "..." [--component C] [--strength static|asserted]
@@ -504,7 +542,7 @@ Audit
   narrate [--file narration.json] [--headline "..."] [--ask "..."] [--gap id=text] [--title id=text]
   status [--json]
   seal
-  audit --goal G --tier T [--outcomes-input f] [--narration f]   init, scan, replay, outcomes and seal in one go
+  audit --tier T [--scenario S] [--outcomes-input f] [--narration f]   init, scan, replay, outcomes and seal in one go
 
 After an audit
   verify-seal [audit-id|latest] [--release-repo owner/repo --release-ref tag --tier external-systems] [--allow-eval]
@@ -542,6 +580,7 @@ async function main(): Promise<void> {
     init: cmdInit,
     scan: cmdScan,
     contract: cmdContract,
+    scenario: cmdScenario,
     run: cmdRun,
     replay: cmdReplay,
     record: cmdRecord,

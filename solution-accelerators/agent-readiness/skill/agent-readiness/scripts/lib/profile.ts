@@ -320,9 +320,21 @@ function nodePins(tree: string, dir: string, pm: PackageManager | null, label: s
   }
 }
 
-function toolchain(tree: string, files: string[], pm: PackageManager | null, components: Component[]) {
+// Versions the repo's declared image pins, which count the same as a pin file.
+function dockerfilePins(tree: string, dockerfile: string | undefined): { node: boolean; pm: Set<string>; python: boolean } {
+  const out = { node: false, pm: new Set<string>(), python: false };
+  if (!dockerfile || !exists(join(tree, ".cursor", dockerfile))) return out;
+  const text = readText(join(tree, ".cursor", dockerfile));
+  out.node = /^\s*FROM\s+(?:\S+\/)?node:\d/im.test(text) || /^\s*(ARG|ENV)\s+NODE_VERSION[= ]\s*\S/im.test(text);
+  out.python = /^\s*FROM\s+(?:\S+\/)?python:\d/im.test(text) || /^\s*(ARG|ENV)\s+PYTHON_VERSION[= ]\s*\S/im.test(text);
+  for (const m of text.matchAll(/\b(?:corepack\s+(?:prepare|install\s+-g)|npm\s+(?:i|install)\s+-g)\s+(pnpm|yarn)@\d/g)) out.pm.add(m[1]);
+  for (const m of text.matchAll(/^\s*(?:ARG|ENV)\s+(PNPM|YARN)_VERSION[= ]\s*\S/gim)) out.pm.add(m[1].toLowerCase());
+  return out;
+}
+
+function toolchain(tree: string, files: string[], pm: PackageManager | null, components: Component[], dockerfile?: string) {
   const found: string[] = [];
-  const missing: string[] = [];
+  let missing: string[] = [];
   const isNode = exists(join(tree, "package.json"));
   const isPy = files.some((f) => f.endsWith(".py"));
   if (isNode) nodePins(tree, ".", pm, "", found, missing);
@@ -334,7 +346,13 @@ function toolchain(tree: string, files: string[], pm: PackageManager | null, com
     if (exists(join(tree, ".python-version"))) found.push(".python-version");
     else missing.push("the Python version (.python-version)");
   }
-  if (found.length === 0 && missing.length === 0) missing.push("a toolchain version this rubric can read (.nvmrc, engines.node or .python-version)");
+  const pins = dockerfilePins(tree, dockerfile);
+  const image = `.cursor/${dockerfile}`;
+  missing = missing.filter((m) => !(pins.node && /the Node version/.test(m)) && !(pins.python && /the Python version/.test(m)) && ![...pins.pm].some((p) => m.startsWith(`the ${p} version`)));
+  if (pins.node) found.push(`${image} (Node)`);
+  if (pins.python) found.push(`${image} (Python)`);
+  for (const p of pins.pm) found.push(`${image} (${p})`);
+  if (found.length === 0 && missing.length === 0) missing.push("a toolchain version this rubric can read (.nvmrc, engines.node, .python-version or the declared image)");
   return { pinned: missing.length === 0 && found.length > 0, files: [...new Set(found)], missing };
 }
 
@@ -382,7 +400,7 @@ export function buildProfile(repo: string, tree: string, rubric: Rubric): Profil
     lockfiles: files.filter((f) => rubric.components.lockfiles.includes(basename(f)) && (dirname(f) === "." || components.some((c) => c.packageManager && c.path === dirname(f)))),
     ciFiles: files.filter((f) => /^\.github\/workflows\/.+\.ya?ml$/.test(f) || f === ".gitlab-ci.yml" || f === ".circleci/config.yml" || f.startsWith(".buildkite/")),
     instructionFiles: instructionFiles(files),
-    toolchain: toolchain(tree, files, pm, components),
+    toolchain: toolchain(tree, files, pm, components, environmentJson?.build?.dockerfile),
     environmentJson,
     components,
     satellites,

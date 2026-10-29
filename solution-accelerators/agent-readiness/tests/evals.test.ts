@@ -19,7 +19,7 @@ describe("eval grader", { skip: detectRuntime("auto") ? false : "no container ru
   test("an untouched workspace fails, a scripted audit passes, and tampering fails the right gate", () => {
     const ws = prepare(healthy);
     assert.equal(gradeCase(ws, none, healthy)[0].pass, false, "no sealed audit yet");
-    const r = readiness(ws.dir, ["audit", "--goal", "bug_fixes", "--tier", "local-exec"], caseEnv(healthy), join(ws.dir, ".cursor/skills/agent-readiness/scripts/readiness.ts"));
+    const r = readiness(ws.dir, ["audit", "--tier", "local-exec"], caseEnv(healthy), join(ws.dir, ".cursor/skills/agent-readiness/scripts/readiness.ts"));
     assert.equal(r.code, 0, r.out);
     const gates = gradeCase(ws, none, healthy);
     assert.deepEqual(gates.filter((g) => !g.pass), [], JSON.stringify(gates));
@@ -29,7 +29,7 @@ describe("eval grader", { skip: detectRuntime("auto") ? false : "no container ru
 
   test("hand edits to the skill or repo files fail the trajectory gate", () => {
     const ws = prepare(healthy);
-    readiness(ws.dir, ["audit", "--goal", "bug_fixes", "--tier", "local-exec", "--no-mutants"], caseEnv(healthy), join(ws.dir, ".cursor/skills/agent-readiness/scripts/readiness.ts"));
+    readiness(ws.dir, ["audit", "--tier", "local-exec", "--no-mutants"], caseEnv(healthy), join(ws.dir, ".cursor/skills/agent-readiness/scripts/readiness.ts"));
     appendFileSync(join(ws.dir, "src/pricing.js"), "\n// tweak\n");
     const trajectory = gradeCase(ws, none, healthy)[4];
     assert.equal(trajectory.pass, false);
@@ -42,7 +42,7 @@ describe("eval grader", { skip: detectRuntime("auto") ? false : "no container ru
     const reAudit = { ...resilienceCases.find((c) => c.id === "re-audit")!, id: "resilience/re-audit" };
     const ws = prepare(reAudit);
     const cli = join(ws.dir, ".cursor/skills/agent-readiness/scripts/readiness.ts");
-    const audit = () => readiness(ws.dir, ["audit", "--goal", "bug_fixes", "--tier", "local-exec"], caseEnv(reAudit), cli);
+    const audit = () => readiness(ws.dir, ["audit", "--tier", "local-exec"], caseEnv(reAudit), cli);
     assert.equal(audit().code, 0);
     assert.equal(applyTurnHook(ws, reAudit.turns[1]), true);
     assert.equal(audit().code, 0);
@@ -57,15 +57,15 @@ describe("eval grader", { skip: detectRuntime("auto") ? false : "no container ru
     const ws = prepare(phantom);
     const cli = join(ws.dir, ".cursor/skills/agent-readiness/scripts/readiness.ts");
     const run = (a: string[]) => assert.equal(readiness(ws.dir, a, caseEnv(phantom), cli).code, 0, a.join(" "));
-    run(["init", "--goal", "bug_fixes", "--tier", "local-exec"]);
+    run(["init", "--tier", "local-exec"]);
     run(["scan"]);
     run(["contract", "add", "--kind", "typecheck", "--component", "healthy-node", "--cmd", "npm run typecheck", "--source", "AGENTS.md:8", "--reason", "the documented type-check command"]);
     run(["replay"]);
     run(["seal"]);
     const failed = gradeCase(ws, none, phantom).filter((g) => !g.pass).map((g) => g.name);
-    assert.deepEqual(failed, ["no wrong instruction in the contract", "bug_fixes at Level 2"]);
+    assert.deepEqual(failed, ["no wrong instruction in the contract", "verify.canonical_interface passes"]);
     const clean = prepare(phantom);
-    assert.equal(readiness(clean.dir, ["audit", "--goal", "bug_fixes", "--tier", "local-exec"], caseEnv(phantom), join(clean.dir, ".cursor/skills/agent-readiness/scripts/readiness.ts")).code, 0);
+    assert.equal(readiness(clean.dir, ["audit", "--tier", "local-exec"], caseEnv(phantom), join(clean.dir, ".cursor/skills/agent-readiness/scripts/readiness.ts")).code, 0);
     const gates = gradeCase(clean, none, phantom);
     assert.deepEqual(gates.filter((g) => !g.pass), [], JSON.stringify(gates));
   });

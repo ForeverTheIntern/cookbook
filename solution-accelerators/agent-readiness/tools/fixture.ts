@@ -119,9 +119,12 @@ export interface ExpectedRun {
   listed?: string[];
   signals?: Record<string, boolean | null>;
   coverage?: string;
+  // The repo rollup and each assessed component's standard level.
   level: number;
-  levels: Record<string, Record<string, number>>;
-  repoLevels: Record<string, number>;
+  levels: Record<string, number>;
+  // Optional scenarios to add for every component, and the levels expected under each component.
+  scenarios?: string[];
+  scenarioLevels?: Record<string, Record<string, number>>;
   top: string[];
   startNow: string | null;
   noBlocker: boolean;
@@ -132,7 +135,6 @@ export interface ExpectedRun {
 }
 
 export interface Expected {
-  goal: string;
   purpose: string;
   outcomes?: string;
   runs: ExpectedRun[];
@@ -155,7 +157,8 @@ export function auditFixture(fixture: string, run: ExpectedRun, opts: { seed?: s
   const exp = expected(fixture);
   const now = opts.now ?? new Date().toISOString();
   const repo = materialize(fixture, { now });
-  const args = ["audit", "--goal", exp.goal, "--tier", "local-exec"];
+  const args = ["audit", "--tier", "local-exec"];
+  if (run.scenarios) args.push("--scenario", run.scenarios.join(","));
   const env: Record<string, string> = { READINESS_EVAL_SEED: opts.seed ?? "fixture-seed" };
   if (run.registryEnv) {
     args.push("--registry-env", Object.keys(run.registryEnv).join(","));

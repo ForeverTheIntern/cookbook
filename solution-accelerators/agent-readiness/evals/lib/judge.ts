@@ -17,19 +17,15 @@ const REPLY = 'Reply with only JSON: {"score": <0 to 1>, "reasons": ["..."]}.';
 
 export function headlinePrompt(r: ReportJson): string {
   const rubric = loadRubric(r.audit.rubric);
-  const act = r.goal === "repo_wide" ? "bug_fixes" : r.goal;
-  const level = (c: ReportJson["details"]["levels"]["components"][number]) => (c.levels as Record<string, number>)[act] ?? 0;
-  const comps = r.details.levels.components;
-  const ready = comps.filter((c) => level(c) >= 2).map((c) => c.id);
+  const comps = r.components.included;
+  const ready = comps.filter((c) => (c.level ?? 0) >= 2).map((c) => c.id);
   return [
     `You grade the headline of a repository readiness report. ${REPLY}`,
     "The reader is an engineering director: tests, builds, CI, pull requests, lockfiles, containers and package names are plain words to them.",
     `Rules: one message in at most ${rubric.part1.maxHeadlineWords} words; it names the component that sets the level, and says what already works (elsewhere in the repo when another component is ready); no jargon, meaning this audit's internal terms (${rubric.part1.bannedTerms.join(", ")}), check or evidence IDs, or a level name without its plain meaning; it never pairs a level change with an outcome change in the same sentence.`,
     "",
     `Heading: ${r.executive.heading}`,
-    r.goal === "repo_wide"
-      ? `Facts: repo-wide changes are judged for the whole repo, at Level ${r.maturity.level}${r.maturity.setBy.length ? `, held there by ${r.maturity.setBy.join(", ")}` : ", held there by repo-wide checks such as pinned versions"}. Component levels for bug fixes: ${comps.map((c) => `${c.id} Level ${level(c)}`).join(", ")}.`
-      : `Facts: component levels for ${r.goalLabel}: ${comps.map((c) => `${c.id} Level ${level(c)}`).join(", ")}. The lowest active component sets the repo level: ${r.maturity.setBy.join(", ") || "none; repo-wide checks set it"}. Ready for ${r.goalLabel} (Level 2 or above): ${ready.join(", ") || "none"}.`,
+    `Facts: component levels: ${comps.map((c) => `${c.id} ${c.level === null ? "not assessed" : `Level ${c.level}`}`).join(", ") || "none assessed"}. The lowest active component sets the repo level: ${r.maturity.setBy.join(", ") || "none"}. Ready for agents (Level 2 or above): ${ready.join(", ") || "none"}.`,
     `Headline: ${r.executive.headline}`,
   ].join("\n");
 }
@@ -38,7 +34,7 @@ export function pagePrompt(r: ReportJson): string {
   const ex = r.executive;
   return [
     `You grade the first page of a repository readiness report against executive-slide rules. ${REPLY}`,
-    "Rules: one clear message; names the component that sets the level and what already works elsewhere; plain words with no jargon; every number has a comparison; at most three gaps, all about the activity judged; one concrete ask, which is a single decision plus naming an owner when none is recorded; nothing a busy director would have to reread.",
+    "Rules: one clear message; names the component that sets the level and what already works elsewhere; plain words with no jargon; every number has a comparison; at most three gaps, each about what holds a component's level; one concrete ask, which is a single decision plus naming an owner when none is recorded; nothing a busy director would have to reread.",
     "",
     `Heading: ${ex.heading}`,
     `Headline: ${ex.headline}`,

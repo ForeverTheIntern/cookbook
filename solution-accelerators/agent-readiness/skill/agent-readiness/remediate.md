@@ -23,7 +23,7 @@ For an item about install, build or test setup in a clean checkout, such as "Set
    It picks services from the audit's diagnosis. Pass `--service postgres,redis` when the diagnosis didn't name them.
 2. Read both scripts. They must start only local services and name no production hosts or credentials.
 3. Commit the files.
-4. Prove it: run a new audit (`readiness init --force --goal <goal> --tier <tier>`, `readiness scan`, `readiness replay`, `readiness seal`). The item is done only when the new report shows it closed. If the replay still fails, read the failing evidence, fix the scripts, commit, and audit again.
+4. Prove it: run a new audit (`readiness init --force --tier <tier>`, with the same `--scenario` as before if any, `readiness scan`, `readiness replay`, `readiness seal`). The item is done only when the new report shows it closed. If the replay still fails, read the failing evidence, fix the scripts, commit, and audit again.
 5. Tell the user that committing `.cursor/environment.json` doesn't change a Cloud Agent environment by itself. A team admin points the Cloud Agent environment at the file. Never claim you configured Cloud Agents.
 
 ## The verify skill

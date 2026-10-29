@@ -1,6 +1,6 @@
 ---
 name: agent-readiness
-description: Audit whether coding agents can work in this repository, from evidence the audit's scripts execute. Reports a level per component and activity, the top three things holding it back, and a fix for each that can be proved. Use when asked for an agent readiness audit or report, whether agents can take bug fixes or features here, what blocks agents in this repo, or to re-audit or recheck after fixes.
+description: Audit whether coding agents can work in this repository, from evidence the audit's scripts execute. Reports one level for the repo and one for each app or component it finds, the top three things holding them back, and a fix for each that can be proved. Use when asked for an agent readiness audit or report, whether agents can take bug fixes or features here, what blocks agents in this repo, or to re-audit or recheck after fixes.
 ---
 
 # Agent readiness audit
@@ -26,13 +26,16 @@ It needs Node 22.14 or later and no packages. Below, `readiness` means that comm
 
 ## 1. Intake
 
-Settle two things, from the user's words or these defaults:
+Every audit reports three tiers: one level for the repo, one standard level for each app or component the scan finds, and, only when the user asks for them, scenario breakdowns nested under the components they cover. See [references/levels.md](references/levels.md) for the scale and the rollup rule.
 
-- **Goal** (`--goal`): `first_pr`, `bug_fixes` (default), `features` (features and refactors) or `repo_wide` (upgrades, migrations, large refactors). See [references/goals.md](references/goals.md).
+Settle the tier, and any scenario the user asks for, from their words or these defaults:
+
 - **Permission tier** (`--tier`):
   - `read-only`: no repo code runs. Every executed check reads "not run".
   - `local-exec` (default): repo code runs in a clean container, or in a scrubbed throwaway copy when no container runtime exists.
   - `external-systems`: also reads pull requests through `gh` for the outcome numbers, and can check the published release.
+
+- **Scenarios** (optional, none by default): `first_pr`, `bug_fixes`, `features` (features and refactors) or `repo_wide` (upgrades, migrations, large refactors). Add one only when the user names that kind of work, for example "can agents take bug fixes in web?". `--scenario bug_fixes` adds it for every component; after the scan, `readiness scenario add bug_fixes --components web` adds it for some. A scenario is an extra breakdown in part 4; it never changes a component's standard level or the repo level.
 
 For a private registry, ask for the variable names (never values) and pass `--registry-env NPM_TOKEN,PIP_INDEX_URL`. Their names are recorded and their values never are.
 
@@ -40,7 +43,7 @@ For a private registry, ask for the variable names (never values) and pass `--re
 
 1. `git status --short`. Uncommitted changes aren't audited: the audit reads `git archive HEAD`. Say so if the tree is dirty.
 2. `docker info` (or `podman info`). With no container runtime, tell the user up front that Level 1 can't be proved on this machine. It's an environment limit, not a repo gap, and the scheduled CI recheck can prove it. The fallback runs on the host, so a tool this machine lacks (for example a .NET SDK the repo's own image installs) is reported as a limit of this machine, and commands that use `sudo` are never run there.
-3. `readiness init --goal <goal> --tier <tier>`. If a draft is already open from an earlier attempt, add `--force`.
+3. `readiness init --tier <tier>`, plus `--scenario <id>` if the user asked for one. If a draft is already open from an earlier attempt, add `--force`.
 
 ## 3. Profile, agent assets and static checks
 
@@ -76,7 +79,7 @@ For a private registry, ask for the variable names (never values) and pass `--re
    { "headline": "...", "ask": "...", "gaps": { "clean.test:api": "..." } }
    ```
 
-   - **Headline:** one message in at most 40 words for an engineering director. Name the component that sets the level and say why in plain words, from the failing condition's reason in `readiness status`: what failed and what it needs, for example "its tests need a Postgres database the setup doesn't start". Then say what already works, in that component (it installs, builds, its tests catch planted bugs) and in any component already at Level 2. When nothing blocks the activity, name the component, say what the audit proved, and recommend starting to delegate. Keep to the activity you audited; other activities' levels belong in the report, not the headline. The heading already shows the level, so don't restate it, and with a single component leave out its share of changes, which is always 100%. When no component could be assessed, or no check produced a real result (every check was blocked on this machine, or the tier ran no repo code), say that, name what was skipped or blocked and why, and give no level. A check blocked on this machine, such as a tool the host lacks, is never a repo gap: say where a rerun can prove it.
+   - **Headline:** one message in at most 40 words for an engineering director. Name the component that sets the level and say why in plain words, from the failing condition's reason in `readiness status`: what failed and what it needs, for example "its tests need a Postgres database the setup doesn't start". Then say what already works, in that component (it installs, builds, its tests catch planted bugs) and in any component already at Level 2. When nothing blocks, name the component, say what the audit proved, and recommend starting to delegate. Don't frame the headline by an activity such as bug fixes: the levels are standard, and scenario breakdowns belong in part 4. The heading already shows the level, so don't restate it, and with a single component leave out its share of changes, which is always 100%. When no component could be assessed, or no check produced a real result (every check was blocked on this machine, or the tier ran no repo code), say that, name what was skipped or blocked and why, and give no level. A check blocked on this machine, such as a tool the host lacks, is never a repo gap: say where a rerun can prove it.
    - **Ask:** the one decision that unblocks the top gap, naming the change to approve, for example "approve adding a Postgres service to the agent setup for api". The report adds "name an owner" when none is recorded, so leave it out.
    - **Gaps** (optional): one plain line per top item, keyed `<condition>:<component>` as in the example.
 

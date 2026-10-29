@@ -24,7 +24,7 @@ import { loadRubric } from "../skill/agent-readiness/scripts/lib/rubric.ts";
 import { ENV_KEYS, renderEnvFiles, renderVerifySkill } from "../skill/agent-readiness/scripts/lib/skill.ts";
 import { extractFromMarkdown, instructionItems, safetyScan } from "../skill/agent-readiness/scripts/lib/static.ts";
 import type { HistoryLine, PrRecord, ReportJson } from "../skill/agent-readiness/scripts/lib/types.ts";
-import { paths, releaseManifest, skillDigest } from "../skill/agent-readiness/scripts/lib/workspace.ts";
+import { isDirty, paths, releaseManifest, skillDigest } from "../skill/agent-readiness/scripts/lib/workspace.ts";
 import { FIXTURES, materialize } from "../tools/fixture.ts";
 import { makeAudit } from "./helpers.ts";
 
@@ -134,8 +134,8 @@ describe("diagnosis", () => {
     assert.equal(states["clean.install"].state, "blocked");
     assert.match(states["clean.install"].reason, /dotnet is not installed on this machine, an environment limit rather than a repo defect/);
     assert.equal(states["clean.build"].state, "blocked", "a step that follows a blocked install is blocked too, not failed");
-    assert.equal(componentLevel(rubric, statesOf(states), "bug_fixes").level, 0);
-    assert.equal(componentLevel(rubric, statesOf(states), "bug_fixes").couldBe, 1, "blocked counts as unproven, never as met or failed");
+    assert.equal(componentLevel(rubric, statesOf(states)).level, 0);
+    assert.equal(componentLevel(rubric, statesOf(states)).couldBe, 1, "blocked counts as unproven, never as met or failed");
     install.where = "container";
     assert.equal(componentStates(audit, rubric, "app")["clean.install"].state, "not_met", "in a clean container it is the repo's problem");
   });
@@ -226,6 +226,13 @@ describe("static checks", () => {
     const md = "# X\n\n```bash\n$ npm ci\nnpm test\n```\n\nRun `npm run build` and see [setup](docs/setup.md) or `src/index.ts`.\n";
     const items = extractFromMarkdown(md);
     assert.deepEqual(items.map((i) => `${i.kind}:${i.text}:${i.line}`), ["command:npm ci:4", "command:npm test:5", "command:npm run build:8", "path:src/index.ts:8", "path:docs/setup.md:8"]);
+  });
+
+  test("a path the docs say comes later isn't a stale instruction, and a missing path still is", () => {
+    const repo = materialize("healthy-node");
+    writeFileSync(join(repo, "AGENTS.md"), "- Decisions will be added to `docs/adr/` later.\n- The service map is in `docs/architecture.md`.\n");
+    const items = instructionItems(repo, { ...buildProfile(repo, repo, rubric), instructionFiles: ["AGENTS.md"] });
+    assert.deepEqual(items.map((i) => [i.text, i.result]), [["docs/architecture.md", "fail"]]);
   });
 
   test("continued lines join, and commands with paths on the author's machine aren't replayed", () => {
@@ -363,6 +370,44 @@ describe("profile", () => {
     assert.ok(profile.manifests.includes("services/orders/Orders.csproj"));
     const kinds = discoverContract(profile, repo, rubric, []).filter((c) => c.component === "buyer").map((c) => c.kind).sort();
     assert.deepEqual(kinds, ["install", "lint", "test", "typecheck"]);
+  });
+
+  test("the doctor checks the toolchains the components use, and a repo with nothing assessed gets no contract", () => {
+    const repo = materialize("standalone-nested-mixed");
+    const profile = buildProfile(repo, repo, rubric);
+    assert.equal(discoverContract(profile, repo, rubric, []).find((c) => c.kind === "doctor")!.command, "node --version && corepack pnpm --version");
+    const go = materialize("unsupported-go-service");
+    assert.deepEqual(discoverContract(buildProfile(go, go, rubric), go, rubric, []), []);
+  });
+
+  test("a declared install gets frozen installs behind it that run only if this machine blocks it", () => {
+    const repo = materialize("nested-apps-dotnet");
+    writeFileSync(join(repo, ".cursor/environment.json"), JSON.stringify({ install: "dotnet restore && npm ci --prefix apps/buyer-web" }));
+    const installs = discoverContract(buildProfile(repo, repo, rubric), repo, rubric, []).filter((c) => c.kind === "install");
+    assert.deepEqual(installs.map((c) => [c.id, c.fallbackFor ?? null]), [["cmd-repo-install", null], ["cmd-admin-web-install", "cmd-repo-install"], ["cmd-buyer-web-install", "cmd-repo-install"]]);
+  });
+
+  test("toolchain versions the declared image pins count as pinned", () => {
+    const repo = gitRepo({
+      "apps/web/package.json": JSON.stringify({ name: "web", packageManager: undefined, scripts: { test: "node --test" } }),
+      "apps/web/pnpm-lock.yaml": "lockfileVersion: '9.0'\n",
+      ".cursor/environment.json": JSON.stringify({ build: { dockerfile: "Dockerfile" }, install: "true" }),
+      ".cursor/Dockerfile": "ARG NODE_VERSION=24\nFROM node:${NODE_VERSION}-bookworm-slim\nRUN corepack enable && corepack prepare pnpm@12.8.1 --activate\n",
+    });
+    const tc = buildProfile(repo, repo, rubric).toolchain;
+    assert.equal(tc.pinned, true, JSON.stringify(tc));
+    assert.deepEqual(tc.files, [".cursor/Dockerfile (Node)", ".cursor/Dockerfile (pnpm)"]);
+  });
+
+  test("a copy of this skill and the audit's records don't make the tree dirty", () => {
+    const repo = materialize("healthy-node");
+    mkdirSync(join(repo, ".cursor/skills/agent-readiness/scripts"), { recursive: true });
+    writeFileSync(join(repo, ".cursor/skills/agent-readiness/scripts/readiness.ts"), "// copied\n");
+    mkdirSync(join(repo, ".agent-readiness"), { recursive: true });
+    writeFileSync(join(repo, ".agent-readiness/cli.log"), "{}\n");
+    assert.equal(isDirty(repo), false);
+    writeFileSync(join(repo, "notes.txt"), "work in progress\n");
+    assert.equal(isDirty(repo), true);
   });
 
   test("a root-level project is named after itself, not its manifest file", () => {
@@ -561,7 +606,7 @@ describe("records", () => {
   test("history goes to its own branch, and readHistory falls back to it", () => {
     const repo = gitRepo({ "a.txt": "x" });
     const p = paths(repo);
-    const line: HistoryLine = { id: "aud-1", kind: "audit", date: "2026-10-27", commit: "abc", rubric: "2026-10-alpha", scriptsDigest: "x", result: "sealed", goal: "bug_fixes", levels: {}, repoLevels: { bug_fixes: 1 }, shares: {}, active: [], seedPinned: false };
+    const line: HistoryLine = { id: "aud-1", kind: "audit", date: "2026-10-27", commit: "abc", rubric: "2026-10-alpha", scriptsDigest: "x", result: "sealed", levels: {}, repoLevel: 1, scenarioLevels: {}, shares: {}, active: [], seedPinned: false };
     appendHistory(p, line);
     assert.match(pushHistory(p, { push: false, remote: "origin" }), /committed history/);
     rmSync(p.history, { recursive: true });
@@ -572,7 +617,7 @@ describe("records", () => {
 
 describe("rubric and release", () => {
   test("every condition an activity needs exists and has a roadmap template", () => {
-    for (const a of rubric.activities) for (const c of [...rubric.level1, ...a.level2]) assert.ok(rubric.conditions[c], c);
+    for (const a of rubric.scenarios) for (const c of [...rubric.level1, ...rubric.level2, ...a.level2]) assert.ok(rubric.conditions[c], c);
     for (const c of Object.keys(rubric.conditions)) assert.ok(Object.keys(rubric.templates).some((t) => t === c || t.startsWith(c + ":")), `template for ${c}`);
     assert.equal(rubric.scale.length, 5);
   });

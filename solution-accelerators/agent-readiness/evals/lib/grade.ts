@@ -22,7 +22,7 @@ export function roadmap(ws: Workspace): { items: { id: string; status: string; f
   return existsSync(f) ? JSON.parse(readFileSync(f, "utf8")) : null;
 }
 
-export function historyLines(ws: Workspace): { id: string; kind: string; repoLevels: Record<string, number> }[] {
+export function historyLines(ws: Workspace): { id: string; kind: string; repoLevel: number }[] {
   const f = join(ws.dir, ".agent-readiness/history/history.jsonl");
   return existsSync(f) ? readFileSync(f, "utf8").split("\n").filter(Boolean).map((l) => JSON.parse(l)) : [];
 }
@@ -61,17 +61,17 @@ export const sealedGate: Gate = (ws) => {
   return { name: "sealed audit and verify-seal", pass: v.code === 0, detail: v.out.split("\n").filter((l) => l.startsWith("FAIL") || l.startsWith("readiness:")).join(" ") || "verify-seal passed" };
 };
 
-export type ExpectedLevels = Pick<ExpectedRun, "level" | "levels" | "repoLevels">;
+export type ExpectedLevels = Pick<ExpectedRun, "level" | "levels">;
 
+// The repo rollup and each component's standard level, as report.json gives them.
 export function levelsMatch(want: ExpectedLevels, name: string): Gate {
   return (ws) => {
     const r = latestReport(ws);
     if (!r) return { name, pass: false, detail: "no report" };
-    const got: Record<string, Record<string, number>> = {};
-    for (const comp of r.details.levels.components) got[comp.id] = comp.levels as Record<string, number>;
+    const got: Record<string, number | null> = {};
+    for (const comp of r.components.included) got[comp.id] = comp.level;
     const ok = JSON.stringify(sortKeys(got)) === JSON.stringify(sortKeys(want.levels));
-    const repoOk = JSON.stringify(sortKeys(r.details.levels.repoLevels)) === JSON.stringify(sortKeys(want.repoLevels));
-    return { name, pass: ok && repoOk && r.maturity.level === want.level, detail: ok && repoOk ? `Level ${r.maturity.level}` : `got ${JSON.stringify(got)} repo ${JSON.stringify(r.details.levels.repoLevels)}` };
+    return { name, pass: ok && r.maturity.level === want.level, detail: ok ? `Level ${r.maturity.level}` : `got ${JSON.stringify(got)}, repo ${r.maturity.level}` };
   };
 }
 

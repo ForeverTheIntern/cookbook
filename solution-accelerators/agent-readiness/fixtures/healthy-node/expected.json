@@ -1,27 +1,16 @@
 {
-  "goal": "bug_fixes",
   "purpose": "No blockers: the report should say so and recommend starting to delegate.",
   "runs": [
     {
       "name": "default",
       "level": 2,
       "levels": {
-        "healthy-node": {
-          "first_pr": 2,
-          "bug_fixes": 2,
-          "features": 2
-        }
-      },
-      "repoLevels": {
-        "first_pr": 2,
-        "bug_fixes": 2,
-        "features": 2,
-        "repo_wide": 2
+        "healthy-node": 2
       },
       "top": [
-        "targets:bug_fixes"
+        "targets"
       ],
-      "startNow": "delegate:bug_fixes:healthy-node",
+      "startNow": "delegate:healthy-node",
       "noBlocker": true,
       "safety": "pass"
     }

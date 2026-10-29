@@ -32,7 +32,7 @@ function edit(rel: string, fn: (s: string) => string): void {
 
 const read = (rel: string) => readFileSync(join(repo, rel), "utf8");
 
-at(T0, ["audit", "--goal", "bug_fixes", "--tier", "local-exec", "--outcomes-input", materializePrs("monorepo-mixed", T0), ...imageArgs]);
+at(T0, ["audit", "--tier", "local-exec", "--outcomes-input", materializePrs("monorepo-mixed", T0), ...imageArgs]);
 const first = { json: read(".agent-readiness/latest/report.json"), md: read(".agent-readiness/latest/report.md") };
 
 at("2026-10-28T15:00:00.000Z", ["roadmap", "owner", "Platform team"]);
@@ -42,7 +42,7 @@ edit("AGENTS.md", (s) => s.replace("- Run `pnpm test` before you push.\n", "- Ru
 edit(".cursor/skills/release-notes/SKILL.md", (s) => s.replace("Run `npm run changelog` to collect merged changes.", "List merged changes since the last tag with git log."));
 commitAt("2026-10-29T17:00:00.000Z", "Fix stale agent instructions");
 
-at("2026-10-30T15:00:00.000Z", ["audit", "--goal", "bug_fixes", "--tier", "local-exec", ...imageArgs]);
+at("2026-10-30T15:00:00.000Z", ["audit", "--tier", "local-exec", ...imageArgs]);
 at("2026-10-30T16:00:00.000Z", ["draft-skill", "--remediate"]);
 commitAt("2026-10-30T17:00:00.000Z", "Add the verify skill drafted by the readiness audit");
 
@@ -55,7 +55,7 @@ commitAt("2026-11-14T10:00:00.000Z", "Remove debug logging");
 at("2026-11-20T13:00:00.000Z", ["recheck", ...imageArgs]);
 
 const T2 = "2026-11-30T15:00:00.000Z";
-at(T2, ["audit", "--goal", "bug_fixes", "--tier", "local-exec", "--outcomes-input", materializePrs("monorepo-mixed", T2, "prs-later.template.json"), ...imageArgs]);
+at(T2, ["audit", "--tier", "local-exec", "--outcomes-input", materializePrs("monorepo-mixed", T2, "prs-later.template.json"), ...imageArgs]);
 const latest = { json: read(".agent-readiness/latest/report.json"), md: read(".agent-readiness/latest/report.md") };
 
 const out = join(ACCELERATOR, "examples");

@@ -3,7 +3,7 @@ import { mkdtempSync, readdirSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { basename, join, relative, resolve } from "node:path";
 import { latestRubricVersion, rubricDigest } from "./rubric.ts";
-import type { ActivityId, Audit, Tier } from "./types.ts";
+import type { Audit, ScenarioSpec, Tier } from "./types.ts";
 import { SKILL_ROOT, ensureDir, exists, fail, git, gitOrThrow, nowIso, randomHex, readJson, readText, sha256, today, writeJson, writeText } from "./util.ts";
 
 export interface Paths {
@@ -72,7 +72,7 @@ export interface LocalInfo {
 
 export interface InitOptions {
   repo: string;
-  goal: ActivityId;
+  scenarios: ScenarioSpec[];
   tier: Tier;
   registryEnv: string[];
   inheritEnv: boolean;
@@ -88,12 +88,13 @@ function repoName(repo: string): string {
   return basename(repo);
 }
 
+// The audit's own records and an uncommitted copy of this skill don't make the tree dirty.
 export function isDirty(repo: string): boolean {
-  const r = git(["status", "--porcelain"], repo);
+  const r = git(["status", "--porcelain", "--untracked-files=all"], repo);
   return r.stdout
     .split("\n")
     .filter((l) => l.trim())
-    .some((l) => !l.slice(3).startsWith(".agent-readiness/"));
+    .some((l) => !/^(\.agent-readiness\/|\.cursor\/skills\/agent-readiness\/)/.test(l.slice(3).replace(/^"/, "")));
 }
 
 export function exportTree(repo: string, commit: string, dest: string): void {
@@ -130,7 +131,7 @@ export function initAudit(opts: InitOptions): { audit: Audit; local: LocalInfo; 
     createdAt: nowIso(),
     state: "draft",
     repo: { name: repoName(opts.repo), commit, dirtyTree: isDirty(opts.repo) },
-    goal: opts.goal,
+    scenarios: opts.scenarios,
     tier: opts.tier,
     rubric,
     skill: { version: manifest?.version ?? "0.0.0", scriptsDigest: skillDigest(), rubricDigest: rubricDigest(rubric), release: manifest?.tag ?? null },

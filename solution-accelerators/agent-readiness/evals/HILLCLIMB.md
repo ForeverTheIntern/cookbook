@@ -257,3 +257,23 @@ A review of other readiness tools then shaped how far each fix goes. We took ide
 These change discovery and report text, and add the blocked and not-assessed outcomes, but no level number: every existing fixture's levels are unchanged. The new fixture joins the full eval set, which hasn't been rerun with the agent since.
 
 Four more fixtures, written for this, pin the field shapes: `standalone-nested-mixed`, `declared-image-missing-toolchain`, `sudo-start` and `unsupported-go-service`. The second and third also run with no container runtime. Part 4 also gained five informational signals: CI config, a way to run one test file, a sample env file, worktree and port isolation, and AGENTS.md length. None of them changes a level.
+
+## Levels redesign and the second field run (October 29, 2026)
+
+Andrew's decision replaced per-activity levels with three tiers: one repo rollup, one standard level for each app or component, and optional scenarios nested under the components they cover. The standard Level 2 is the old features bar (commands, caught planted faults, accurate instructions, no production access). Scenarios keep the four old activities as extra breakdowns that never change a level. Levels 3 and 4 are now measured per component, on the agent PRs that touch it, and the repo rolls up by the stated rule.
+
+Fixture expectations moved with it. Each component's standard level equals its old features level. Item ids lost the activity (`delegate:<component>`, `targets`). Two fixtures changed meaning:
+- In `monorepo-mixed`, `shared` drops to Level 1 because its instructions are stale, so `instructions:repo` becomes a top item.
+- `python-unpinned` reaches the standard Level 2, and its unpinned toolchain now shows under the `repo_wide` scenario that its run adds.
+
+The rerun on the brownfield repo at `a8eb1ef` found four of the five fixes working. These changes, with a regression test each, close what was left:
+
+| Finding | Fix | Test |
+| --- | --- | --- |
+| A shared `.cursor/install.sh` blocked by one app's toolchain kept every other app from running | Behind a declared install, each component gets its own frozen install, which runs only if this machine blocks the shared one. Level 1 stays blocked | `tests/cli.test.ts` "when one app's toolchain blocks the shared install" |
+| Part 4 and `status` printed Level 0 when part 1 had no level | Every tier says "not assessed" when there is no real result | `tests/render.test.ts` "no real results, no level"; `tests/cli.test.ts` "Repo level: not assessed" |
+| The roadmap dropped "Name an owner" while the ask still asked for one | With no real results the roadmap keeps its decisions | `tests/roadmap.test.ts` "opens with naming an owner" |
+| `contract add` accepted a second command for the same script | It refuses a command that runs a script already in the contract | `tests/cli.test.ts` "already runs the test script" |
+| The evidence log said "ran on host" for steps that never ran | Steps that didn't run say "not run" | `tests/cli.test.ts` "a step that never ran" |
+| "blocked: blocked:", "100%. counting", "1 scripts" | Fixed | `tests/render.test.ts` |
+| The doctor check was npm-only; a future `docs/adr/` was flagged; Dockerfile pins were ignored; the copied skill made the tree dirty | The doctor checks the toolchains in use; a path the docs say comes later isn't drift; the declared image's pins count; the copied skill and `.agent-readiness/` don't make the tree dirty | `tests/units.test.ts` |

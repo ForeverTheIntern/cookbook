@@ -10,7 +10,7 @@ import { commitAll, materialize, readiness } from "../tools/fixture.ts";
 
 function hostAudit(fixture: string, extra: string[] = [], env: Record<string, string> = {}) {
   const repo = materialize(fixture);
-  const r = readiness(repo, ["audit", "--goal", "bug_fixes", "--tier", "local-exec", "--runtime", "none", ...extra], env);
+  const r = readiness(repo, ["audit", "--tier", "local-exec", "--runtime", "none", ...extra], env);
   assert.equal(r.code, 0, r.out);
   return repo;
 }
@@ -26,7 +26,7 @@ describe("CLI", { concurrency: 4 }, () => {
     const r = JSON.parse(readFileSync(join(repo, ".agent-readiness/latest/report.json"), "utf8"));
     assert.equal(r.maturity.level, 0);
     assert.equal(r.maturity.couldBe, 1);
-    assert.equal(r.details.levels.components[0].couldBe.bug_fixes, 1);
+    assert.equal(r.components.included[0].couldBe, 1);
     assert.ok(r.details.record.some((x: { value: string }) => x.value.includes("fresh copy on the host")));
     const status = readFileSync(join(sealedDir(repo), "audit.json"), "utf8");
     assert.match(status, /"where": "fresh_copy"/);
@@ -34,14 +34,14 @@ describe("CLI", { concurrency: 4 }, () => {
 
   test("empty READINESS_IMAGE and READINESS_RUNTIME mean the defaults", { skip: detectRuntime("auto") ? false : "no container runtime" }, () => {
     const repo = materialize("healthy-node");
-    const r = readiness(repo, ["audit", "--goal", "bug_fixes", "--tier", "local-exec", "--no-mutants"], { READINESS_IMAGE: "", READINESS_RUNTIME: "" });
+    const r = readiness(repo, ["audit", "--tier", "local-exec", "--no-mutants"], { READINESS_IMAGE: "", READINESS_RUNTIME: "" });
     assert.equal(r.code, 0, r.out);
     assert.doesNotMatch(r.out, /Could not start a container|No container runtime/);
   });
 
   test("contract add and run refuse components the scan didn't find or can't assess", () => {
     const repo = materialize("nested-apps-dotnet");
-    assert.equal(readiness(repo, ["init", "--goal", "bug_fixes", "--tier", "local-exec"]).code, 0);
+    assert.equal(readiness(repo, ["init", "--tier", "local-exec"]).code, 0);
     assert.equal(readiness(repo, ["scan"]).code, 0);
     const add = (component: string) => readiness(repo, ["contract", "add", "--kind", "typecheck", "--component", component, "--cmd", "npm run lint", "--source", "agent", "--reason", "the documented check"]);
     const unknown = add("storefront");
@@ -54,28 +54,59 @@ describe("CLI", { concurrency: 4 }, () => {
     const run = readiness(repo, ["run", "--component", "storefront"]);
     assert.notEqual(run.code, 0);
     assert.match(run.out, /No component named storefront/);
+    const duplicate = readiness(repo, ["contract", "add", "--kind", "test", "--component", "buyer-web", "--cwd", "apps/buyer-web", "--cmd", "npm test", "--source", "README.md:3", "--reason", "the documented test command"]);
+    assert.notEqual(duplicate.code, 0);
+    assert.match(duplicate.out, /cmd-buyer-web-test already runs the test script for buyer-web \(`npm run test`\), so it would run twice/);
     const status = readiness(repo, ["status"]);
     assert.match(status.out, /Part 1 now: /, "status shows the part 1 the seal would build, so narration can use its ids");
+    assert.match(status.out, /Repo level: not assessed/, "before anything ran, status gives no level");
+    assert.match(status.out, /buyer-web: level not assessed/);
   });
 
   test("on a host fallback, a missing tool blocks the checks, and with no real results part 1 gives no level", () => {
     const repo = materialize("healthy-node");
     mkdirSync(join(repo, ".cursor"));
     writeFileSync(join(repo, ".cursor/environment.json"), JSON.stringify({ install: "readiness-test-missing-toolchain restore && npm ci" }));
+    const pkg = JSON.parse(readFileSync(join(repo, "package.json"), "utf8"));
+    writeFileSync(join(repo, "package.json"), JSON.stringify({ ...pkg, scripts: { ...pkg.scripts, preinstall: "readiness-test-missing-toolchain check" } }, null, 2));
     commitAll(repo, "Declare the install");
-    const r = readiness(repo, ["audit", "--goal", "bug_fixes", "--tier", "local-exec", "--runtime", "none", "--no-mutants"]);
+    const r = readiness(repo, ["audit", "--tier", "local-exec", "--runtime", "none", "--no-mutants"]);
     assert.equal(r.code, 0, r.out);
     const report = JSON.parse(readFileSync(join(repo, ".agent-readiness/latest/report.json"), "utf8"));
     assert.equal(report.maturity.outcome, "not_assessed");
     assert.equal(report.maturity.confidence.level, "low");
-    assert.equal(report.executive.heading, "Not assessed for bug fixes: no check could run on this machine");
+    assert.equal(report.executive.heading, "Not assessed: no check could run on this machine");
     assert.deepEqual(report.actions, [], "no fix is offered for a limit of this machine");
-    assert.match(report.executive.headline, /^Nothing could be checked for bug fixes on this machine, so this audit gives no level: readiness-test-missing-toolchain is not installed on this machine\./);
+    assert.match(report.executive.headline, /^Nothing could be checked on this machine, so this audit gives no level: readiness-test-missing-toolchain is not installed on this machine\./);
     assert.match(report.executive.coverage, /Level 1 isn't provable on this machine: it has no container runtime, so setup ran in a fresh copy on the host\./);
     assert.match(report.executive.coverage, /On this machine readiness-test-missing-toolchain is not installed, an environment limit rather than a repo defect\./);
     assert.ok(report.details.evidence.some((e: { result: string }) => e.result === "blocked"));
+    assert.ok(report.details.evidence.filter((e: { result: string }) => e.result === "not_run").every((e: { where: string }) => e.where === "not run"), "a step that never ran doesn't say where it ran");
+    assert.deepEqual(report.components.included.map((c: { level: number | null }) => c.level), [null]);
     const history = readFileSync(join(repo, ".agent-readiness/history/history.jsonl"), "utf8");
     assert.match(history, /"note":"no level: nothing could run on this machine/);
+    const status = readiness(repo, ["history"]).out;
+    assert.match(status, /repo not assessed/);
+  });
+
+  test("when one app's toolchain blocks the shared install, the other apps still install, run and get planted faults on their own", () => {
+    const repo = materialize("nested-apps-dotnet");
+    // A tool no machine has stands in for the .NET SDK, so the test doesn't depend on the runner.
+    writeFileSync(join(repo, ".cursor/environment.json"), JSON.stringify({ install: "readiness-test-dotnet restore services/commerce-core/CommerceCore.csproj && cd apps/buyer-web && npm ci" }));
+    commitAll(repo, "Install through one script");
+    const r = readiness(repo, ["audit", "--tier", "local-exec", "--runtime", "none"]);
+    assert.equal(r.code, 0, r.out);
+    const report = JSON.parse(readFileSync(join(repo, ".agent-readiness/latest/report.json"), "utf8"));
+    const ev = (component: string, kind: string) => report.details.evidence.filter((e: { component: string; ran: string; summary: string }) => e.component === component && (e.summary.startsWith(kind) || e.summary.includes(kind)));
+    assert.ok(report.details.evidence.some((e: { result: string; summary: string }) => e.result === "blocked" && /readiness-test-dotnet is not installed/.test(e.summary)), "the shared install is blocked by the missing toolchain");
+    for (const app of ["buyer-web", "admin-web"]) {
+      assert.ok(ev(app, "install passed").length > 0, `${app} installed on its own`);
+      assert.ok(ev(app, "test passed").length > 0, `${app}'s tests ran`);
+      assert.ok(ev(app, "planted faults").length > 0, `${app} got planted faults`);
+    }
+    assert.equal(report.maturity.outcome, "blocked", "real results exist, and Level 1 still needs a clean container");
+    assert.match(report.executive.heading, /^Level 0 of 4, not bootable; Level 1 is blocked on this machine$/);
+    assert.ok(report.components.included.every((c: { level: number; capReasons: { state: string }[] }) => c.level === 0 && c.capReasons.every((x) => x.state === "blocked")), JSON.stringify(report.components.included));
   });
 
   test("a sealed audit refuses further writes", () => {
@@ -92,7 +123,7 @@ describe("CLI", { concurrency: 4 }, () => {
     assert.equal(readiness(repo, ["verify-seal"]).code, 0);
     const f = join(sealedDir(repo), "audit.json");
     const original = readFileSync(f, "utf8");
-    writeFileSync(f, original.replace('"goal": "bug_fixes"', '"goal": "features"'));
+    writeFileSync(f, original.replace('"tier": "local-exec"', '"tier": "read-only"'));
     const edited = readiness(repo, ["verify-seal"]);
     assert.equal(edited.code, 2);
     assert.match(edited.out, /edited after sealing/);
@@ -167,7 +198,7 @@ describe("CLI", { concurrency: 4 }, () => {
     const repo = hostAudit("healthy-node", ["--no-mutants"]);
     readiness(repo, ["history", "push"]);
     rmSync(join(repo, ".agent-readiness/history"), { recursive: true });
-    assert.equal(readiness(repo, ["audit", "--goal", "bug_fixes", "--runtime", "none", "--no-mutants"]).code, 0);
+    assert.equal(readiness(repo, ["audit", "--runtime", "none", "--no-mutants"]).code, 0);
     readiness(repo, ["history", "push"]);
     const lines = execFileSync("git", ["show", "agent-readiness/history:history.jsonl"], { cwd: repo, encoding: "utf8" }).trim().split("\n");
     assert.equal(lines.length, 2);
@@ -180,7 +211,7 @@ describe("CLI", { concurrency: 4 }, () => {
     const f = join(repo, "test/pricing.test.js");
     writeFileSync(f, readFileSync(f, "utf8").replace('test("discount takes 10 off from 100"', 'test.skip("discount takes 10 off from 100"'));
     commitAll(repo, "Skip a test");
-    assert.equal(readiness(repo, ["audit", "--goal", "bug_fixes", "--runtime", "none", "--no-mutants"]).code, 0);
+    assert.equal(readiness(repo, ["audit", "--runtime", "none", "--no-mutants"]).code, 0);
     const d = readiness(repo, ["diff"]);
     assert.equal(d.code, 1);
     assert.match(d.out, /new skip markers/);

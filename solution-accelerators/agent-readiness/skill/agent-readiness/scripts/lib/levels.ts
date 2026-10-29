@@ -1,6 +1,6 @@
 import type { Rubric } from "./rubric.ts";
 import type { CompStates } from "./score.ts";
-import type { ActivityId, CondId, CondState, Component, HistoryLine, Level, OutcomesSnapshot, Targets } from "./types.ts";
+import type { CondId, CondState, Component, HistoryLine, Level, OutcomeStats, ScenarioId, ScenarioSpec, Targets } from "./types.ts";
 
 export interface LevelResult {
   level: Level;
@@ -23,41 +23,20 @@ function evaluate(conds: CondId[], states: StateMap): { met: boolean; missing: C
   return { met: missing.length === 0 && unknown.length === 0, missing, unknown };
 }
 
-export function componentLevel(rubric: Rubric, states: StateMap, activityId: ActivityId): LevelResult {
-  const activity = rubric.activities.find((a) => a.id === activityId)!;
+// The standard level by default; a scenario swaps in its own Level 2 bar.
+export function componentLevel(rubric: Rubric, states: StateMap, scenarioId?: ScenarioId): LevelResult {
+  const level2 = scenarioId ? rubric.scenarios.find((a) => a.id === scenarioId)!.level2 : rubric.level2;
   const l1 = evaluate(rubric.level1, states);
   if (!l1.met) return { level: 0, couldBe: l1.missing.length === 0 ? 1 : null, missing: l1.missing, unknown: l1.unknown };
-  const l2 = evaluate(activity.level2, states);
+  const l2 = evaluate(level2, states);
   if (!l2.met) return { level: 1, couldBe: l2.missing.length === 0 ? 2 : null, missing: l2.missing, unknown: l2.unknown };
   return { level: 2, couldBe: null, missing: [], unknown: [] };
 }
 
-export function repoWideLevel(rubric: Rubric, perComponent: Map<string, StateMap>): LevelResult {
-  const activity = rubric.activities.find((a) => a.id === "repo_wide")!;
-  let l1All = true;
-  let l1Possible = true;
-  const missing = new Set<CondId>();
-  const unknown = new Set<CondId>();
-  for (const states of perComponent.values()) {
-    const l1 = evaluate(rubric.level1, states);
-    if (!l1.met) l1All = false;
-    if (l1.missing.length) l1Possible = false;
-    l1.missing.forEach((c) => missing.add(c));
-    l1.unknown.forEach((c) => unknown.add(c));
-  }
-  if (perComponent.size === 0) return { level: 0, couldBe: null, missing: [], unknown: [] };
-  if (!l1All) return { level: 0, couldBe: l1Possible ? 1 : null, missing: [...missing], unknown: [...unknown] };
-  let l2Possible = true;
-  let l2All = true;
-  for (const states of perComponent.values()) {
-    const l2 = evaluate(activity.level2, states);
-    if (!l2.met) l2All = false;
-    if (l2.missing.length) l2Possible = false;
-    l2.missing.forEach((c) => missing.add(c));
-    l2.unknown.forEach((c) => unknown.add(c));
-  }
-  if (!l2All) return { level: 1, couldBe: l2Possible ? 2 : null, missing: [...missing], unknown: [...unknown] };
-  return { level: 2, couldBe: null, missing: [], unknown: [] };
+// Which scenarios apply to a component, in rubric order.
+export function scenariosFor(rubric: Rubric, specs: ScenarioSpec[], componentId: string): ScenarioId[] {
+  const ids = new Set(specs.filter((s) => s.components.includes("*") || s.components.includes(componentId)).map((s) => s.id));
+  return rubric.scenarios.filter((s) => ids.has(s.id)).map((s) => s.id);
 }
 
 export function activeComponents(rubric: Rubric, components: Component[], previous: HistoryLine[]): Set<string> {
@@ -99,15 +78,17 @@ export function partialCoverage(rubric: Rubric, components: Component[]): { part
   return { partial: unassessedShare > rubric.repoLevel.partialCoverageShare, unassessedShare };
 }
 
+// Levels 3 and 4 are measured per component, on the agent PRs that touch it, against the same
+// control group of other PRs.
 export interface OutcomeLevelInput {
   level2: boolean;
   targets: Targets | null;
-  outcomes: OutcomesSnapshot | null;
-  previous: HistoryLine[];
-  goal: ActivityId;
+  outcomes: { agent: OutcomeStats; control: OutcomeStats } | null;
+  // The agent PRs of the last audit where this component was at Level 3 or above.
+  previousAtLevel3: OutcomeStats | null;
 }
 
-export function targetsMet(rubric: Rubric, targets: Targets, outcomes: OutcomesSnapshot): { met: boolean; reasons: string[] } {
+export function targetsMet(rubric: Rubric, targets: Targets, outcomes: { agent: OutcomeStats; control: OutcomeStats }): { met: boolean; reasons: string[] } {
   const a = outcomes.agent;
   const floor = Math.max(rubric.level3.absoluteMinAgentPRs, targets.minAgentPrs);
   const reasons: string[] = [];
@@ -128,14 +109,19 @@ export function outcomeLevel(rubric: Rubric, input: OutcomeLevelInput): { level:
   if (!input.outcomes) return { level: null, reasons: ["outcomes weren't measured in this audit"] };
   const t = targetsMet(rubric, input.targets, input.outcomes);
   if (!t.met) return { level: null, reasons: t.reasons };
-  const prev = [...input.previous].reverse().find((h) => h.kind === "audit" && h.outcomes && (h.repoLevels[input.goal] ?? 0) >= 3);
-  if (prev?.outcomes) {
-    const grew = input.outcomes.agent.opened >= rubric.level4.volumeMultiplier * prev.outcomes.agent.opened;
-    const prevCr = prev.outcomes.agent.opened ? prev.outcomes.agent.changesRequested / prev.outcomes.agent.opened : 0;
+  const prev = input.previousAtLevel3;
+  if (prev) {
+    const grew = input.outcomes.agent.opened >= rubric.level4.volumeMultiplier * prev.opened;
+    const prevCr = prev.opened ? prev.changesRequested / prev.opened : 0;
     const nowCr = input.outcomes.agent.opened ? input.outcomes.agent.changesRequested / input.outcomes.agent.opened : 0;
     if (grew && nowCr <= prevCr) return { level: 4, reasons: [] };
   }
   return { level: 3, reasons: [] };
+}
+
+export function previousAtLevel3(history: HistoryLine[], componentId: string): OutcomeStats | null {
+  const prev = [...history].reverse().find((h) => h.kind === "audit" && h.outcomes?.byComponent?.[componentId] && (h.levels[componentId] ?? 0) >= 3);
+  return prev?.outcomes?.byComponent[componentId] ?? null;
 }
 
 export function recheckStates(base: StateMap, failedKinds: Set<string>): StateMap {

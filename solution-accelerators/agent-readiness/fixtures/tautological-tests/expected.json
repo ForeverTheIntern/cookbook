@@ -1,22 +1,11 @@
 {
-  "goal": "bug_fixes",
   "purpose": "Tests run and pass but assert nothing, so planted faults survive.",
   "runs": [
     {
       "name": "default",
       "level": 1,
       "levels": {
-        "tautological-tests": {
-          "first_pr": 2,
-          "bug_fixes": 1,
-          "features": 1
-        }
-      },
-      "repoLevels": {
-        "first_pr": 2,
-        "bug_fixes": 1,
-        "features": 1,
-        "repo_wide": 1
+        "tautological-tests": 1
       },
       "top": [
         "faults:tautological-tests"

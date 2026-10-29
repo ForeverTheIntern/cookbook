@@ -1,22 +1,11 @@
 {
-  "goal": "bug_fixes",
   "purpose": "Tests need Postgres on localhost, which only a prepared machine has.",
   "runs": [
     {
       "name": "default",
       "level": 0,
       "levels": {
-        "hidden-service": {
-          "first_pr": 0,
-          "bug_fixes": 0,
-          "features": 0
-        }
-      },
-      "repoLevels": {
-        "first_pr": 0,
-        "bug_fixes": 0,
-        "features": 0,
-        "repo_wide": 0
+        "hidden-service": 0
       },
       "top": [
         "clean.test:hidden-service"

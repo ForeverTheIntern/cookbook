@@ -1,6 +1,6 @@
 import { readdirSync } from "node:fs";
 import { join } from "node:path";
-import type { ActivityId, CondId, Effort, Level, Strength } from "./types.ts";
+import type { CondId, Effort, Level, ScenarioId, Strength } from "./types.ts";
 import { SKILL_ROOT, readJson, readText, sha256 } from "./util.ts";
 
 export interface RubricCheck {
@@ -34,11 +34,12 @@ export interface Rubric {
   checks: RubricCheck[];
   conditions: Record<CondId, { check: string; scope: "repo" | "component"; label: string }>;
   level1: CondId[];
-  activities: { id: ActivityId; label: string; scope: "repo" | "component"; level2: CondId[] }[];
+  level2: CondId[];
+  scenarios: { id: ScenarioId; label: string; level2: CondId[] }[];
   level3: { minAgentPRs: number; absoluteMinAgentPRs: number; windowDays: number };
   level4: { consecutiveWindows: number; volumeMultiplier: number };
   components: { maxAssessed: number; historyDays: number; botAuthorPatterns: string[]; generatedPatterns: string[]; lockfiles: string[] };
-  repoLevel: { activeShare: number; hysteresisAudits: number; partialCoverageShare: number };
+  repoLevel: { activeShare: number; hysteresisAudits: number; partialCoverageShare: number; rule: string };
   mutation: { perComponent: number; minForPass: number; languages: string[]; operators: string[]; runTimeoutSec: number; flakeRuns: number; targeting: string };
   budgets: { commandTimeoutSec: number; componentMinutes: number; totalMinutes: number };
   outcomes: {
@@ -87,9 +88,9 @@ export function strengthRank(rubric: Rubric, s: Strength): number {
   return rubric.strengths.indexOf(s);
 }
 
-export function activity(rubric: Rubric, id: ActivityId) {
-  const a = rubric.activities.find((x) => x.id === id);
-  if (!a) throw new Error(`Unknown activity ${id}`);
+export function scenario(rubric: Rubric, id: string) {
+  const a = rubric.scenarios.find((x) => x.id === id);
+  if (!a) throw new Error(`Unknown scenario ${id}. Use one of: ${rubric.scenarios.map((x) => x.id).join(", ")}.`);
   return a;
 }
 

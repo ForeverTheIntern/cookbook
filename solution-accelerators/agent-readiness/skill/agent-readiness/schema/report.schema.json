@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "agent-readiness report view model",
   "type": "object",
-  "required": ["schema", "repo", "audit", "goal", "goalLabel", "scale", "maturity", "executive", "actions", "matrix", "roadmap", "progress", "details"],
+  "required": ["schema", "repo", "audit", "scale", "scenarios", "maturity", "components", "executive", "actions", "matrix", "roadmap", "progress", "details"],
   "properties": {
     "schema": { "const": "agent-readiness/report@1" },
     "repo": { "type": "string", "minLength": 1 },
@@ -24,8 +24,10 @@
         "storedAt": { "type": "string" }
       }
     },
-    "goal": { "$ref": "#/$defs/activity" },
-    "goalLabel": { "type": "string" },
+    "scenarios": {
+      "type": "array",
+      "items": { "type": "object", "required": ["id", "label", "components"], "properties": { "id": { "$ref": "#/$defs/activity" }, "components": { "type": "array", "minItems": 1, "items": { "type": "string" } } } }
+    },
     "scale": {
       "type": "array",
       "minItems": 5,
@@ -38,9 +40,10 @@
     },
     "maturity": {
       "type": "object",
-      "required": ["level", "couldBe", "couldBeReason", "setBy", "partialCoverage", "assessedComponents", "outcome", "confidence", "capReasons", "next"],
+      "required": ["level", "rule", "couldBe", "couldBeReason", "setBy", "partialCoverage", "assessedComponents", "outcome", "confidence", "capReasons", "next"],
       "properties": {
         "level": { "$ref": "#/$defs/level" },
+        "rule": { "type": "string", "minLength": 1 },
         "couldBe": { "anyOf": [{ "$ref": "#/$defs/level" }, { "type": "null" }] },
         "setBy": { "type": "array", "items": { "type": "string" } },
         "partialCoverage": { "type": "boolean" },
@@ -61,11 +64,34 @@
         }
       }
     },
+    "components": {
+      "type": "object",
+      "required": ["shape", "included", "excluded"],
+      "properties": {
+        "shape": { "enum": ["single", "monorepo", "sampled_monorepo"] },
+        "included": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["id", "path", "toolchain", "manifest", "lockfile", "changeShare", "active", "level", "couldBe", "capReasons", "scenarios"],
+            "properties": {
+              "level": { "anyOf": [{ "$ref": "#/$defs/level" }, { "type": "null" }] },
+              "couldBe": { "anyOf": [{ "$ref": "#/$defs/level" }, { "type": "null" }] },
+              "scenarios": {
+                "type": "array",
+                "items": { "type": "object", "required": ["id", "label", "level", "couldBe"], "properties": { "id": { "$ref": "#/$defs/activity" }, "level": { "anyOf": [{ "$ref": "#/$defs/level" }, { "type": "null" }] } } }
+              }
+            }
+          }
+        },
+        "excluded": { "type": "array", "items": { "type": "object", "required": ["id", "path", "toolchain", "manifest", "lockfile", "changeShare", "reason"] } }
+      }
+    },
     "executive": {
       "type": "object",
       "required": ["heading", "headline", "numbers", "nextLine", "gaps", "ask", "coverage", "noBlocker"],
       "properties": {
-        "heading": { "type": "string", "pattern": "^(Level [0-4] of 4, |Not assessed for )" },
+        "heading": { "type": "string", "pattern": "^(Level [0-4] of 4, |Not assessed: )" },
         "headline": { "type": "string", "minLength": 1, "maxLength": 400 },
         "numbers": {
           "type": "array",
@@ -135,7 +161,7 @@
     "progress": { "type": ["object", "null"] },
     "details": {
       "type": "object",
-      "required": ["scope", "steps", "checks", "notAssessed", "levels", "outcomes", "assets", "missingAssets", "signals", "evidence", "record"],
+      "required": ["steps", "checks", "notAssessed", "levelRules", "outcomes", "assets", "missingAssets", "signals", "evidence", "record"],
       "properties": {
         "signals": {
           "type": "array",
@@ -145,15 +171,7 @@
             "properties": { "id": { "enum": ["ci", "targeted_tests", "env_sample", "isolation", "agents_md_length"] }, "found": { "type": ["boolean", "null"] } }
           }
         },
-        "scope": {
-          "type": "object",
-          "required": ["type", "included", "excluded"],
-          "properties": {
-            "type": { "enum": ["single", "monorepo", "sampled_monorepo"] },
-            "included": { "type": "array", "items": { "type": "object", "required": ["id", "path", "toolchain", "manifest", "lockfile", "changeShare"] } },
-            "excluded": { "type": "array", "items": { "type": "object", "required": ["id", "path", "toolchain", "manifest", "lockfile", "changeShare", "reason"] } }
-          }
-        },
+        "levelRules": { "type": "object", "required": ["level1", "level2", "scenarios"] },
         "checks": {
           "type": "array",
           "items": {

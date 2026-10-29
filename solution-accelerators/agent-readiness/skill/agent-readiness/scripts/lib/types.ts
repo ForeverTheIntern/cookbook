@@ -1,6 +1,13 @@
 export type Strength = "asserted" | "static" | "executed" | "clean_replay" | "outcome_validated";
 export type Tier = "read-only" | "local-exec" | "external-systems";
-export type ActivityId = "first_pr" | "bug_fixes" | "features" | "repo_wide";
+export type ScenarioId = "first_pr" | "bug_fixes" | "features" | "repo_wide";
+
+// An optional breakdown a user adds; reported nested under the components it names. "*" names
+// every assessed component.
+export interface ScenarioSpec {
+  id: ScenarioId;
+  components: string[];
+}
 export type CondId =
   | "clean.install"
   | "clean.build"
@@ -62,6 +69,8 @@ export interface ContractCommand {
   source: string;
   reason: string;
   timeoutSec: number;
+  // Runs only when this machine blocks the named command, as a frozen install behind a declared one.
+  fallbackFor?: string;
 }
 
 export interface Evidence {
@@ -192,7 +201,7 @@ export interface Audit {
   createdAt: string;
   state: "draft" | "sealed";
   repo: { name: string; commit: string; dirtyTree: boolean };
-  goal: ActivityId;
+  scenarios: ScenarioSpec[];
   tier: Tier;
   rubric: string;
   skill: AuditSkillInfo;
@@ -293,9 +302,12 @@ export interface HistoryLine {
   scriptsDigest: string;
   result: "sealed" | "passed" | "failed";
   note?: string;
-  goal: ActivityId;
-  levels: Record<string, Partial<Record<ActivityId, Level>>>;
-  repoLevels: Partial<Record<ActivityId, Level>>;
+  // Each assessed component's standard level, and the repo rollup over the active ones.
+  levels: Record<string, Level>;
+  repoLevel: Level;
+  // Only the scenarios a user added, under the components they apply to.
+  scenarioLevels: Record<string, Partial<Record<ScenarioId, Level>>>;
+  noLevel?: boolean;
   shares: Record<string, number>;
   active: string[];
   outcomes?: { window: string; agent: OutcomeStats; control: OutcomeStats; byComponent: Record<string, OutcomeStats> } | null;
@@ -326,11 +338,12 @@ export interface ReportJson {
     previous: string | null;
     storedAt: string;
   };
-  goal: ActivityId;
-  goalLabel: string;
   scale: { level: Level; name: string; plain: string; meaning: string; measuredBy: string }[];
+  scenarios: { id: ScenarioId; label: string; components: string[] }[];
+  // Tier 1: the repo rollup.
   maturity: {
     level: Level;
+    rule: string;
     couldBe: Level | null;
     couldBeReason: string | null;
     setBy: string[];
@@ -342,8 +355,15 @@ export interface ReportJson {
     // Separate from the level and never raises it.
     confidence: { level: "high" | "medium" | "low"; reasons: string[] };
     // What holds the level where it is: each condition of the next level that isn't met.
-    capReasons: { component: string; condition: string; label: string; state: CondState; reason: string }[];
+    capReasons: CapReason[];
     next: { level: Level; name: string; met: string[]; unmet: string[] } | null;
+  };
+  // Tier 2: each component found, with tier 3, the scenarios added for it, nested under it.
+  components: {
+    // sampled_monorepo: some supported components were left out because only the most active are assessed.
+    shape: "single" | "monorepo" | "sampled_monorepo";
+    included: ComponentLevel[];
+    excluded: { id: string; path: string; toolchain: string; manifest: string | null; lockfile: string | null; changeShare: number; reason: string }[];
   };
   executive: {
     heading: string;
@@ -360,6 +380,29 @@ export interface ReportJson {
   roadmap: { owner: string | null; doneCount: number; total: number; items: ReportRoadmapItem[] };
   progress: ReportProgress | null;
   details: ReportDetails;
+}
+
+export interface CapReason {
+  component: string;
+  condition: string;
+  label: string;
+  state: CondState;
+  reason: string;
+}
+
+// level is null when the audit has no real results to give one from.
+export interface ComponentLevel {
+  id: string;
+  path: string;
+  toolchain: string;
+  manifest: string | null;
+  lockfile: string | null;
+  changeShare: number;
+  active: boolean;
+  level: Level | null;
+  couldBe: Level | null;
+  capReasons: CapReason[];
+  scenarios: { id: ScenarioId; label: string; level: Level | null; couldBe: Level | null }[];
 }
 
 export interface ReportAction {
@@ -390,29 +433,17 @@ export interface ReportRoadmapItem {
 }
 
 export interface ReportProgress {
-  history: { date: string; kind: string; result: string; note: string | null; levels: Record<string, Level>; repoLevel: Level; rubric: string }[];
+  history: { date: string; kind: string; result: string; note: string | null; levels: Record<string, Level | null>; repoLevel: Level | null; rubric: string }[];
   closed: { title: string; closed: string; expected: string; observed: string }[];
   weakening: string | null;
   rubricChanges: { date: string; from: string; to: string }[];
 }
 
 export interface ReportDetails {
-  // sampled_monorepo: some supported components were left out because only the most active are assessed.
-  scope: {
-    type: "single" | "monorepo" | "sampled_monorepo";
-    included: { id: string; path: string; toolchain: string; manifest: string | null; lockfile: string | null; changeShare: number }[];
-    excluded: { id: string; path: string; toolchain: string; manifest: string | null; lockfile: string | null; changeShare: number; reason: string }[];
-  };
   steps: { itemId: string; title: string; steps: { title: string; detail: string }[] }[];
   checks: { id: string; name: string; why: string; sources: { claim: string; caveat: string; url: string }[]; result: string; ok: boolean | null; counts: { passed: number; failed: number; notRun: number }; evidence: string[] }[];
   notAssessed: string[];
-  levels: {
-    activities: { id: ActivityId; label: string; bar: string }[];
-    components: { id: string; changeShare: number; active: boolean; levels: Partial<Record<ActivityId, Level>>; couldBe: Partial<Record<ActivityId, Level>> }[];
-    repoLevels: Partial<Record<ActivityId, Level>>;
-    repoLevelRule: string;
-    unassessed: { id: string; changeShare: number; reason: string }[];
-  };
+  levelRules: { level1: string; level2: string; scenarios: { id: ScenarioId; label: string; bar: string }[] };
   outcomes: {
     window: string;
     filter: string;

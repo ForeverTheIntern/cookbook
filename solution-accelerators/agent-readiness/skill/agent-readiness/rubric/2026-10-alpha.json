@@ -3,7 +3,7 @@
   "scale": [
     { "level": 0, "name": "Not bootable", "plain": "not bootable", "meaning": "A clean checkout can't install, build and pass its tests.", "measuredBy": "audit" },
     { "level": 1, "name": "Bootable", "plain": "bootable", "meaning": "A clean checkout installs, builds and passes every test.", "measuredBy": "audit" },
-    { "level": 2, "name": "Verifiable", "plain": "verifiable", "meaning": "Everything this activity needs to check an agent's work passes.", "measuredBy": "audit" },
+    { "level": 2, "name": "Verifiable", "plain": "verifiable", "meaning": "Agents can check their own work: the commands pass, the tests catch planted faults, the instructions are accurate and normal work needs no production access.", "measuredBy": "audit" },
     { "level": 3, "name": "Delegable", "plain": "delegable", "meaning": "Agent PRs meet the outcome targets your team set.", "measuredBy": "outcomes" },
     { "level": 4, "name": "Scalable", "plain": "scalable", "meaning": "Those targets held while agent PR volume at least doubled.", "measuredBy": "outcomes" }
   ],
@@ -102,11 +102,12 @@
     "lockfile": { "check": "bootstrap.cold_replay", "scope": "repo", "label": "a frozen install reproduces the lockfile" }
   },
   "level1": ["clean.install", "clean.build", "clean.test"],
-  "activities": [
-    { "id": "first_pr", "label": "First PR", "scope": "component", "level2": ["commands", "instructions", "safety"] },
-    { "id": "bug_fixes", "label": "Bug fixes", "scope": "component", "level2": ["commands", "faults", "safety"] },
-    { "id": "features", "label": "Features and refactors", "scope": "component", "level2": ["commands", "faults", "safety", "instructions"] },
-    { "id": "repo_wide", "label": "Repo-wide changes", "scope": "repo", "level2": ["commands", "faults", "safety", "toolchain", "lockfile"] }
+  "level2": ["commands", "faults", "instructions", "safety"],
+  "scenarios": [
+    { "id": "first_pr", "label": "First PR", "level2": ["commands", "instructions", "safety"] },
+    { "id": "bug_fixes", "label": "Bug fixes", "level2": ["commands", "faults", "safety"] },
+    { "id": "features", "label": "Features and refactors", "level2": ["commands", "faults", "safety", "instructions"] },
+    { "id": "repo_wide", "label": "Repo-wide changes", "level2": ["commands", "faults", "safety", "toolchain", "lockfile"] }
   ],
   "level3": { "minAgentPRs": 20, "absoluteMinAgentPRs": 10, "windowDays": 30 },
   "level4": { "consecutiveWindows": 2, "volumeMultiplier": 2 },
@@ -117,7 +118,12 @@
     "generatedPatterns": ["dist/", "build/", "coverage/", ".min.js", ".generated.", "__generated__/"],
     "lockfiles": ["package-lock.json", "pnpm-lock.yaml", "yarn.lock", "uv.lock", "poetry.lock", "Pipfile.lock"]
   },
-  "repoLevel": { "activeShare": 0.1, "hysteresisAudits": 2, "partialCoverageShare": 0.2 },
+  "repoLevel": {
+    "activeShare": 0.1,
+    "hysteresisAudits": 2,
+    "partialCoverageShare": 0.2,
+    "rule": "the lowest level among active components, the assessed components with at least 10% of changes over 90 days; a component joins or leaves that set only after two audits on the same side of the line, and components the audit can't assess never set it"
+  },
   "mutation": {
     "perComponent": 5,
     "minForPass": 3,
@@ -348,16 +354,16 @@
       ]
     },
     "delegate": {
-      "title": "Give agents {activity} in {component}",
+      "title": "Give agents work in {component}",
       "kind": "rollout",
       "effort": "small",
       "size": "Small: pick the work",
       "ownerRole": "Component owner",
       "decision": "Which tasks go to agents first, and who reviews them",
-      "why": "{component} is already at Level 2 for {activity}, so agents can check their own work there.",
+      "why": "{component} is already at Level 2, so agents can check their own work there.",
       "doneWhen": "Agent PRs in {component} appear in the outcome numbers.",
       "steps": [
-        { "title": "Pick 3 to 5 real tasks", "detail": "Well-scoped {activity} that touch only {component}." },
+        { "title": "Pick 3 to 5 real tasks", "detail": "Well-scoped tasks that touch only {component}." },
         { "title": "Hand them to agents", "detail": "Agents run the verify skill before they push." },
         { "title": "Review as usual", "detail": "The next audit counts these PRs by component." }
       ]
@@ -368,7 +374,7 @@
       "effort": "small",
       "size": "Small: one decision",
       "ownerRole": "Engineering lead",
-      "decision": "The merge rate, first-time CI pass rate and review load that mean agents handle {activity} here",
+      "decision": "The merge rate, first-time CI pass rate and review load that mean agents handle work here",
       "why": "Level 3 is measured against targets your team sets, and none are recorded yet.",
       "doneWhen": "Targets are recorded with `readiness roadmap targets`.",
       "steps": [

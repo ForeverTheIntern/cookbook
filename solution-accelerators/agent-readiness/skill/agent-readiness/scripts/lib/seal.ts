@@ -6,7 +6,8 @@ import { weakening, weakeningText } from "./diff.ts";
 import { ghJson } from "./gh.ts";
 import { appendHistory, loadSealedAudit, readHistory, readRoadmap, storeAudit, storeRecheck, writeLatest, writeRoadmap } from "./history.ts";
 import type { LevelResult } from "./levels.ts";
-import { activeComponents, capAt, componentLevel, outcomeLevel, partialCoverage, recheckStates, repoLevel, repoWideLevel, statesOf } from "./levels.ts";
+import { activeComponents, capAt, componentLevel, outcomeLevel, partialCoverage, previousAtLevel3, recheckStates, repoLevel, scenariosFor, statesOf } from "./levels.ts";
+import { emptyStats } from "./outcomes.ts";
 import { makeExecutor, newBudget, runContract } from "./replay.ts";
 import { allowedNumbers, buildReport, danglingEvidence, renderMarkdown, validatePart1 } from "./render.ts";
 import { updateRoadmap } from "./roadmap.ts";
@@ -15,7 +16,7 @@ import { loadRubric } from "./rubric.ts";
 import { validateAgainst } from "./schema.ts";
 import type { CompStates } from "./score.ts";
 import { componentStates, noRealResults } from "./score.ts";
-import type { ActivityId, Audit, CondId, CondState, HistoryLine, Level, OutcomeStats, ReportJson, Roadmap } from "./types.ts";
+import type { Audit, CondId, CondState, HistoryLine, Level, OutcomeStats, ReportJson, Roadmap, ScenarioId, Targets } from "./types.ts";
 import { exists, fail, fmtShortDate, gitOrThrow, nowIso, randomHex, readText, sha256, stableStringify, today } from "./util.ts";
 import type { LocalInfo, Paths } from "./workspace.ts";
 import { clearCurrent, exportTree, releaseManifest, skillDigest } from "./workspace.ts";
@@ -33,37 +34,43 @@ export function sealStatusFor(scriptsDigest: string): string {
   return `Seal not verified: the scripts differ from release ${m.tag}`;
 }
 
+export interface ComponentResult {
+  level: Level;
+  couldBe: Level | null;
+  outcomeReasons: string[];
+}
+
 export interface Computed {
   states: Map<string, CompStates>;
-  levels: Map<string, Map<ActivityId, LevelResult>>;
-  repoLevels: Map<ActivityId, { level: Level; couldBe: Level | null; setBy: string[] }>;
+  // Tier 2: each assessed component's standard level, with Levels 3 and 4 from its agent PRs.
+  levels: Map<string, ComponentResult>;
+  // Tier 3: only the scenarios a user added, under the components they apply to.
+  scenarioLevels: Map<string, Map<ScenarioId, LevelResult>>;
+  // Tier 1: the repo rollup over the active components.
+  repo: { level: Level; couldBe: Level | null; setBy: string[]; outcomeReasons: string[] };
   active: Set<string>;
 }
 
-export function compute(audit: Audit, rubric: Rubric, history: HistoryLine[]): Computed {
+export function compute(audit: Audit, rubric: Rubric, history: HistoryLine[], targets: Targets | null = null): Computed {
   const comps = audit.profile!.components.filter((c) => c.assessed);
   const states = new Map<string, CompStates>();
   for (const c of comps) states.set(c.id, componentStates(audit, rubric, c.id));
-  const levels = new Map<string, Map<ActivityId, LevelResult>>();
+  const levels = new Map<string, ComponentResult>();
+  const scenarioLevels = new Map<string, Map<ScenarioId, LevelResult>>();
+  const o = audit.outcomes;
   for (const c of comps) {
-    const m = new Map<ActivityId, LevelResult>();
-    for (const a of rubric.activities.filter((x) => x.scope === "component")) m.set(a.id, componentLevel(rubric, statesOf(states.get(c.id)!), a.id));
-    levels.set(c.id, m);
+    const s = statesOf(states.get(c.id)!);
+    const proven = componentLevel(rubric, s);
+    const measured = outcomeLevel(rubric, { level2: proven.level === 2, targets, outcomes: o ? { agent: o.byComponent[c.id] ?? emptyStats(), control: o.control } : null, previousAtLevel3: previousAtLevel3(history, c.id) });
+    levels.set(c.id, { level: measured.level ?? proven.level, couldBe: measured.level ? null : proven.couldBe, outcomeReasons: measured.reasons });
+    const m = new Map<ScenarioId, LevelResult>();
+    for (const id of scenariosFor(rubric, audit.scenarios ?? [], c.id)) m.set(id, componentLevel(rubric, s, id));
+    scenarioLevels.set(c.id, m);
   }
   const active = activeComponents(rubric, audit.profile!.components, history);
-  const repoLevels = new Map<ActivityId, { level: Level; couldBe: Level | null; setBy: string[] }>();
-  for (const a of rubric.activities) {
-    if (a.scope === "component") {
-      const perComp = new Map([...levels.entries()].map(([id, m]) => [id, m.get(a.id)!]));
-      repoLevels.set(a.id, repoLevel(perComp, active));
-    } else {
-      const maps = new Map([...states.entries()].filter(([id]) => active.has(id)).map(([id, s]) => [id, statesOf(s)]));
-      const r = repoWideLevel(rubric, maps);
-      const setBy = [...maps.entries()].filter(([, m]) => (r.level === 0 ? componentLevel(rubric, m, "bug_fixes").level === 0 : r.level === 1 && componentLevel(rubric, m, "bug_fixes").level < 2)).map(([id]) => id);
-      repoLevels.set(a.id, { level: r.level, couldBe: r.couldBe, setBy });
-    }
-  }
-  return { states, levels, repoLevels, active };
+  const r = repoLevel(new Map([...levels.entries()].map(([id, l]) => [id, { level: l.level, couldBe: l.couldBe, missing: [], unknown: [] }])), active);
+  const outcomeReasons = [...new Set(r.setBy.flatMap((id) => levels.get(id)?.outcomeReasons ?? []))];
+  return { states, levels, scenarioLevels, repo: { ...r, outcomeReasons }, active };
 }
 
 export interface SealResult {
@@ -81,16 +88,10 @@ export interface SealedReport {
 export function buildSealedReport(audit: Audit, rubric: Rubric, history: HistoryLine[], prevRoadmap: Roadmap | null, repo: string, storedAt: string): SealedReport {
   if (!audit.profile) fail("Run `readiness scan` before sealing.");
   refreshAssetStatus(audit.assets, audit.instructions);
-  const c = compute(audit, rubric, history);
-  const goal = audit.goal;
-  const goalRepo = c.repoLevels.get(goal)!;
-  const outcome = outcomeLevel(rubric, { level2: goalRepo.level === 2, targets: prevRoadmap?.targets ?? null, outcomes: audit.outcomes, previous: history, goal });
-  const goalLevel = { level: (outcome.level ?? goalRepo.level) as Level, couldBe: outcome.level ? null : goalRepo.couldBe, setBy: goalRepo.setBy, outcomeReasons: outcome.reasons };
+  const c = compute(audit, rubric, history, prevRoadmap?.targets ?? null);
   const noResults = noRealResults(audit, c.states);
-  // With no real results there is nothing to plan from, so the roadmap stays as it was.
-  const rm = noResults
-    ? { roadmap: prevRoadmap ?? { schema: "agent-readiness/roadmap@1" as const, owner: null, targets: null, items: [], updatedBy: audit.id, updatedAt: nowIso() }, top: [], startNow: null }
-    : updateRoadmap(prevRoadmap, { audit, rubric, goal, components: audit.profile.components, states: c.states, active: c.active, outcomes: audit.outcomes });
+  // With no real results there is nothing to plan fixes from; only the decisions stay open.
+  const rm = updateRoadmap(prevRoadmap, { audit, rubric, components: audit.profile.components, states: c.states, active: c.active, outcomes: audit.outcomes, decisionsOnly: Boolean(noResults) });
   const prevAuditLine = [...history].reverse().find((h) => h.kind === "audit");
   let weak: string | null = null;
   let previousOutcomes: { window: string; agent: OutcomeStats } | null = null;
@@ -100,10 +101,6 @@ export function buildSealedReport(audit: Audit, rubric: Rubric, history: History
     const [from, to] = prevWithOutcomes.outcomes.window.split(" to ");
     previousOutcomes = { window: `${fmtShortDate(from)} to ${fmtShortDate(to)}, ${to.slice(0, 4)}`, agent: prevWithOutcomes.outcomes.agent };
   }
-  const levelsRecord: HistoryLine["levels"] = {};
-  for (const [id, m] of c.levels) levelsRecord[id] = Object.fromEntries([...m.entries()].map(([k, v]) => [k, v.level]));
-  const repoLevelsRecord: HistoryLine["repoLevels"] = Object.fromEntries([...c.repoLevels.entries()].map(([k, v]) => [k, v.level]));
-  repoLevelsRecord[goal] = goalLevel.level;
   const o = audit.outcomes;
   const line: HistoryLine = {
     id: audit.id,
@@ -114,9 +111,10 @@ export function buildSealedReport(audit: Audit, rubric: Rubric, history: History
     scriptsDigest: audit.skill.scriptsDigest,
     result: "sealed",
     note: noResults ? `no level: ${noResults}` : undefined,
-    goal,
-    levels: levelsRecord,
-    repoLevels: repoLevelsRecord,
+    levels: Object.fromEntries([...c.levels.entries()].map(([id, l]) => [id, l.level])),
+    repoLevel: c.repo.level,
+    scenarioLevels: Object.fromEntries([...c.scenarioLevels.entries()].filter(([, m]) => m.size).map(([id, m]) => [id, Object.fromEntries([...m.entries()].map(([k, v]) => [k, v.level]))])),
+    ...(noResults ? { noLevel: true } : {}),
     shares: Object.fromEntries(audit.profile.components.map((x) => [x.id, x.changeShare])),
     active: [...c.active],
     outcomes: o ? { window: `${o.window.from} to ${o.window.to}`, agent: o.agent, control: o.control, byComponent: o.byComponent } : null,
@@ -125,12 +123,11 @@ export function buildSealedReport(audit: Audit, rubric: Rubric, history: History
   const report = buildReport({
     audit,
     rubric,
-    goal,
     components: audit.profile.components,
     states: c.states,
     levels: c.levels,
-    repoLevels: c.repoLevels,
-    goalLevel,
+    scenarioLevels: c.scenarioLevels,
+    rollup: c.repo,
     active: c.active,
     roadmap: rm.roadmap,
     top: rm.top,
@@ -160,6 +157,9 @@ export function consistencyErrors(audit: Audit, report: ReportJson, roadmap: Roa
   }
   for (const e of audit.evidence) {
     if (e.component && e.component !== "*" && !known.has(e.component)) errors.push(`evidence ${e.id} names ${e.component}, which the scan didn't find`);
+  }
+  for (const s of audit.scenarios ?? []) {
+    for (const id of s.components.filter((x) => x !== "*" && !assessed.has(x))) errors.push(`the ${s.id} scenario names ${id}, which ${known.has(id) ? "isn't assessed" : "the scan didn't find"}; remove it with \`readiness scenario remove ${s.id}\` and add it again`);
   }
   const gaps = report.executive.gaps.map((g) => g.itemId);
   const items = roadmap.items.map((i) => i.id);
@@ -300,23 +300,22 @@ export async function recheck(p: Paths, opts: RecheckOptions): Promise<{ line: H
   const failed = results.filter((r) => r.status !== "pass");
   const lastLine = [...history].reverse().find((h) => h.id === audit.id);
   const levels: HistoryLine["levels"] = {};
+  const scenarioLevels: HistoryLine["scenarioLevels"] = {};
   const base = compute(audit, rubric, history.filter((h) => h.id !== audit.id));
+  // A recheck can lower a level or restore it, never raise it past the last audit's.
   for (const comp of comps) {
     const kinds = new Set(failed.filter((r) => r.cmd.component === comp || r.cmd.component === "*").map((r) => r.cmd.kind as string));
     const s = recheckStates(statesOf(base.states.get(comp)!) as Partial<Record<CondId, CondState>>, kinds);
-    levels[comp] = {};
-    for (const a of rubric.activities.filter((x) => x.scope === "component")) {
-      const computed = componentLevel(rubric, s, a.id).level;
-      const cap = (lastLine?.levels[comp]?.[a.id] ?? computed) as Level;
-      levels[comp][a.id] = capAt(computed, cap);
+    const last = (lastLine?.levels[comp] ?? base.levels.get(comp)?.level ?? 0) as Level;
+    levels[comp] = kinds.size ? capAt(componentLevel(rubric, s).level, last) : last;
+    for (const sid of scenariosFor(rubric, audit.scenarios ?? [], comp)) {
+      const lastScenario = (lastLine?.scenarioLevels?.[comp]?.[sid] ?? componentLevel(rubric, s, sid).level) as Level;
+      (scenarioLevels[comp] ??= {})[sid] = capAt(componentLevel(rubric, s, sid).level, lastScenario);
     }
   }
   const active = new Set(lastLine?.active ?? [...comps]);
-  const repoLevels: HistoryLine["repoLevels"] = {};
-  for (const a of rubric.activities.filter((x) => x.scope === "component")) {
-    const vals = [...active].map((id) => levels[id]?.[a.id] ?? 0);
-    repoLevels[a.id] = (vals.length ? Math.min(...vals) : 0) as Level;
-  }
+  const vals = [...active].map((id) => levels[id] ?? 0);
+  const repoLevelNow = (vals.length ? Math.min(...vals) : 0) as Level;
   const id = `rck-${today()}-${audit.seed.pinned ? sha256(`${audit.id}:${nowIso()}`).slice(0, 4) : randomHex(2)}`;
   const firstFail = failed[0];
   const line: HistoryLine = {
@@ -328,9 +327,9 @@ export async function recheck(p: Paths, opts: RecheckOptions): Promise<{ line: H
     scriptsDigest: skillDigest(),
     result: failed.length ? "failed" : "passed",
     note: firstFail ? `${firstFail.cmd.command} ${firstFail.status === "not_run" ? "not run" : "failed"}${firstFail.diagnosis ? `: ${firstFail.diagnosis.detail}` : ""}` : undefined,
-    goal: audit.goal,
     levels,
-    repoLevels,
+    repoLevel: repoLevelNow,
+    scenarioLevels,
     shares: lastLine?.shares ?? {},
     active: [...active],
     outcomes: null,

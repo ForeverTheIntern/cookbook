@@ -18,7 +18,7 @@ export function isAgentPr(pr: PrRecord, f: Filter): boolean {
   return false;
 }
 
-function emptyStats(): OutcomeStats {
+export function emptyStats(): OutcomeStats {
   return { opened: 0, merged: 0, firstTimeCiPass: 0, firstTimeCiKnown: 0, changesRequested: 0, medianDaysToMerge: null, addingPaths: {}, mergedByActivity: {} };
 }
 

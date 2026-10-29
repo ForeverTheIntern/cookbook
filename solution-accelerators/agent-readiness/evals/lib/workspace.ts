@@ -1,10 +1,10 @@
 import { execFileSync } from "node:child_process";
-import { copyFileSync, cpSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { appendFileSync, copyFileSync, cpSync, existsSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { skillDigest } from "../../skill/agent-readiness/scripts/lib/workspace.ts";
 import { SKILL, commitAll, materialize, materializePrs } from "../../tools/fixture.ts";
-import type { EvalCase, Workspace } from "./types.ts";
+import type { EvalCase, Turn, Workspace } from "./types.ts";
 
 export const EVAL_SEED = "eval-seed";
 
@@ -26,8 +26,27 @@ export function prepare(c: EvalCase): Workspace {
   }
   ws.headBefore = execFileSync("git", ["rev-parse", "HEAD"], { cwd: dir, encoding: "utf8" }).trim();
   if (c.prs) copyFileSync(materializePrs(c.fixture, now, c.prs), join(root, "prs.json"));
+  writeFileSync(join(root, "eval.env"), Object.entries(caseEnv(c)).map(([k, v]) => `export ${k}=${JSON.stringify(v)}`).join("\n") + "\n");
   writeFileSync(join(root, "case.json"), JSON.stringify({ id: c.id, fixture: c.fixture, dir, now, headBefore: ws.headBefore, skillDigestBefore: ws.skillDigestBefore, prompts: c.turns.map((t) => fillPrompt(t.prompt, ws)), env: caseEnv(c) }, null, 2));
   return ws;
+}
+
+function harnessCommitsFile(ws: Workspace): string {
+  return join(dirname(ws.dir), "harness-commits.txt");
+}
+
+export function applyTurnHook(ws: Workspace, turn: Turn | undefined): boolean {
+  if (!turn?.before) return false;
+  const from = execFileSync("git", ["rev-parse", "HEAD"], { cwd: ws.dir, encoding: "utf8" }).trim();
+  turn.before(ws);
+  const made = execFileSync("git", ["rev-list", `${from}..HEAD`], { cwd: ws.dir, encoding: "utf8" }).trim();
+  if (made) appendFileSync(harnessCommitsFile(ws), made + "\n");
+  return true;
+}
+
+export function harnessCommits(ws: Workspace): Set<string> {
+  const f = harnessCommitsFile(ws);
+  return new Set(existsSync(f) ? readFileSync(f, "utf8").split("\n").filter(Boolean) : []);
 }
 
 export function fillPrompt(prompt: string, ws: Workspace): string {
@@ -41,8 +60,12 @@ export function loadWorkspace(root: string): { ws: Workspace; id: string; prompt
 
 export function caseEnv(c: EvalCase): Record<string, string> {
   const env: Record<string, string> = { READINESS_EVAL_SEED: EVAL_SEED, ...(c.env ?? {}) };
-  if (process.env.READINESS_IMAGE && !env.READINESS_IMAGE) env.READINESS_IMAGE = process.env.READINESS_IMAGE;
+  if (process.env.READINESS_IMAGE && c.remediation && !env.READINESS_IMAGE) env.READINESS_IMAGE = process.env.READINESS_IMAGE;
   return env;
+}
+
+export function externalPreamble(dir: string): string {
+  return `This is an evaluation workspace. First run \`source ${join(dirname(dir), "eval.env")}\` in your shell; if your shell doesn't keep state between commands, prefix each command with it.\n`;
 }
 
 export function skillPreamble(dir: string): string {

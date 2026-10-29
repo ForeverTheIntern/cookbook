@@ -8,7 +8,8 @@ import { gradeCase, latestReport } from "./lib/grade.ts";
 import { judge } from "./lib/judge.ts";
 import { runWithSdk } from "./lib/sdk.ts";
 import type { CaseRun, EvalCase, Trajectory } from "./lib/types.ts";
-import { fillPrompt, loadWorkspace, prepare, skillPreamble } from "./lib/workspace.ts";
+import { judgePrompt } from "./lib/judge.ts";
+import { applyTurnHook, externalPreamble, fillPrompt, loadWorkspace, prepare, skillPreamble } from "./lib/workspace.ts";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const DEFAULT_MODEL = process.env.READINESS_EVAL_MODEL ?? "composer-2";
@@ -120,13 +121,23 @@ async function main(): Promise<void> {
   }
   const repeats = Number(flags.repeats ?? 1);
   const models = String(flags.model ?? DEFAULT_MODEL).split(",");
+  if (typeof flags.hook === "string") {
+    const { ws, id } = loadWorkspace(resolve(flags.hook));
+    const c = all.find((x) => x.id === id)!;
+    const applied = applyTurnHook(ws, c.turns[Number(flags.turn ?? 2) - 1]);
+    process.stdout.write(applied ? "Applied the user's change for this turn.\n" : "Nothing to apply for this turn.\n");
+    return;
+  }
   if (typeof flags.grade === "string") {
     const root = resolve(flags.grade);
     const { ws, id } = loadWorkspace(root);
     const c = all.find((x) => x.id === id)!;
     const t = externalTrajectory(root, Number(flags["wall-ms"] ?? 0));
     const gates = gradeCase(ws, t, c);
-    const j = typeof flags["judge-file"] === "string" && existsSync(flags["judge-file"]) ? (JSON.parse(readFileSync(flags["judge-file"], "utf8")) as { score: number; reasons: string[] }) : { score: null, reasons: ["judge not run"] };
+    const report = latestReport(ws);
+    if (report) writeFileSync(join(root, "judge-prompt.txt"), judgePrompt(report));
+    const judgeFile = typeof flags["judge-file"] === "string" ? flags["judge-file"] : join(root, "judge.json");
+    const j = existsSync(judgeFile) ? (JSON.parse(readFileSync(judgeFile, "utf8")) as { score: number; reasons: string[] }) : { score: null, reasons: ["judge not run"] };
     const run: CaseRun = { id, repeat: Number(flags.repeat ?? 1), model: String(flags.model ?? "external"), driver: "external", workspace: ws.dir, grade: { gates, soft: { judge: j.score, judgeReasons: j.reasons, wallMs: t.durationMs, toolCalls: 0, tokens: null } }, error: null };
     writeFileSync(join(root, "result.json"), JSON.stringify({ run }, null, 2));
     for (const g of gates) process.stdout.write(`${g.pass ? "PASS" : "FAIL"}  ${g.name}: ${g.detail}\n`);
@@ -143,7 +154,7 @@ async function main(): Promise<void> {
     for (const c of selected) {
       for (let r = 1; r <= repeats; r++) {
         const ws = prepare(c);
-        manifest.push({ id: c.id, repeat: r, root: dirname(ws.dir), dir: ws.dir, env: c.env ?? {}, prompts: c.turns.map((t, i) => (i === 0 ? skillPreamble(ws.dir) : "") + fillPrompt(t.prompt, ws)), turnHooks: c.turns.map((t) => Boolean(t.before)) });
+        manifest.push({ id: c.id, repeat: r, root: dirname(ws.dir), dir: ws.dir, env: c.env ?? {}, prompts: c.turns.map((t, i) => (i === 0 ? externalPreamble(ws.dir) + skillPreamble(ws.dir) : "") + fillPrompt(t.prompt, ws)), turnHooks: c.turns.map((t) => Boolean(t.before)) });
       }
     }
     const out = typeof flags.out === "string" ? resolve(flags.out) : join(HERE, "runs", "prepared.json");

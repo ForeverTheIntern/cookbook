@@ -2,10 +2,19 @@ import { appendFileSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { commitAll } from "../../tools/fixture.ts";
 import { envJsonAllowed, evidenceSays, freshFaultsCaught, itemClosed, auditCount, levelRose, noWeakening, notProvable, registryNamesOnly } from "../lib/gates.ts";
-import { levelsGate, reportGate, sealedGate, topGate, trajectory } from "../lib/grade.ts";
+import { levelsGate, levelsMatch, reportGate, sealedGate, topGate, trajectory } from "../lib/grade.ts";
+import type { ExpectedLevels } from "../lib/grade.ts";
 import type { EvalCase } from "../lib/types.ts";
 
 const TOKEN = "eval-registry-token-4f2a9c";
+
+// monorepo-mixed's expected.json describes the drifted instructions; once they are accurate,
+// first_pr reaches Level 2 wherever build and test pass, and features still needs caught faults.
+const INSTRUCTIONS_FIXED: ExpectedLevels = {
+  level: 0,
+  levels: { api: { first_pr: 0, bug_fixes: 0, features: 0 }, worker: { first_pr: 2, bug_fixes: 1, features: 1 }, shared: { first_pr: 2, bug_fixes: 2, features: 2 } },
+  repoLevels: { first_pr: 0, bug_fixes: 0, features: 0, repo_wide: 0 },
+};
 
 export const cases: EvalCase[] = [
   {
@@ -65,7 +74,7 @@ export const cases: EvalCase[] = [
         },
       },
     ],
-    gates: [sealedGate, itemClosed("instructions:repo"), auditCount(2), levelsGate, trajectory],
+    gates: [sealedGate, itemClosed("instructions:repo"), auditCount(2), levelsMatch(INSTRUCTIONS_FIXED, "levels after the instruction fix"), trajectory],
   },
   {
     id: "no-container-runtime",

@@ -58,16 +58,21 @@ export const sealedGate: Gate = (ws) => {
   return { name: "sealed audit and verify-seal", pass: v.code === 0, detail: v.out.split("\n").filter((l) => l.startsWith("FAIL") || l.startsWith("readiness:")).join(" ") || "verify-seal passed" };
 };
 
-export const levelsGate: Gate = (ws, _t, c) => {
-  const r = latestReport(ws);
-  const run = runFor(c);
-  if (!r) return { name: "levels match expected.json", pass: false, detail: "no report" };
-  const got: Record<string, Record<string, number>> = {};
-  for (const comp of r.details.levels.components) got[comp.id] = comp.levels as Record<string, number>;
-  const ok = JSON.stringify(sortKeys(got)) === JSON.stringify(sortKeys(run.levels));
-  const repoOk = JSON.stringify(sortKeys(r.details.levels.repoLevels)) === JSON.stringify(sortKeys(run.repoLevels));
-  return { name: "levels match expected.json", pass: ok && repoOk && r.maturity.level === run.level, detail: ok && repoOk ? `Level ${r.maturity.level}` : `got ${JSON.stringify(got)} repo ${JSON.stringify(r.details.levels.repoLevels)}` };
-};
+export type ExpectedLevels = Pick<ExpectedRun, "level" | "levels" | "repoLevels">;
+
+export function levelsMatch(want: ExpectedLevels, name: string): Gate {
+  return (ws) => {
+    const r = latestReport(ws);
+    if (!r) return { name, pass: false, detail: "no report" };
+    const got: Record<string, Record<string, number>> = {};
+    for (const comp of r.details.levels.components) got[comp.id] = comp.levels as Record<string, number>;
+    const ok = JSON.stringify(sortKeys(got)) === JSON.stringify(sortKeys(want.levels));
+    const repoOk = JSON.stringify(sortKeys(r.details.levels.repoLevels)) === JSON.stringify(sortKeys(want.repoLevels));
+    return { name, pass: ok && repoOk && r.maturity.level === want.level, detail: ok && repoOk ? `Level ${r.maturity.level}` : `got ${JSON.stringify(got)} repo ${JSON.stringify(r.details.levels.repoLevels)}` };
+  };
+}
+
+export const levelsGate: Gate = (ws, t, c) => levelsMatch(runFor(c), "levels match expected.json")(ws, t, c);
 
 function sortKeys<T extends Record<string, unknown>>(o: T): T {
   return Object.fromEntries(Object.entries(o).sort(([a], [b]) => a.localeCompare(b)).map(([k, v]) => [k, v && typeof v === "object" ? sortKeys(v as Record<string, unknown>) : v])) as T;

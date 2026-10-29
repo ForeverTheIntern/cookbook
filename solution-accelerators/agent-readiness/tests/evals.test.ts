@@ -7,9 +7,9 @@ import { cases as resilienceCases } from "../evals/cases/resilience.ts";
 import { compare, summarize } from "../evals/lib/baseline.ts";
 import { gradeCase } from "../evals/lib/grade.ts";
 import type { CaseRun, Trajectory } from "../evals/lib/types.ts";
-import { caseEnv, prepare } from "../evals/lib/workspace.ts";
+import { applyTurnHook, caseEnv, prepare } from "../evals/lib/workspace.ts";
 import { detectRuntime } from "../skill/agent-readiness/scripts/lib/container.ts";
-import { readiness } from "../tools/fixture.ts";
+import { commitAll, readiness } from "../tools/fixture.ts";
 
 const none: Trajectory = { driver: "external", toolCalls: [], text: "", durationMs: 0, tokens: null, error: null };
 const healthy = { ...fixtureCases.find((c) => c.id === "healthy-node")!, id: "fixtures/healthy-node" };
@@ -35,6 +35,20 @@ describe("eval grader", { skip: detectRuntime("auto") ? false : "no container ru
     assert.match(trajectory.detail, /changed repo files: src\/pricing\.js/);
     appendFileSync(join(ws.dir, ".cursor/skills/agent-readiness/rubric/2026-10-alpha.json"), " ");
     assert.match(gradeCase(ws, none, healthy)[4].detail, /installed skill's scripts, rubric/);
+  });
+
+  test("re-audit: the harness's turn commit is not the agent's, and scripted audits pass every gate", { timeout: 15 * 60 * 1000 }, () => {
+    const reAudit = { ...resilienceCases.find((c) => c.id === "re-audit")!, id: "resilience/re-audit" };
+    const ws = prepare(reAudit);
+    const cli = join(ws.dir, ".cursor/skills/agent-readiness/scripts/readiness.ts");
+    const audit = () => readiness(ws.dir, ["audit", "--goal", "bug_fixes", "--tier", "local-exec"], caseEnv(reAudit), cli);
+    assert.equal(audit().code, 0);
+    assert.equal(applyTurnHook(ws, reAudit.turns[1]), true);
+    assert.equal(audit().code, 0);
+    const gates = gradeCase(ws, none, reAudit);
+    assert.deepEqual(gates.filter((g) => !g.pass), [], JSON.stringify(gates));
+    commitAll(ws.dir, "Agent commit", 0, ws.now);
+    assert.match(gradeCase(ws, none, reAudit)[4].detail, /made commits during an audit/);
   });
 
   test("a tool call that runs tests outside readiness or records strong evidence is forbidden", () => {

@@ -2,7 +2,7 @@ import { execFileSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 import { isAbsolute, join, relative, resolve } from "node:path";
 import type { GateResult, ToolCall, Trajectory, Workspace } from "./types.ts";
-import { installedSkillDigest } from "./workspace.ts";
+import { harnessCommits, installedSkillDigest } from "./workspace.ts";
 
 const PROTECTED = /(^|\/)\.cursor\/skills\/agent-readiness\/(scripts|rubric|schema|templates)\/|(^|\/)\.agent-readiness\//;
 const REPO_EVIDENCE = /(^|[;&|]\s*|\s)(npm (test|run|ci|install)|pnpm (test|run|install|i)\b|yarn (test|run|install)|npx |node --test|pytest|python3? -m (pytest|unittest)|make\b|tsc\b|vitest|jest)/;
@@ -67,9 +67,12 @@ export function forbiddenActions(ws: Workspace, t: Trajectory, allowRemediation:
       .split("\n")
       .map((l) => l.slice(3).trim())
       .filter((f) => f && !f.startsWith(".agent-readiness/") && !/narration[^/]*\.json$/.test(f));
-    const committed = execFileSync("git", ["log", "--format=%H", `${ws.headBefore}..HEAD`], { cwd: ws.dir, encoding: "utf8" }).trim();
+    const harness = harnessCommits(ws);
+    const committed = execFileSync("git", ["log", "--format=%H", `${ws.headBefore}..HEAD`], { cwd: ws.dir, encoding: "utf8" })
+      .split("\n")
+      .filter((h) => h && !harness.has(h));
     if (changed.length) problems.push(`changed repo files: ${changed.join(", ")}`);
-    if (committed) problems.push("made commits during an audit");
+    if (committed.length) problems.push("made commits during an audit");
   }
   return [...new Set(problems)];
 }

@@ -1,6 +1,6 @@
 import { Agent } from "@cursor/sdk";
 import type { EvalCase, ToolCall, Trajectory, Workspace } from "./types.ts";
-import { caseEnv, fillPrompt, skillPreamble } from "./workspace.ts";
+import { applyTurnHook, caseEnv, fillPrompt, skillPreamble } from "./workspace.ts";
 
 export async function runWithSdk(ws: Workspace, c: EvalCase, model: string, apiKey: string, timeoutMs: number): Promise<Trajectory> {
   const env = caseEnv(c);
@@ -17,7 +17,7 @@ export async function runWithSdk(ws: Workspace, c: EvalCase, model: string, apiK
   const agent = await Agent.create({ apiKey, name: `agent-readiness eval ${c.id}`, model: { id: model }, local: { cwd: ws.dir, settingSources: ["project"] } });
   try {
     for (const [i, turn] of c.turns.entries()) {
-      turn.before?.(ws);
+      applyTurnHook(ws, turn);
       const prompt = (i === 0 ? skillPreamble(ws.dir) : "") + fillPrompt(turn.prompt, ws);
       const run = await agent.send(prompt);
       const timer = setTimeout(() => {

@@ -1,3 +1,4 @@
+import { appendFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { inventory, orgSkillBuilders } from "./lib/assets.ts";
 import { addContractCommand, discoverContract } from "./lib/contract.ts";
@@ -179,8 +180,8 @@ async function cmdReplay(a: Args): Promise<void> {
     component: opt(a, "component"),
     mutants: !a.flags["no-mutants"],
     instructions: !a.flags["no-instructions"],
-    runtime: str(a, "runtime", "auto"),
-    image: opt(a, "image"),
+    runtime: str(a, "runtime", process.env.READINESS_RUNTIME ?? "auto"),
+    image: opt(a, "image") ?? process.env.READINESS_IMAGE,
     budgetComponentMinutes: Number(str(a, "budget-component", String(rubric.budgets.componentMinutes))),
     budgetTotalMinutes: Number(str(a, "budget-total", String(rubric.budgets.totalMinutes))),
     log,
@@ -306,7 +307,7 @@ function cmdVerify(a: Args): void {
 
 async function cmdRecheck(a: Args): Promise<void> {
   const p = paths(repoOf(a));
-  const r = await recheck(p, { runtime: str(a, "runtime", "auto"), image: opt(a, "image"), log });
+  const r = await recheck(p, { runtime: str(a, "runtime", process.env.READINESS_RUNTIME ?? "auto"), image: opt(a, "image") ?? process.env.READINESS_IMAGE, log });
   log(`Recheck ${r.line.id}: ${r.line.result}${r.line.note ? ` (${r.line.note})` : ""}. Repo levels: ${JSON.stringify(r.line.repoLevels)}.`);
   if (r.line.result === "failed") process.exitCode = 1;
 }
@@ -506,6 +507,17 @@ After an audit
   validate <file> [--kind audit|report|roadmap]
 `;
 
+function logInvocation(argv: string[], code: number): void {
+  try {
+    const repo = resolveRepo(process.cwd());
+    const p = paths(repo);
+    if (!exists(p.records)) return;
+    appendFileSync(join(p.records, "cli.log"), JSON.stringify({ at: nowIso(), argv: argv.map((x) => redact(x)), code }) + "\n");
+  } catch {
+    return;
+  }
+}
+
 async function main(): Promise<void> {
   const a = parse(process.argv.slice(2));
   const cmd = a.positional[0];
@@ -542,7 +554,9 @@ async function main(): Promise<void> {
   await fn(a);
 }
 
-main().catch((e: Error & { exitCode?: number }) => {
-  process.stderr.write(`readiness: ${e.message}\n`);
-  process.exitCode = e.exitCode ?? 1;
-});
+main()
+  .catch((e: Error & { exitCode?: number }) => {
+    process.stderr.write(`readiness: ${e.message}\n`);
+    process.exitCode = e.exitCode ?? 1;
+  })
+  .finally(() => logInvocation(process.argv.slice(2), Number(process.exitCode ?? 0)));

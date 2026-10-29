@@ -108,7 +108,7 @@ describe("CLI", { concurrency: 4 }, () => {
     const files = execFileSync("git", ["ls-tree", "-r", "--name-only", "agent-readiness/history"], { cwd: repo, encoding: "utf8" });
     assert.match(files, /history\.jsonl/);
     assert.match(files, /audits\/aud-.*\/audit\.json/);
-    assert.equal(readFileSync(join(repo, ".agent-readiness/.gitignore"), "utf8"), "work/\nhistory/\nfeedback/\n");
+    assert.equal(readFileSync(join(repo, ".agent-readiness/.gitignore"), "utf8"), "work/\nhistory/\nfeedback/\ncli.log\n");
     const status = execFileSync("git", ["status", "--porcelain"], { cwd: repo, encoding: "utf8" });
     assert.match(status, /\.agent-readiness\//);
     execFileSync("git", ["add", ".agent-readiness"], { cwd: repo });

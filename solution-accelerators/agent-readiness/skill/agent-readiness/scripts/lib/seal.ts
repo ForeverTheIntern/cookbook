@@ -148,7 +148,7 @@ export function seal(audit: Audit, local: LocalInfo, p: Paths, log: (s: string) 
   if (errors.length) fail(`Seal refused. Fix these and seal again:\n- ${errors.join("\n- ")}`);
   const md = renderMarkdown(report, rubric);
   audit.state = "sealed";
-  audit.sealed = { at: nowIso(), digest: "", reportJsonDigest: sha256(JSON.stringify(report, null, 2) + "\n"), reportMdDigest: sha256(md) };
+  audit.sealed = { at: nowIso(), digest: "", reportJsonDigest: sha256(JSON.stringify(report, null, 2) + "\n"), reportMdDigest: sha256(md), roadmapItemsDigest: sha256(stableStringify(rm.roadmap.items)) };
   audit.sealed.digest = auditDigest(audit);
   const auditErrors = validateAgainst("audit", audit);
   if (auditErrors.length) fail(`Internal error: the sealed audit doesn't match its schema:\n- ${auditErrors.join("\n- ")}`);
@@ -186,6 +186,22 @@ export function verifySeal(p: Paths, ref: string, opts: { releaseRepo?: string; 
       ok = false;
       lines.push("FAIL: report.json or report.md was edited after sealing.");
     } else lines.push("OK: report files match the seal.");
+  }
+  const latestLine = [...readHistory(p)].reverse().find((h) => h.kind === "audit");
+  if (latestLine?.id === audit.id) {
+    const lj = join(p.latest, "report.json");
+    const lm = join(p.latest, "report.md");
+    if (exists(lj) && exists(lm) && (sha256(readText(lj)) !== audit.sealed.reportJsonDigest || sha256(readText(lm)) !== audit.sealed.reportMdDigest)) {
+      ok = false;
+      lines.push("FAIL: .agent-readiness/latest/ was edited after sealing.");
+    }
+    if (audit.sealed.roadmapItemsDigest && exists(p.roadmap)) {
+      const rm = JSON.parse(readText(p.roadmap)) as { items: unknown };
+      if (sha256(stableStringify(rm.items)) !== audit.sealed.roadmapItemsDigest) {
+        ok = false;
+        lines.push("FAIL: the roadmap's items were edited after sealing. Only an audit changes them; `readiness roadmap owner` and `targets` are the supported edits.");
+      }
+    }
   }
   const local = skillDigest();
   lines.push(local === audit.skill.scriptsDigest ? "OK: the local skill scripts match the ones that ran the audit." : "WARN: the local skill scripts differ from the ones that ran the audit.");

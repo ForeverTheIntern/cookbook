@@ -196,7 +196,7 @@ export interface Audit {
   mutants: Mutant[];
   outcomes: OutcomesSnapshot | null;
   narration: Narration | null;
-  sealed?: { at: string; digest: string; reportJsonDigest: string; reportMdDigest: string };
+  sealed?: { at: string; digest: string; reportJsonDigest: string; reportMdDigest: string; roadmapItemsDigest?: string };
 }
 
 export interface Narration {

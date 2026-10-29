@@ -103,7 +103,13 @@ export function exportTree(repo: string, commit: string, dest: string): void {
 
 export function writeRecordsIgnore(p: Paths): void {
   const ignore = join(p.records, ".gitignore");
-  if (!exists(ignore)) writeText(ignore, "work/\nhistory/\nfeedback/\n");
+  if (!exists(ignore)) writeText(ignore, "work/\nhistory/\nfeedback/\ncli.log\n");
+}
+
+function priorAudits(p: Paths): number {
+  const local = join(p.history, "history.jsonl");
+  const text = exists(local) ? readText(local) : git(["show", "agent-readiness/history:history.jsonl"], p.repo).stdout;
+  return text.split("\n").filter((l) => l.includes('"kind":"audit"')).length;
 }
 
 export function initAudit(opts: InitOptions): { audit: Audit; local: LocalInfo; paths: Paths } {
@@ -128,7 +134,7 @@ export function initAudit(opts: InitOptions): { audit: Audit; local: LocalInfo; 
     tier: opts.tier,
     rubric,
     skill: { version: manifest?.version ?? "0.0.0", scriptsDigest: skillDigest(), rubricDigest: rubricDigest(rubric), release: manifest?.tag ?? null },
-    seed: seedEnv ? { value: seedEnv, pinned: true } : { value: randomHex(16), pinned: false },
+    seed: seedEnv ? { value: sha256(`${seedEnv}:${priorAudits(p)}`).slice(0, 32), pinned: true } : { value: randomHex(16), pinned: false },
     environment: { containerRuntime: null, image: null, registryEnv: opts.registryEnv, inheritEnv: opts.inheritEnv },
     profile: null,
     assets: [],

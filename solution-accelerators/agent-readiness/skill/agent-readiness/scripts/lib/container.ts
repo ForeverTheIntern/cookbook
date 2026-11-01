@@ -41,8 +41,12 @@ export function hostUser(): string | null {
   return uid === undefined || uid === 0 ? null : `${uid}:${gid}`;
 }
 
-export function disconnectArgs(name: string): string[] {
-  return ["network", "disconnect", "bridge", name];
+export function disconnectArgs(name: string, network = "bridge"): string[] {
+  return ["network", "disconnect", network, name];
+}
+
+export function networksArgs(name: string): string[] {
+  return ["inspect", "-f", "{{range $k, $v := .NetworkSettings.Networks}}{{$k}} {{end}}", name];
 }
 
 export class ContainerSession {
@@ -87,9 +91,15 @@ export class ContainerSession {
     spawnSync(this.runtime.bin, ["exec", this.name, "bash", "-lc", "command -v corepack >/dev/null && corepack enable >/dev/null 2>&1 || true"], { encoding: "utf8", timeout: 60000 });
   }
 
+  // Podman attaches to "podman" rather than "bridge", and rootless networking lists no network at
+  // all, so every attached network is cut and the container itself must show every interface but
+  // loopback down. Kernels add tunnel devices such as tunl0 that are always down.
   disconnectNetwork(): boolean {
-    const r = spawnSync(this.runtime.bin, disconnectArgs(this.name), { encoding: "utf8" });
-    return r.status === 0;
+    const r = spawnSync(this.runtime.bin, networksArgs(this.name), { encoding: "utf8" });
+    if (r.status !== 0) return false;
+    for (const net of r.stdout.trim().split(/\s+/).filter(Boolean)) spawnSync(this.runtime.bin, disconnectArgs(this.name, net), { encoding: "utf8" });
+    const probe = this.asImageUser('for i in /sys/class/net/*; do [ -f "$i/operstate" ] && echo "$(basename "$i") $(cat "$i/operstate")"; done; true', 30000);
+    return probe.ok && probe.output.trim().split("\n").every((l) => l.startsWith("lo ") || l.endsWith(" down"));
   }
 
   stop(): void {

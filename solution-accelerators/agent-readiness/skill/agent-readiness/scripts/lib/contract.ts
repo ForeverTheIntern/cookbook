@@ -130,7 +130,32 @@ export function checkComponent(profile: Profile | null, component: string): void
   if (!c.assessed) fail(`${component} isn't assessed (${c.notAssessedReason ?? "not supported"}), so replay wouldn't run its commands. ${choices}`);
 }
 
-export function addContractCommand(cmds: ContractCommand[], input: { kind: CommandKind; component: string; cwd: string; command: string; source: string; reason: string; timeoutSec?: number }, profile: Profile | null): ContractCommand {
+function makeTargets(dir: string): string[] {
+  const f = join(dir, "Makefile");
+  return exists(f) ? [...readText(f).matchAll(/^([\w.-]+)\s*:(?!=)/gm)].map((m) => m[1]) : [];
+}
+
+// The repo has to define a command before it joins the contract: the cited line names it, or the
+// manifest or Makefile it runs exists. Otherwise anything, even `true`, could stand in for the tests.
+function checkSource(tree: string, profile: Profile, input: { component: string; cwd: string; command: string; source: string }): void {
+  const script = scriptOf(input.command);
+  const cited = input.source.match(/^(.+):(\d+)$/);
+  if (cited) {
+    const file = join(tree, cited[1]);
+    const line = exists(file) ? readText(file).split("\n")[Number(cited[2]) - 1] ?? "" : null;
+    if (line === null) fail(`--source ${input.source}: ${cited[1]} isn't in the audited commit.`);
+    if (!line.includes(input.command.trim()) && !(script && new RegExp(`\\b${script.replace(/[.:]/g, "\\$&")}\\b`).test(line))) fail(`--source ${input.source} doesn't name \`${input.command}\`. Cite the line where the repo documents or runs it.`);
+    return;
+  }
+  if (input.source !== "agent") return;
+  const comp = profile.components.find((c) => c.id === input.component);
+  const make = input.command.trim().match(/^make\s+([\w.-]+)/);
+  if (script && (comp?.scripts[script] || profile.components.some((c) => c.path === input.cwd && c.scripts[script]))) return;
+  if (make && makeTargets(join(tree, input.cwd)).includes(make[1])) return;
+  fail(`\`${input.command}\` doesn't run a script or Make target the repo defines. Add only commands the repo defines, and cite where with --source file:line.`);
+}
+
+export function addContractCommand(cmds: ContractCommand[], input: { kind: CommandKind; component: string; cwd: string; command: string; source: string; reason: string; timeoutSec?: number }, profile: Profile | null, tree?: string): ContractCommand {
   checkComponent(profile, input.component);
   if (!input.reason.trim()) fail("contract add needs --reason");
   if (!/^(agent|[^:]+:\d+|readiness|[^\s]+ scripts\.[\w:-]+)$/.test(input.source)) fail("--source must be `agent` or a file:line where the command was found");
@@ -138,6 +163,7 @@ export function addContractCommand(cmds: ContractCommand[], input: { kind: Comma
   const script = scriptOf(input.command);
   const same = cmds.find((c) => c.component === input.component && dir(c.cwd) === dir(input.cwd) && (c.command.trim() === input.command.trim() || (script !== null && scriptOf(c.command) === script)));
   if (same) fail(`${same.id} already runs ${script ? `the ${script} script` : "this command"} for ${input.component === "*" ? "the repo" : input.component} (\`${same.command}\`), so it would run twice. Leave it out of the contract.`);
+  if (tree && profile) checkSource(tree, profile, input);
   const base = `cmd-${input.component === "*" ? "repo" : input.component}-${input.kind}`;
   let id = base;
   let i = 2;

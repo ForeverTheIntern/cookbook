@@ -19,11 +19,22 @@ export interface EnvOptions {
   extra?: Record<string, string>;
 }
 
+export const SUDO_SHIM_MARK = "readiness: sudo refused on the host";
+
+// A script the contract calls can still reach for sudo, so the host PATH answers it first.
+function sudoShim(bin: string): void {
+  writeFileSync(join(bin, "sudo"), `#!/usr/bin/env bash\necho "${SUDO_SHIM_MARK}: the audit only runs sudo inside a container" >&2\nexit 126\n`);
+  chmodSync(join(bin, "sudo"), 0o755);
+}
+
 export function scrubbedEnv(opts: EnvOptions = {}): Record<string, string> {
   if (opts.inheritEnv) {
     const all: Record<string, string> = {};
     for (const [k, v] of Object.entries(process.env)) if (v !== undefined) all[k] = v;
-    return { ...all, ...(opts.extra ?? {}) };
+    const bin = join(mkdtempSync(join(tmpdir(), "readiness-bin-")), "bin");
+    ensureDir(bin);
+    sudoShim(bin);
+    return { ...all, PATH: `${bin}:${all.PATH ?? "/usr/bin:/bin"}`, ...(opts.extra ?? {}) };
   }
   const home = mkdtempSync(join(tmpdir(), "readiness-home-"));
   const env: Record<string, string> = {};
@@ -42,6 +53,7 @@ export function scrubbedEnv(opts: EnvOptions = {}): Record<string, string> {
     writeFileSync(join(bin, pm), `#!/usr/bin/env bash\nexec corepack ${pm} "$@"\n`);
     chmodSync(join(bin, pm), 0o755);
   }
+  sudoShim(bin);
   env.PATH = `${bin}:${env.PATH ?? "/usr/bin:/bin"}`;
   Object.assign(env, {
     HOME: home,

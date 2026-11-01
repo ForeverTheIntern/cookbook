@@ -9,7 +9,7 @@ import { auditIds, loadSealedAudit, pushHistory, readHistory, readRoadmap, write
 import { computeOutcomes, fetchPrs, loadPrsFile } from "./lib/outcomes.ts";
 import { buildProfile } from "./lib/profile.ts";
 import { redact } from "./lib/redact.ts";
-import { evidenceFromPhase, hostExecutor, newBudget, replay, runContract } from "./lib/replay.ts";
+import { evidenceFromPhase, hostExecutor, newBudget, registryValuesOf, replay, runContract } from "./lib/replay.ts";
 import { latestRubricVersion, loadRubric } from "./lib/rubric.ts";
 import { validateAgainst } from "./lib/schema.ts";
 import { blockedBy, componentStates } from "./lib/score.ts";
@@ -19,7 +19,7 @@ import { staticSignals } from "./lib/signals.ts";
 import { instructionItems, safetyScan } from "./lib/static.ts";
 import type { Audit, CommandKind, Narration, Result, Roadmap, ScenarioId, ScenarioSpec, Strength, Tier } from "./lib/types.ts";
 import { addDays, exists, fail, git, nowIso, randomHex, readJson, readText, sha256, today, writeJson } from "./lib/util.ts";
-import { initAudit, loadDraft, paths, releaseManifest, resolveRepo, saveDraft } from "./lib/workspace.ts";
+import { initAudit, loadDraft, paths, refreshTree, releaseManifest, resolveRepo, saveDraft, scratchTree } from "./lib/workspace.ts";
 
 const BOOLEAN = new Set(["force", "remediate", "inherit-env", "no-mutants", "no-instructions", "no-outcomes", "json", "push", "allow-eval", "dockerfile", "instructions", "strict", "help"]);
 
@@ -115,6 +115,7 @@ function cmdScan(a: Args): void {
   const repo = repoOf(a);
   const { audit, local, paths: p } = loadDraft(repo);
   const rubric = loadRubric(audit.rubric);
+  refreshTree(repo, audit.repo.commit, local.tree);
   const profile = buildProfile(repo, local.tree, rubric);
   audit.profile = profile;
   audit.safety = safetyScan(local.tree, profile);
@@ -148,7 +149,7 @@ function cmdScan(a: Args): void {
 
 function cmdContract(a: Args): void {
   const repo = repoOf(a);
-  const { audit, paths: p } = loadDraft(repo);
+  const { audit, local, paths: p } = loadDraft(repo);
   const sub = a.positional[1] ?? "list";
   if (sub === "add") {
     const cmd = addContractCommand(audit.contract, {
@@ -158,7 +159,7 @@ function cmdContract(a: Args): void {
       command: str(a, "cmd"),
       source: str(a, "source", "agent"),
       reason: str(a, "reason"),
-    }, audit.profile);
+    }, audit.profile, local.tree);
     saveDraft(p, audit);
     log(`Added ${cmd.id}: ${cmd.command}`);
     return;
@@ -201,29 +202,39 @@ async function cmdRun(a: Args): Promise<void> {
   requireTier(audit, "local-exec", "run");
   if (!audit.profile) fail("Run `readiness scan` first.");
   const rubric = loadRubric(audit.rubric);
-  const ex = hostExecutor(local.tree, audit.environment.registryEnv, audit.environment.inheritEnv, "host");
-  const registryValues = audit.environment.registryEnv.map((k) => process.env[k] ?? "").filter(Boolean);
+  const scratch = scratchTree(repo, audit.repo.commit);
+  const ex = hostExecutor(scratch.dir, audit.environment.registryEnv, audit.environment.inheritEnv, "host");
+  const registryValues = registryValuesOf(audit);
   const component = opt(a, "component");
   if (component) checkComponent(audit.profile, component);
   if (opt(a, "cmd")) {
-    const cmd = addContractCommand(audit.contract, { kind: str(a, "kind") as CommandKind, component: str(a, "component"), cwd: str(a, "cwd", "."), command: str(a, "cmd"), source: str(a, "source", "agent"), reason: str(a, "reason") }, audit.profile);
+    const cmd = addContractCommand(audit.contract, { kind: str(a, "kind") as CommandKind, component: str(a, "component"), cwd: str(a, "cwd", "."), command: str(a, "cmd"), source: str(a, "source", "agent"), reason: str(a, "reason") }, audit.profile, local.tree);
     log(`Added ${cmd.id} to the contract.`);
   }
   const id = opt(a, "id");
   const selected = audit.contract.filter((c) => (id ? c.id === id : true) && (!component || c.component === component || c.component === "*") && c.kind !== "start");
   const comps = new Set(audit.profile.components.filter((c) => c.assessed && (!component || c.id === component)).map((c) => c.id));
-  const results = await runContract(ex, selected, { components: comps, budget: newBudget(rubric.budgets.componentMinutes, rubric.budgets.totalMinutes), registryValues, onResult: (r) => log(`  ${r.cmd.kind.padEnd(9)} ${r.cmd.component.padEnd(12)} ${r.status}${r.diagnosis ? ` (${r.diagnosis.detail})` : ""}`) });
-  for (const r of results) evidenceFromPhase(audit, ex, r, registryValues);
-  if (a.flags.instructions) {
-    for (const item of audit.instructions.filter((i) => i.category === "replay" && i.staticResult === "pass")) {
-      const out = await ex.exec(item.text, ".", 300);
-      const ok = out.exitCode === 0 && !out.timedOut;
-      const redacted = redact(out.output, registryValues);
-      const ev = addEvidence(audit, { checkId: "context.instructions_verified", condition: "instructions", strength: "executed", where: "host", result: ok ? "pass" : "fail", command: item.text, exitCode: out.exitCode, outputTail: redacted.slice(-1500), outputDigest: sha256(redacted), summary: `${item.source}:${item.line} \`${item.text}\` ${ok ? "replays" : "fails"}` });
-      item.result = ok ? "pass" : "fail";
-      item.evidenceId = ev.id;
-      log(`  ${item.source}:${item.line} ${item.text}: ${item.result}`);
+  try {
+    const results = await runContract(ex, selected, { components: comps, budget: newBudget(rubric.budgets.componentMinutes, rubric.budgets.totalMinutes), registryValues, onResult: (r) => log(`  ${r.cmd.kind.padEnd(9)} ${r.cmd.component.padEnd(12)} ${r.status}${r.diagnosis ? ` (${r.diagnosis.detail})` : ""}`) });
+    for (const r of results) evidenceFromPhase(audit, ex, r, registryValues);
+    if (a.flags.instructions) {
+      for (const item of audit.instructions.filter((i) => i.category === "replay" && i.staticResult === "pass")) {
+        const out = await ex.exec(item.text, ".", 300);
+        const ok = out.exitCode === 0 && !out.timedOut;
+        const redacted = redact(out.output, registryValues);
+        const ev = addEvidence(audit, { checkId: "context.instructions_verified", condition: "instructions", strength: "executed", where: "host", result: ok ? "pass" : "fail", command: item.text, exitCode: out.exitCode, outputTail: redacted.slice(-1500), outputDigest: sha256(redacted), summary: `${item.source}:${item.line} \`${item.text}\` ${ok ? "replays" : "fails"}` });
+        const prior = audit.evidence.find((e) => e.id === item.evidenceId);
+        if (prior && (prior.where === "container" || prior.where === "fresh_copy")) {
+          log(`  ${item.source}:${item.line} ${item.text}: ${ok ? "pass" : "fail"} on the host; the replay's ${item.result} stands`);
+          continue;
+        }
+        item.result = ok ? "pass" : "fail";
+        item.evidenceId = ev.id;
+        log(`  ${item.source}:${item.line} ${item.text}: ${item.result}`);
+      }
     }
+  } finally {
+    scratch.dispose();
   }
   saveDraft(p, audit);
 }

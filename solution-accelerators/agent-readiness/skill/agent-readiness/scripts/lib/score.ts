@@ -17,6 +17,28 @@ function latest(evs: Evidence[]): Evidence | undefined {
   return evs[evs.length - 1];
 }
 
+const replayed = (e: Evidence) => e.where === "container" || e.where === "fresh_copy";
+
+// A replay result for a command outranks a later diagnostic run of it on the host, so
+// `readiness run` can't turn a clean-container failure into a pass.
+function commandEvidence(evs: Evidence[], contractId: string, replayOnly: boolean): Evidence | undefined {
+  const mine = evs.filter((e) => e.contractId === contractId);
+  const fromReplay = mine.filter(replayed);
+  return latest(replayOnly || fromReplay.length ? fromReplay : mine);
+}
+
+// Every command must pass: one failing command fails the condition even when another passes.
+function allPass(parts: CondDetail[], metReason: string, alwaysMetReason = false): CondDetail {
+  const failed = parts.filter((p) => p.state === "not_met");
+  const unknown = parts.filter((p) => p.state === "unknown");
+  const blocked = parts.filter((p) => p.state === "blocked");
+  const ids = parts.flatMap((p) => p.evidence);
+  if (failed.length > 0) return { state: "not_met", reason: failed.map((p) => p.reason).join("; "), evidence: ids };
+  if (blocked.length > 0 && unknown.length === 0) return { state: "blocked", reason: blocked[0].reason, evidence: ids };
+  if (unknown.length > 0 || blocked.length > 0) return { state: "unknown", reason: [...unknown, ...blocked].map((p) => p.reason).join("; "), evidence: ids };
+  return { state: "met", reason: parts.length === 1 && !alwaysMetReason ? parts[0].reason : metReason, evidence: ids };
+}
+
 function needsContainer(rubric: Rubric, check: string): boolean {
   const c = rubric.checks.find((x) => x.id === check);
   return c?.minStrengthForPass === "clean_replay";
@@ -70,34 +92,26 @@ export function componentStates(audit: Audit, rubric: Rubric, componentId: strin
   const ownInstall = latest(evs.filter((e) => e.kind === "install" && e.component === componentId));
   const install = ownInstall && !(repoInstall && repoInstall.result !== "pass") ? ownInstall : (repoInstall ?? ownInstall);
   states["clean.install"] = fromEvidence(rubric, install, "bootstrap.cold_replay", "the clean install hasn't run");
-  const hasBuild = contract.some((c) => c.component === componentId && c.kind === "build");
-  if (!hasBuild) {
+  const mine = (c: { component: string }) => c.component === componentId || c.component === "*";
+  const builds = contract.filter((c) => mine(c) && c.kind === "build");
+  if (builds.length === 0) {
     states["clean.build"] = { state: states["clean.install"].state, reason: "no build step; follows the install", evidence: states["clean.install"].evidence };
   } else {
-    const build = latest(evs.filter((e) => e.kind === "build" && e.component === componentId && (e.where === "container" || e.where === "fresh_copy")));
-    states["clean.build"] = fromEvidence(rubric, build, "bootstrap.cold_replay", "the clean build hasn't run");
+    states["clean.build"] = allPass(builds.map((c) => fromEvidence(rubric, commandEvidence(evs, c.id, true), "bootstrap.cold_replay", "the clean build hasn't run")), `${builds.length} build commands pass`);
   }
-  const hasTest = contract.some((c) => c.component === componentId && c.kind === "test");
-  if (!hasTest) {
+  const tests = contract.filter((c) => mine(c) && c.kind === "test");
+  if (tests.length === 0) {
     states["clean.test"] = { state: "not_met", reason: "no test command was found", evidence: [] };
   } else {
-    const test = latest(evs.filter((e) => e.kind === "test" && e.component === componentId && (e.where === "container" || e.where === "fresh_copy")));
-    states["clean.test"] = fromEvidence(rubric, test, "bootstrap.cold_replay", "the clean test run hasn't run");
+    states["clean.test"] = allPass(tests.map((c) => fromEvidence(rubric, commandEvidence(evs, c.id, true), "bootstrap.cold_replay", "the clean test run hasn't run")), `${tests.length} test commands pass`);
   }
   const cmdKinds = ["build", "lint", "typecheck", "test"] as const;
-  const discovered = contract.filter((c) => c.component === componentId && (cmdKinds as readonly string[]).includes(c.kind));
+  const discovered = contract.filter((c) => mine(c) && (cmdKinds as readonly string[]).includes(c.kind));
   if (!discovered.some((c) => c.kind === "test")) {
     states.commands = { state: "not_met", reason: "no test command was found", evidence: [] };
   } else {
-    const parts = discovered.map((c) => fromEvidence(rubric, latest(evs.filter((e) => e.contractId === c.id)), "verify.canonical_interface", `${c.kind} hasn't run`));
-    const failed = parts.filter((p) => p.state === "not_met");
-    const unknown = parts.filter((p) => p.state === "unknown");
-    const blocked = parts.filter((p) => p.state === "blocked");
-    const ids = parts.flatMap((p) => p.evidence);
-    if (failed.length > 0) states.commands = { state: "not_met", reason: failed.map((p) => p.reason).join("; "), evidence: ids };
-    else if (blocked.length > 0 && unknown.length === 0) states.commands = { state: "blocked", reason: blocked[0].reason, evidence: ids };
-    else if (unknown.length > 0 || blocked.length > 0) states.commands = { state: "unknown", reason: [...unknown, ...blocked].map((p) => p.reason).join("; "), evidence: ids };
-    else states.commands = { state: "met", reason: `${discovered.length} commands pass`, evidence: ids };
+    const parts = discovered.map((c) => fromEvidence(rubric, commandEvidence(evs, c.id, false), "verify.canonical_interface", `${c.kind} hasn't run`));
+    states.commands = allPass(parts, `${discovered.length} commands pass`, true);
   }
   const faults = latest(evs.filter((e) => e.condition === "faults" && e.component === componentId));
   states.faults = fromEvidence(rubric, faults, "verify.behavioral_oracle", "faults haven't been planted");

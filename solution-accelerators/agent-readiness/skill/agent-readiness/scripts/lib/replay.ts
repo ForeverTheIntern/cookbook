@@ -1,6 +1,6 @@
 import { cpSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { dirname, join } from "node:path";
+import { dirname, join, resolve, sep } from "node:path";
 import { ContainerSession, buildImage, detectRuntime } from "./container.ts";
 import { containerImage } from "./contract.ts";
 import { diagnose, testCounts } from "./diagnose.ts";
@@ -8,10 +8,11 @@ import { addEvidence } from "./evidence.ts";
 import { applySite, chooseSites } from "./mutate.ts";
 import { redact, tail } from "./redact.ts";
 import type { Rubric } from "./rubric.ts";
-import { runCommand, scrubbedEnv } from "./run.ts";
+import { SUDO_SHIM_MARK, runCommand, scrubbedEnv } from "./run.ts";
 import type { RunOutcome } from "./run.ts";
 import type { Audit, CommandKind, CondId, ContractCommand, Diagnosis, Evidence, Mutant, Profile, Strength, Where } from "./types.ts";
 import { exists, fail, randomHex, readText, sha256 } from "./util.ts";
+import { refreshTree } from "./workspace.ts";
 
 export interface Executor {
   where: Where;
@@ -21,11 +22,32 @@ export interface Executor {
   // imageUser: the repo's declared setup, run as its image's own user rather than an ordinary one.
   exec(command: string, cwd: string, timeoutSec: number, opts?: { imageUser?: boolean }): Promise<RunOutcome>;
   offline(): boolean;
+  // Whether the last offline() call cut the network; null before it runs and on the host.
+  networkOff: boolean | null;
   close(): void;
 }
 
 export const SUDO = /(^|[\s;&|(`]|\$\()sudo(\s|$)/;
 export const SUDO_REFUSED = "not run on the host: it uses sudo, which the audit only runs inside a container";
+export const NETWORK_ON = "the network couldn't be switched off for the test phase, so this pass doesn't prove a clean checkout";
+
+const SECRET_NAME = /(KEY|SECRET|TOKEN|PASSWORD|PASSWD|CREDENTIAL|AUTH)/i;
+
+// Values to redact from command output: the registry variables, and with --inherit-env every
+// inherited variable whose name looks like a secret.
+export function registryValuesOf(audit: Audit): string[] {
+  const names = new Set(audit.environment.registryEnv);
+  if (audit.environment.inheritEnv) for (const k of Object.keys(process.env)) if (SECRET_NAME.test(k)) names.add(k);
+  return [...names].map((k) => process.env[k] ?? "").filter(Boolean);
+}
+
+// A path from .cursor/environment.json, refused when it leaves the audited tree.
+export function insideTree(root: string, ...parts: string[]): string {
+  const base = resolve(root);
+  const p = resolve(base, ...parts);
+  if (p !== base && !p.startsWith(base + sep)) fail(`.cursor/environment.json points outside the repository (${join(...parts)}), which the audit refuses.`);
+  return p;
+}
 
 export function hostExecutor(root: string, registryEnv: string[], inheritEnv: boolean, where: Where = "fresh_copy"): Executor {
   const env = scrubbedEnv({ registryEnv, inheritEnv });
@@ -36,20 +58,23 @@ export function hostExecutor(root: string, registryEnv: string[], inheritEnv: bo
     root,
     exec: (command, cwd, timeoutSec) => (SUDO.test(command) ? Promise.resolve({ exitCode: null, timedOut: false, durationMs: 0, output: `readiness: ${SUDO_REFUSED}` }) : runCommand(command, join(root, cwd), env, timeoutSec)),
     offline: () => false,
+    networkOff: null,
     close: () => {},
   };
 }
 
 export function containerExecutor(session: ContainerSession, root: string): Executor {
-  return {
+  const ex: Executor = {
     where: "container",
     strength: "clean_replay",
     image: session.image,
     root,
     exec: (command, cwd, timeoutSec, opts) => session.exec(command, cwd, timeoutSec, opts),
-    offline: () => session.disconnectNetwork(),
+    offline: () => (ex.networkOff = session.disconnectNetwork()),
+    networkOff: null,
     close: () => session.stop(),
   };
+  return ex;
 }
 
 const KIND_CHECK: Record<CommandKind, { check: string; condition?: CondId }> = {
@@ -139,9 +164,12 @@ export async function runContract(
     }
     const out = await ex.exec(cmd.command, cmd.cwd, cmd.timeoutSec, { imageUser: cmd.source.startsWith(".cursor/environment.json") });
     charge(opts.budget, cmd.component, out.durationMs);
-    const ok = out.exitCode === 0 && !out.timedOut;
-    const diagnosis = ok ? null : diagnose(out.output, out.timedOut, cmd.kind);
-    const blocked = !ok && ex.where !== "container" && diagnosis?.cause === "missing_tool" ? `${diagnosis.detail} on this machine` : undefined;
+    // A runner that prints failures and still exits 0 hasn't passed.
+    const reportedFailures = cmd.kind === "test" && out.exitCode === 0 ? (testCounts(out.output)?.failed ?? 0) : 0;
+    const ok = out.exitCode === 0 && !out.timedOut && reportedFailures === 0;
+    const diagnosis = ok ? null : reportedFailures > 0 ? { cause: "unknown" as const, detail: `the runner reported ${reportedFailures} failing tests but exited 0` } : diagnose(out.output, out.timedOut, cmd.kind);
+    const sudoRefused = !ok && ex.where !== "container" && out.output.includes(SUDO_SHIM_MARK);
+    const blocked = sudoRefused ? `the ${cmd.kind} command uses sudo, which the audit never runs on the host` : !ok && ex.where !== "container" && diagnosis?.cause === "missing_tool" ? `${diagnosis.detail} on this machine` : undefined;
     if (!ok && cmd.kind === "install") {
       failedInstalls.add(cmd.component);
       if (blocked) {
@@ -153,10 +181,14 @@ export async function runContract(
     push({ cmd, status: ok ? "pass" : "fail", outcome: out, diagnosis, note: cmd.fallbackFor && ok ? "ran on its own because the shared install was blocked on this machine" : "", blocked });
   };
   for (const cmd of online) await run(cmd);
+  const firstOffline = results.length;
   const wentOffline = ex.offline();
   for (const cmd of offlineCmds) await run(cmd);
   if (ex.where === "container" && !wentOffline) {
-    for (const r of results) if (!r.note) r.note = "network could not be switched off for the test phase";
+    for (const r of results.slice(firstOffline)) {
+      if (r.status === "pass") r.blocked = NETWORK_ON;
+      else if (!r.note) r.note = NETWORK_ON;
+    }
   }
   return results;
 }
@@ -198,7 +230,7 @@ export function evidenceFromPhase(audit: Audit, ex: Executor, r: PhaseResult, re
 function declaredImageInstalls(copyDir: string, profile: Profile, tool: string): string | null {
   const dockerfile = profile.environmentJson?.build?.dockerfile;
   if (!dockerfile || !/^[\w.+-]+$/.test(tool)) return null;
-  const path = join(copyDir, ".cursor", dockerfile);
+  const path = insideTree(copyDir, ".cursor", dockerfile);
   return exists(path) && new RegExp(`(^|[^\\w.-])${tool.replace(/[.+]/g, "\\$&")}([^\\w.-]|$)`, "m").test(readText(path)) ? `.cursor/${dockerfile}` : null;
 }
 
@@ -318,8 +350,8 @@ export function makeExecutor(audit: Audit, copyDir: string, runtimePref: string,
   let image = imageOverride ?? containerImage(audit.profile!, copyDir);
   const declared = audit.profile?.environmentJson?.build;
   if (runtime && declared && !imageOverride) {
-    const dockerfile = join(copyDir, ".cursor", declared.dockerfile);
-    const context = join(copyDir, ".cursor", declared.context ?? ".");
+    const dockerfile = insideTree(copyDir, ".cursor", declared.dockerfile);
+    const context = insideTree(copyDir, ".cursor", declared.context ?? ".");
     const tag = `readiness-env-${sha256(readText(dockerfile)).slice(0, 12)}`;
     log(`Building the repo's declared environment image from .cursor/${declared.dockerfile}.`);
     const built = buildImage(runtime, context, dockerfile, tag);
@@ -357,13 +389,14 @@ export async function replay(audit: Audit, repo: string, tree: string, rubric: R
     return;
   }
   const profile = audit.profile;
+  refreshTree(repo, audit.repo.commit, tree);
   const copyDir = join(mkdtempSync(join(tmpdir(), "readiness-replay-")), "work");
   cpSync(tree, copyDir, { recursive: true });
   const before = new Map<string, string>();
   for (const f of profile.lockfiles) before.set(f, sha256(readText(join(copyDir, f))));
   if (opts.image) audit.environment.imageOverride = opts.image;
   const ex = makeExecutor(audit, copyDir, opts.runtime, opts.log, opts.image ?? audit.environment.imageOverride);
-  const registryValues = audit.environment.registryEnv.map((k) => process.env[k] ?? "").filter(Boolean);
+  const registryValues = registryValuesOf(audit);
   const components = new Set(profile.components.filter((c) => c.assessed && (!opts.component || c.id === opts.component)).map((c) => c.id));
   if (opts.component && components.size === 0) fail(`No assessed component named ${opts.component}`);
   const budget = newBudget(opts.budgetComponentMinutes, opts.budgetTotalMinutes);
@@ -396,9 +429,14 @@ export async function replay(audit: Audit, repo: string, tree: string, rubric: R
     }
     if (opts.mutants) {
       for (const comp of components) {
-        const testRes = results.find((r) => r.cmd.kind === "test" && r.cmd.component === comp);
-        if (!testRes || testRes.status !== "pass") {
+        const testRuns = results.filter((r) => r.cmd.kind === "test" && (r.cmd.component === comp || r.cmd.component === "*"));
+        const testRes = testRuns.find((r) => r.cmd.component === comp) ?? testRuns[0];
+        if (!testRes || testRuns.some((r) => r.status !== "pass")) {
           addEvidence(audit, { checkId: "verify.behavioral_oracle", condition: "faults", component: comp, strength: ex.strength, where: ex.where, result: "not_run", summary: testRes ? "tests must pass before faults can be planted" : "no test command found" });
+          continue;
+        }
+        if (testRuns.some((r) => r.blocked)) {
+          addEvidence(audit, { checkId: "verify.behavioral_oracle", condition: "faults", component: comp, strength: ex.strength, where: ex.where, result: "not_run", summary: "faults weren't planted: the network couldn't be switched off for the test phase", blocked: NETWORK_ON });
           continue;
         }
         const second = await ex.exec(testRes.cmd.command, testRes.cmd.cwd, testRes.cmd.timeoutSec);

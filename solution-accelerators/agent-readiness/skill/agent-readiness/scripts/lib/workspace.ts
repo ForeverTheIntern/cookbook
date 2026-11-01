@@ -1,5 +1,5 @@
 import { execSync } from "node:child_process";
-import { mkdtempSync, readdirSync, statSync } from "node:fs";
+import { mkdtempSync, readdirSync, rmSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { basename, join, relative, resolve } from "node:path";
 import { latestRubricVersion, rubricDigest } from "./rubric.ts";
@@ -100,6 +100,21 @@ export function isDirty(repo: string): boolean {
 export function exportTree(repo: string, commit: string, dest: string): void {
   ensureDir(dest);
   execSync(`git archive ${commit} | tar -x -C ${JSON.stringify(dest)}`, { cwd: repo, stdio: ["ignore", "ignore", "pipe"], maxBuffer: 1024 * 1024 * 1024 });
+}
+
+// The audit tree's path is printed and anything can write to it, so every step that reads or
+// runs the repo starts again from the recorded commit.
+export function refreshTree(repo: string, commit: string, dest: string): string {
+  rmSync(dest, { recursive: true, force: true });
+  exportTree(repo, commit, dest);
+  return dest;
+}
+
+export function scratchTree(repo: string, commit: string): { dir: string; dispose: () => void } {
+  const parent = mkdtempSync(join(tmpdir(), "readiness-scratch-"));
+  const dir = join(parent, "tree");
+  exportTree(repo, commit, dir);
+  return { dir, dispose: () => rmSync(parent, { recursive: true, force: true }) };
 }
 
 export function writeRecordsIgnore(p: Paths): void {

@@ -101,5 +101,5 @@ For a private registry, ask for the variable names (never values) and pass `--re
 
 - **Re-audit** after changes with the same steps. The roadmap keeps item IDs, closes items whose checks now pass, and `readiness diff` flags weakened tests.
 - **Recheck** with `readiness recheck`. It reruns the last audit's commands with no agent involved, can lower a level or restore it, and never raises one. The example workflow runs it weekly.
-- **Owner and targets**: `readiness roadmap owner "<team>"` and `readiness roadmap targets --merge-rate 0.7 --first-pass 0.6 --max-changes-requested 0.3`. Level 3 is measured against those targets over at least 20 agent PRs.
+- **Owner and targets**: `readiness roadmap owner "<team>"` and `readiness roadmap targets --merge-rate 0.7 --first-pass 0.6 --max-changes-requested 0.3`. Level 3 is measured against those targets over at least 20 agent PRs (`--min-prs` can lower that, never below 10).
 - **A finding looks wrong**: `readiness feedback <check-id> --note "..."` writes a redacted bundle for the account team. It holds no source code.

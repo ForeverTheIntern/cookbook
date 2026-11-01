@@ -146,7 +146,7 @@ function outcomeOf(input: RenderInput): ReportJson["maturity"]["outcome"] {
 function capReasons(input: RenderInput): ReportJson["maturity"]["capReasons"] {
   if (notAssessed(input)) return [];
   const { rubric, rollup } = input;
-  if (rollup.level >= 2) return rollup.level < 4 ? rollup.outcomeReasons.map((r) => ({ component: "*", condition: "outcomes", label: "agent PRs meet the team's targets", state: "not_met" as const, reason: r })) : [];
+  if (rollup.level >= 2) return rollup.level < 4 ? rollup.outcomeReasons.map((r) => ({ component: "*", condition: "outcomes", label: outcomeLabel(rollup.level), state: "not_met" as const, reason: r })) : [];
   const out: ReportJson["maturity"]["capReasons"] = [];
   for (const id of capComps(input)) {
     for (const c of nextConds(input)) {
@@ -301,23 +301,31 @@ function stats3(input: RenderInput): ReportJson["executive"]["numbers"] {
   const { rubric, audit } = input;
   const activeIds = [...input.active];
   const ready = activeIds.filter((id) => (compLevel(input, id)?.level ?? 0) >= 2).length;
-  const nextLevel = Math.min(4, input.rollup.level + 1);
+  // The third number keeps one meaning on every audit: changes in components below Level 2, the
+  // bar for delegating work, so it can be compared with the first and the last audit.
+  const bar = 2;
   const isUnproven = (id: string) => {
     const l = compLevel(input, id);
     return Boolean(l) && unprovenLevel1(l!.level, l!.couldBe, componentCaps(input, id));
   };
-  const belowComps = input.components.filter((c) => c.assessed && input.active.has(c.id) && (compLevel(input, c.id)?.level ?? 0) < nextLevel);
+  const belowComps = input.components.filter((c) => c.assessed && input.active.has(c.id) && (compLevel(input, c.id)?.level ?? 0) < bar);
   const below = belowComps.reduce((s, c) => s + c.changeShare, 0);
   const unprovenOnly = belowComps.length > 0 && belowComps.every((c) => isUnproven(c.id));
   const someUnproven = belowComps.some((c) => isUnproven(c.id));
-  const prev = [...input.history].reverse().find((h) => h.kind === "audit" && !h.noLevel && typeof h.repoLevel === "number");
+  const leveled = input.history.filter((h) => h.kind === "audit" && !h.noLevel && typeof h.repoLevel === "number");
+  const prev = leveled[leveled.length - 1];
+  const first = leveled[0];
   const days = audit.profile?.historyDays ?? 90;
+  const readyThen = (h: HistoryLine) => `${h.active.filter((id) => (h.levels[id] ?? 0) >= 2).length} of ${h.active.length}`;
+  const belowThen = (h: HistoryLine) => `${pct(h.active.filter((id) => (h.levels[id] ?? 0) < bar).reduce((s, id) => s + (h.shares[id] ?? 0), 0), 1)}%`;
   let readyComparison = `Level 2 needs ${activeIds.length} of ${activeIds.length}`;
-  let belowComparison = `Level ${nextLevel} needs 0%, counting the last ${days} days`;
-  if (prev) {
-    const prevBelow = prev.active.filter((id) => (prev.levels[id] ?? 0) < nextLevel).reduce((s, id) => s + (prev.shares[id] ?? 0), 0);
-    readyComparison = `Last audit: ${prev.active.filter((id) => (prev.levels[id] ?? 0) >= 2).length} of ${prev.active.length}`;
-    belowComparison = `Last audit: ${pct(prevBelow, 1)}%, counting the last ${days} days`;
+  let belowComparison = `Level ${bar} needs 0%, counting the last ${days} days`;
+  if (prev && first && first.id !== prev.id) {
+    readyComparison = `First audit: ${readyThen(first)}; last audit: ${readyThen(prev)}`;
+    belowComparison = `First audit: ${belowThen(first)}; last audit: ${belowThen(prev)}, counting the last ${days} days`;
+  } else if (prev) {
+    readyComparison = `Last audit: ${readyThen(prev)}`;
+    belowComparison = `Last audit: ${belowThen(prev)}, counting the last ${days} days`;
   }
   const o = audit.outcomes;
   const ciValue = o ? describeRate(rate(o.agent.firstTimeCiPass, o.agent.firstTimeCiKnown, rubric, windowLabel(o))) : "not measured";
@@ -344,11 +352,21 @@ function stats3(input: RenderInput): ReportJson["executive"]["numbers"] {
     { label: "Components ready for agents", value: `${ready} of ${activeIds.length}`, comparison: readyComparison },
     ci,
     {
-      label: unprovenOnly ? `Recent changes in components not yet proven at Level ${nextLevel}` : someUnproven ? `Recent changes in components below or not yet proven at Level ${nextLevel}` : `Recent changes in components below Level ${nextLevel}`,
+      label: unprovenOnly ? `Recent changes in components not yet proven at Level ${bar}` : someUnproven ? `Recent changes in components below or not yet proven at Level ${bar}` : `Recent changes in components below Level ${bar}`,
       value: `${pct(below, 1)}%`,
-      comparison: unprovenOnly ? `Proving Level ${nextLevel} needs a clean container; counting the last ${days} days` : belowComparison,
+      comparison: unprovenOnly ? `Proving Level 1 needs a clean container; counting the last ${days} days` : belowComparison,
     },
   ];
+}
+
+// Quadrants run left to right, top then bottom: low effort and high impact first.
+export function quadrantOf(rubric: Rubric, x: number, y: number): string {
+  const [doFirst, bigUnlocks, quickFills, later] = rubric.matrixQuadrants;
+  return y >= 0.5 ? (x < 0.5 ? doFirst : bigUnlocks) : x < 0.5 ? quickFills : later;
+}
+
+function outcomeLabel(level: Level): string {
+  return level === 3 ? "agent PR volume grows while the targets hold" : "agent PRs meet the team's targets";
 }
 
 function nextLine(input: RenderInput): string {
@@ -358,6 +376,7 @@ function nextLine(input: RenderInput): string {
   const next = rubric.scale[L + 1];
   if (noneAssessed(input)) return `Next: Level ${L + 1}, ${next.plain}, once a component can be assessed. No condition has been checked yet.`;
   if (notAssessed(input)) return `Next: Level ${L + 1}, ${next.plain}, once a check can run. No condition has been checked yet.`;
+  if (L === 3) return `Next: Level 4, ${next.plain}. ${rollup.outcomeReasons.length ? `${rollup.outcomeReasons[0].replace(/^Level 4 needs/, "It needs")}.` : "It needs agent PR volume to grow while the targets hold."}`;
   if (L >= 2) return `Next: Level ${L + 1}, ${next.plain}. It needs outcome targets your team sets and agent PRs that meet them${rollup.outcomeReasons.length ? `: ${rollup.outcomeReasons[0]}` : ""}.`;
   const conds = L === 0 ? rubric.level1 : rubric.level2;
   const met: string[] = [];
@@ -511,7 +530,16 @@ export function buildReport(input: RenderInput): ReportJson {
   if (!roadmap.owner && !/\bowner\b/i.test(ask)) ask += " Also name an owner for agent readiness.";
   const actions: ReportAction[] = top.map((t, i) => action(t, i + 1, rubric, roadmap, t.status === "start_now", audit.outcomes));
   if (startNow) actions.push(action(startNow, actions.length + 1, rubric, roadmap, true, audit.outcomes));
-  const points = actions.map((a, i) => ({ label: `${a.rank}. ${a.title}`, x: Math.min(0.95, rubric.effortX[a.effort] + i * 0.04), y: Math.max(0, Math.min(1, a.impact)), itemId: a.itemId }));
+  // From 2026-11-alpha, impact is placed against the largest action's, so the top recommendation
+  // sits in the top half and is never filed under "Later" just because every share is small.
+  const relative = rubric.matrixImpact === "relative";
+  const clamp = (v: number) => Math.max(0, Math.min(1, v));
+  const maxImpact = Math.max(0, ...actions.map((a) => a.impact));
+  const points = actions.map((a, i) => {
+    const x = Math.min(0.95, rubric.effortX[a.effort] + i * (relative ? 0.02 : 0.04));
+    const y = relative && maxImpact > 0 ? clamp(a.impact / maxImpact) : clamp(a.impact);
+    return { label: `${a.rank}. ${a.title}`, x, y, impact: clamp(a.impact), quadrant: quadrantOf(rubric, x, y), itemId: a.itemId };
+  });
   const o = audit.outcomes;
   const w = o ? windowLabel(o) : "";
   const series = o
@@ -685,7 +713,7 @@ export function unprovenLevel1(level: Level | null, couldBe: Level | null, caps:
 function componentCaps(input: RenderInput, id: string): ComponentLevel["capReasons"] {
   const l = compLevel(input, id);
   if (!l || notAssessed(input)) return [];
-  if (l.level >= 2) return l.level < 4 ? l.outcomeReasons.map((r) => ({ component: id, condition: "outcomes", label: "agent PRs meet the team's targets", state: "not_met" as const, reason: r })) : [];
+  if (l.level >= 2) return l.level < 4 ? l.outcomeReasons.map((r) => ({ component: id, condition: "outcomes", label: outcomeLabel(l.level), state: "not_met" as const, reason: r })) : [];
   const conds = l.level === 0 ? input.rubric.level1 : input.rubric.level2;
   return conds.flatMap((c) => {
     const s = input.states.get(id)?.[c];
@@ -827,7 +855,7 @@ export function renderMarkdown(r: ReportJson, rubric: Rubric): string {
   out.push(`> **Recommendation:** ${ex.ask}`, "", ex.coverage, "");
   out.push("## 2. Next actions and how they move the needle", "");
   if (r.matrix.points.length) {
-    out.push(`Effort against impact (impact is the share of recent changes an action unblocks): ${r.matrix.points.map((p) => `${p.label} (effort ${p.x <= 0.35 ? "small" : p.x <= 0.7 ? "medium" : "large"}, ${Math.round(p.y * 100)}%)`).join("; ")}.`, "");
+    out.push(`Effort against impact (impact is the share of recent changes an action unblocks): ${r.matrix.points.map((p) => `${p.label} (${p.quadrant ? `${p.quadrant}: ` : ""}effort ${p.x <= 0.35 ? "small" : p.x <= 0.7 ? "medium" : "large"}, ${Math.round((p.impact ?? p.y) * 100)}%)`).join("; ")}.`, "");
   }
   for (const a of r.actions) {
     out.push(`### ${a.rank}. ${a.title}${a.startNow ? " (can start now)" : ""}`, "");

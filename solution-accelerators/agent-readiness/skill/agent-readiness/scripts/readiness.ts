@@ -598,7 +598,7 @@ After an audit
   recheck [--runtime auto|docker|podman|none] [--image ref]
   diff [from] [to] [--json]
   history [--json] | history push [--push] [--remote origin]
-  roadmap [show|owner "<team>"|targets --merge-rate R --first-pass R --max-changes-requested R [--min-prs N]]
+  roadmap [show|owner "<team>"|targets --merge-rate R --first-pass R --max-changes-requested R [--min-prs N]]   --min-prs defaults to 20 and never goes below 10
   draft-skill --remediate [--out .cursor/skills/verify/SKILL.md] [--include cmd-id,...] [--force]
   draft-env --remediate [--service postgres,redis] [--dockerfile] [--force]
   assets [--org owner --tier external-systems]

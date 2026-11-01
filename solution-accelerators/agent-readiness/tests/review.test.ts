@@ -199,7 +199,7 @@ describe("fixes from the independent pre-ship review", () => {
   test("a component the last audit never saw sets the repo level as soon as it has its share", () => {
     const comps = makeAudit({ components: [{ id: "old", share: 0.4 }, { id: "new-svc", share: 0.6 }] }).profile!.components;
     const last = { id: "aud-1", kind: "audit" as const, date: "2026-10-01", commit: "x", rubric: "2026-10-alpha", scriptsDigest: "x", result: "sealed" as const, levels: { old: 1 as const }, repoLevel: 1 as const, scenarioLevels: {}, shares: { old: 1 }, active: ["old"], seedPinned: false };
-    assert.deepEqual([...activeComponents(rubric, comps, [last])].sort(), ["new-svc", "old"]);
+    assert.deepEqual([...activeComponents(loadRubric("2026-11-alpha"), comps, [last])].sort(), ["new-svc", "old"]);
   });
 
   test("two folders with one name get two components", () => {

@@ -13,8 +13,8 @@ Every audit reports levels in three tiers, in the report, the seal, `report.json
 | 0 | Not bootable | audit | A clean checkout can't install, build and pass its tests. |
 | 1 | Bootable | audit | A clean checkout installs, builds and passes every test, in a clean container. |
 | 2 | Verifiable | audit | Agents can check their own work: the commands pass, the tests catch planted faults, the instructions are accurate and normal work needs no production access. |
-| 3 | Delegable | outcomes | Agent PRs meet the outcome targets your team set. |
-| 4 | Scalable | outcomes | Those targets held while agent PR volume at least doubled. |
+| 3 | Delegable | outcomes | Agent PRs meet the outcome targets your team set, over at least 20 agent PRs in the window (never fewer than 10). |
+| 4 | Scalable | outcomes | Those targets held over two back-to-back windows while agent PR volume at least doubled. |
 
 An audit never claims Level 3 or 4 by itself. A condition the audit couldn't run counts as not met, and the report says "could be Level N" when that's the only thing missing. A condition blocked by a limit of the machine never counts against the repo.
 
@@ -22,14 +22,14 @@ An audit never claims Level 3 or 4 by itself. A condition the audit couldn't run
 
 - **Level 1:** the frozen install, the build and every test pass in a clean container.
 - **Level 2:** Level 1, plus build, lint, type-check and test commands pass at `HEAD`; every planted fault in the component is caught (at least 3); agent instructions are accurate; and normal work needs no production access.
-- **Levels 3 and 4:** measured on the agent PRs that touch the component, against the same control group of other PRs. Level 3 needs Level 2 and targets met over at least 20 agent PRs in a 30-day window (configurable, never below 10). Level 4 needs the targets held while those PRs at least doubled, without the change-request rate rising.
+- **Levels 3 and 4:** measured on the agent PRs that touch the component, against the same control group of other PRs. Level 3 needs Level 2 and targets met over at least 20 agent PRs in a 30-day window. A team can lower the 20 with `--min-prs`, never below 10. Level 4 (rubric 2026-11-alpha) needs two back-to-back audit windows at Level 3 or above, each meeting the targets, with this window's agent PRs at least double the first window's and the change-request rate no higher. A window below Level 3 starts the count again; a Level 4 window stays in the run, so Level 4 holds while the volume does. Audits sealed under 2026-10-alpha compared with the last audit at Level 3 or above.
 
 ## The rollup rule
 
 The repo level is the lowest level among active components:
 
 - An active component is an assessed component with at least 10% of changes over 90 days.
-- A component joins or leaves the active set only after two consecutive audits on the same side of the line.
+- A component joins or leaves the active set only after two consecutive audits on the same side of the line. From rubric 2026-11-alpha, a component the last audit didn't have joins at once.
 - Components the audit can't assess, such as a .NET service, never set the repo level. They keep their share of changes, and when more than 20% of changes are in them the report says "partial coverage".
 - Scenarios never change a component's standard level or the repo level.
 - With no real check result, there is no level at any tier: the report says "not assessed" and why.

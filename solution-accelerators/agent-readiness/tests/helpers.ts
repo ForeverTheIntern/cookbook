@@ -8,7 +8,7 @@ import type { Audit, Component, ContractCommand, Diagnosis, Evidence, HistoryLin
 
 // Mirrors the seal's report build without git or files.
 export function reportFor(audit: Audit, history: HistoryLine[] = [], targets: Targets | null = null): ReportJson {
-  const rubric = loadRubric("2026-10-alpha");
+  const rubric = loadRubric(audit.rubric);
   const c = compute(audit, rubric, history, targets);
   const comps = audit.profile!.components;
   const noResults = noRealResults(audit, c.states);

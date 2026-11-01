@@ -36,10 +36,13 @@ export interface Rubric {
   level1: CondId[];
   level2: CondId[];
   scenarios: { id: ScenarioId; label: string; level2: CondId[] }[];
-  level3: { minAgentPRs: number; absoluteMinAgentPRs: number; windowDays: number };
-  level4: { consecutiveWindows: number; volumeMultiplier: number };
+  changes?: string[];
+  level3: { minAgentPRs: number; absoluteMinAgentPRs: number; windowDays: number; rule?: string };
+  // "streak" (from 2026-11-alpha): consecutiveWindows back-to-back windows at Level 3 or above.
+  // Without it, the 2026-10-alpha rule: compare with the last audit at Level 3 or above.
+  level4: { consecutiveWindows: number; volumeMultiplier: number; rule?: "streak" };
   components: { maxAssessed: number; historyDays: number; botAuthorPatterns: string[]; generatedPatterns: string[]; lockfiles: string[] };
-  repoLevel: { activeShare: number; hysteresisAudits: number; partialCoverageShare: number; rule: string };
+  repoLevel: { activeShare: number; hysteresisAudits: number; partialCoverageShare: number; rule: string; newComponentsJoin?: boolean };
   mutation: { perComponent: number; minForPass: number; languages: string[]; operators: string[]; runTimeoutSec: number; flakeRuns: number; targeting: string };
   budgets: { commandTimeoutSec: number; componentMinutes: number; totalMinutes: number };
   outcomes: {
@@ -52,6 +55,8 @@ export interface Rubric {
   part1: { maxHeadlineWords: number; maxGaps: number; maxGapWords: number; bannedTerms: string[]; levelNames: string[] };
   effortX: Record<Effort, number>;
   matrixQuadrants: string[];
+  // "relative" (from 2026-11-alpha): impact is placed against the largest action's impact.
+  matrixImpact?: "relative";
   templates: Record<string, RubricTemplate>;
   notAssessed: string[];
 }

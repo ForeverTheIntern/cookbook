@@ -148,7 +148,8 @@ describe("part 1 rules", () => {
     const audit = makeAudit(mixed);
     const [ready, , below] = reportFor(audit).executive.numbers;
     assert.equal(ready.comparison, "Level 2 needs 3 of 3");
-    assert.equal(below.comparison, "Level 1 needs 0%, counting the last 90 days");
+    assert.equal(below.comparison, "Level 2 needs 0%, counting the last 90 days");
+    assert.equal(below.label, "Recent changes in components below Level 2", "one meaning on every audit, whatever the repo level");
     const unmeasured = reportFor(makeAudit({ ...mixed, outcomes: null })).executive.numbers[1];
     assert.equal(unmeasured.value, "not measured");
     assert.doesNotMatch(unmeasured.comparison, /tier/);
@@ -156,6 +157,10 @@ describe("part 1 rules", () => {
     const later = reportFor(audit, [prev]).executive.numbers;
     assert.equal(later[0].comparison, "Last audit: 0 of 3");
     assert.equal(later[2].comparison, "Last audit: 98%, counting the last 90 days");
+    const proving: HistoryLine = { ...prev, id: "aud-proving", levels: { api: 0, worker: 2, shared: 2 }, repoLevel: 0 };
+    const third = reportFor(audit, [prev, proving]).executive.numbers;
+    assert.equal(third[0].comparison, "First audit: 0 of 3; last audit: 2 of 3", "movement since the first audit, even when the last was a proving audit");
+    assert.equal(third[2].comparison, "First audit: 98%; last audit: 56%, counting the last 90 days");
   });
 
   test("default headlines name the component and what works, and skip the share when there is one component", () => {
@@ -228,7 +233,7 @@ describe("part 1 rules", () => {
     assert.match(stale, /Not yet: agent instructions are accurate\./, "a repo-wide condition names no component");
     const failing = reportFor(makeAudit({ components: [{ id: "app", share: 1, where: "fresh_copy", test: "fail", faults: "not_run" }] }));
     assert.equal(failing.maturity.unproven, false, "a failing test is a real Level 0");
-    assert.equal(r.executive.numbers[2].label, "Recent changes in components not yet proven at Level 1");
+    assert.equal(r.executive.numbers[2].label, "Recent changes in components not yet proven at Level 2");
     assert.match(r.executive.numbers[2].comparison, /^Proving Level 1 needs a clean container/);
   });
 

@@ -386,7 +386,8 @@ export interface ReportJson {
     noBlocker: boolean;
   };
   actions: ReportAction[];
-  matrix: { quadrants: string[]; points: { label: string; x: number; y: number; itemId: string }[] };
+  // y is the plotted impact; impact is the share of recent changes the action unblocks.
+  matrix: { quadrants: string[]; points: { label: string; x: number; y: number; impact?: number; quadrant?: string; itemId: string }[] };
   roadmap: { owner: string | null; doneCount: number; total: number; items: ReportRoadmapItem[] };
   progress: ReportProgress | null;
   details: ReportDetails;

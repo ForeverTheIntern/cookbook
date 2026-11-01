@@ -7,7 +7,7 @@ import { weakening, weakeningText } from "./diff.ts";
 import { ghJson } from "./gh.ts";
 import { appendHistory, loadSealedAudit, readHistory, readRoadmap, readSealedFile, storeAudit, storeRecheck, writeLatest, writeRoadmap } from "./history.ts";
 import type { LevelResult } from "./levels.ts";
-import { activeComponents, capAt, componentLevel, outcomeLevel, partialCoverage, previousAtLevel3, recheckStates, repoLevel, scenariosFor, statesOf } from "./levels.ts";
+import { activeComponents, capAt, componentLevel, level3Run, outcomeLevel, partialCoverage, previousAtLevel3, recheckStates, repoLevel, scenariosFor, statesOf } from "./levels.ts";
 import { emptyStats } from "./outcomes.ts";
 import { makeExecutor, newBudget, registryValuesOf, revealMutants, runContract } from "./replay.ts";
 import { allowedNumbers, buildReport, danglingEvidence, renderMarkdown, validatePart1 } from "./render.ts";
@@ -71,7 +71,7 @@ export function compute(audit: Audit, rubric: Rubric, history: HistoryLine[], ta
   for (const c of comps) {
     const s = statesOf(states.get(c.id)!);
     const proven = componentLevel(rubric, s);
-    const measured = outcomeLevel(rubric, { level2: proven.level === 2, targets, outcomes: o ? { agent: o.byComponent[c.id] ?? emptyStats(), control: o.control, truncated: o.truncated } : null, previousAtLevel3: previousAtLevel3(history, c.id) });
+    const measured = outcomeLevel(rubric, { level2: proven.level === 2, targets, outcomes: o ? { agent: o.byComponent[c.id] ?? emptyStats(), control: o.control, truncated: o.truncated } : null, previousAtLevel3: previousAtLevel3(history, c.id), level3Run: level3Run(history, c.id) });
     levels.set(c.id, { level: measured.level ?? proven.level, couldBe: measured.level ? null : proven.couldBe, outcomeReasons: measured.reasons });
     const m = new Map<ScenarioId, LevelResult>();
     for (const id of scenariosFor(rubric, audit.scenarios ?? [], c.id)) m.set(id, componentLevel(rubric, s, id));

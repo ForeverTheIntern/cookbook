@@ -47,7 +47,7 @@ export function activeComponents(rubric: Rubric, components: Component[], previo
   for (const c of components.filter((x) => x.assessed)) {
     const nowAbove = c.changeShare >= threshold;
     // A component the last audit never saw has no earlier share to wait for.
-    if (!last || !(c.id in last.shares)) {
+    if (!last || (rubric.repoLevel.newComponentsJoin && !(c.id in last.shares))) {
       if (nowAbove) active.add(c.id);
       continue;
     }
@@ -87,6 +87,8 @@ export interface OutcomeLevelInput {
   outcomes: { agent: OutcomeStats; control: OutcomeStats; truncated?: boolean } | null;
   // The agent PRs of the last audit where this component was at Level 3 or above.
   previousAtLevel3: OutcomeStats | null;
+  // The unbroken run of earlier audits at Level 3 or above, oldest first, for the streak rule.
+  level3Run?: OutcomeStats[];
 }
 
 export function targetsMet(rubric: Rubric, targets: Targets, outcomes: { agent: OutcomeStats; control: OutcomeStats }): { met: boolean; reasons: string[] } {
@@ -111,6 +113,7 @@ export function outcomeLevel(rubric: Rubric, input: OutcomeLevelInput): { level:
   if (input.outcomes.truncated) return { level: null, reasons: ["the PR window held more PRs than gh returns at once, so Level 3 isn't measured from a partial window"] };
   const t = targetsMet(rubric, input.targets, input.outcomes);
   if (!t.met) return { level: null, reasons: t.reasons };
+  if (rubric.level4.rule === "streak") return streakLevel(rubric, input.outcomes.agent, input.level3Run ?? []);
   const prev = input.previousAtLevel3;
   if (prev) {
     const grew = input.outcomes.agent.opened >= rubric.level4.volumeMultiplier * prev.opened;
@@ -119,6 +122,34 @@ export function outcomeLevel(rubric: Rubric, input: OutcomeLevelInput): { level:
     if (grew && nowCr <= prevCr) return { level: 4, reasons: [] };
   }
   return { level: 3, reasons: [] };
+}
+
+const crRate = (s: OutcomeStats) => (s.opened ? s.changesRequested / s.opened : 0);
+
+// Level 4: this window and the run before it make at least consecutiveWindows back-to-back windows
+// that met the targets, and agent volume grew by volumeMultiplier over the run's first window
+// without the change-request rate rising. A Level 4 window stays in the run, so holding the
+// volume keeps Level 4, and a window below Level 3 starts the count again.
+function streakLevel(rubric: Rubric, now: OutcomeStats, run: OutcomeStats[]): { level: Level; reasons: string[] } {
+  const need = rubric.level4.consecutiveWindows;
+  const windows = run.length + 1;
+  if (windows < need) return { level: 3, reasons: [`Level 4 needs ${need} back-to-back windows that meet the targets; this is window ${windows}`] };
+  const first = run[0];
+  const target = rubric.level4.volumeMultiplier * first.opened;
+  if (now.opened < target) return { level: 3, reasons: [`Level 4 needs at least ${target} agent PRs in a window, ${rubric.level4.volumeMultiplier} times the ${first.opened} of the first window at Level 3; this window has ${now.opened}`] };
+  if (crRate(now) > crRate(first)) return { level: 3, reasons: [`Level 4 needs change requests to stay at or below the first window's ${Math.round(crRate(first) * 100)}%; they rose to ${Math.round(crRate(now) * 100)}%`] };
+  return { level: 4, reasons: [] };
+}
+
+export function level3Run(history: HistoryLine[], componentId: string): OutcomeStats[] {
+  const audits = history.filter((h) => h.kind === "audit" && !h.noLevel);
+  const run: OutcomeStats[] = [];
+  for (let i = audits.length - 1; i >= 0; i--) {
+    const s = audits[i].outcomes?.byComponent?.[componentId];
+    if (!s || (audits[i].levels[componentId] ?? 0) < 3) break;
+    run.unshift(s);
+  }
+  return run;
 }
 
 export function previousAtLevel3(history: HistoryLine[], componentId: string): OutcomeStats | null {

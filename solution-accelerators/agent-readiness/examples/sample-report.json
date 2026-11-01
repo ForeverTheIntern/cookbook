@@ -6,11 +6,11 @@
     "date": "2026-11-30",
     "commit": "9a2c092",
     "dirtyTree": false,
-    "rubric": "2026-10-alpha",
+    "rubric": "2026-11-alpha",
     "tier": "local-exec",
-    "scriptsDigest": "38b6a0a90a39a38945060ae7338a368d5016dbe00e5d0c3ef2e87985e2707f8c",
+    "scriptsDigest": "c18125b2b6d39ea509f7855bd7fb1a0c24252a9701743079b6a48d77be5ea9a0",
     "seedPinned": true,
-    "sealStatus": "Scripts match the agent-readiness-v0.1.0 manifest bundled with this copy; the published release isn't checked here",
+    "sealStatus": "Scripts match the agent-readiness-v0.1.0 manifest bundled with this copy; the published release isn't checked here, and the seal is an unkeyed digest, which shows edits but not who sealed it",
     "staleCopy": null,
     "previous": "aud-2026-10-30-7e84b7e-c404",
     "storedAt": ".agent-readiness/history/audits/aud-2026-11-30-9a2c092-ae7a"
@@ -41,14 +41,14 @@
       "level": 3,
       "name": "Delegable",
       "plain": "delegable",
-      "meaning": "Agent PRs meet the outcome targets your team set.",
+      "meaning": "Agent PRs meet the outcome targets your team set, over at least 20 agent PRs in the window (never fewer than 10).",
       "measuredBy": "outcomes"
     },
     {
       "level": 4,
       "name": "Scalable",
       "plain": "scalable",
-      "meaning": "Those targets held while agent PR volume at least doubled.",
+      "meaning": "Those targets held over two back-to-back windows while agent PR volume at least doubled.",
       "measuredBy": "outcomes"
     }
   ],
@@ -63,7 +63,7 @@
   ],
   "maturity": {
     "level": 1,
-    "rule": "The repo level is the lowest level among active components, the assessed components with at least 10% of changes over 90 days; a component joins or leaves that set only after two audits on the same side of the line, and components the audit can't assess never set it.",
+    "rule": "The repo level is the lowest level among active components, the assessed components with at least 10% of changes over 90 days; a component joins or leaves that set only after two audits on the same side of the line, except that one the last audit didn't have joins at once; when no assessed component reaches 10%, the largest sets it; and components the audit can't assess never set it.",
     "couldBe": null,
     "couldBeReason": null,
     "setBy": [
@@ -208,7 +208,7 @@
       {
         "label": "Components ready for agents",
         "value": "2 of 3",
-        "comparison": "Last audit: 2 of 3"
+        "comparison": "First audit: 0 of 3; last audit: 2 of 3"
       },
       {
         "label": "Agent PRs that pass CI the first time",
@@ -218,7 +218,7 @@
       {
         "label": "Recent changes in components below Level 2",
         "value": "25%",
-        "comparison": "Last audit: 27%, counting the last 90 days"
+        "comparison": "First audit: 98%; last audit: 27%, counting the last 90 days"
       }
     ],
     "nextLine": "Next: Level 2, verifiable. Met: lint and test commands pass, agent instructions are accurate and normal work needs no production access. Not yet: worker tests catch planted faults.",
@@ -262,8 +262,10 @@
     "points": [
       {
         "label": "1. Make worker's tests catch wrong behavior",
-        "x": 0.55,
-        "y": 0.254,
+        "x": 0.45,
+        "y": 1,
+        "impact": 0.254,
+        "quadrant": "Do first",
         "itemId": "faults:worker"
       }
     ]
@@ -283,22 +285,22 @@
         "decision": "Who owns agent readiness for this repo"
       },
       {
-        "id": "clean.test:api",
-        "order": 2,
-        "title": "Set up Postgres for agents in api",
-        "status": "done",
-        "statusText": "done Oct 30",
-        "unlocks": "api to Level 1",
-        "decision": "Approve committing the setup files"
-      },
-      {
         "id": "instructions:repo",
-        "order": 3,
+        "order": 2,
         "title": "Fix the stale agent instructions",
         "status": "done",
         "statusText": "done Oct 30",
-        "unlocks": "shared to Level 2",
+        "unlocks": "shared to Level 2 once Level 1 is proven in a clean container",
         "decision": null
+      },
+      {
+        "id": "clean.test:api",
+        "order": 3,
+        "title": "Set up Postgres for agents in api",
+        "status": "done",
+        "statusText": "done Oct 30",
+        "unlocks": "no level change yet",
+        "decision": "Approve committing the setup files"
       },
       {
         "id": "faults:api",
@@ -356,11 +358,11 @@
         "note": null,
         "levels": {
           "api": 0,
-          "shared": 1,
-          "worker": 1
+          "shared": 0,
+          "worker": 0
         },
         "repoLevel": 0,
-        "rubric": "2026-10-alpha"
+        "rubric": "2026-11-alpha"
       },
       {
         "date": "2026-10-30",
@@ -373,7 +375,7 @@
           "worker": 1
         },
         "repoLevel": 1,
-        "rubric": "2026-10-alpha"
+        "rubric": "2026-11-alpha"
       },
       {
         "date": "2026-11-06",
@@ -386,7 +388,7 @@
           "worker": 1
         },
         "repoLevel": 1,
-        "rubric": "2026-10-alpha"
+        "rubric": "2026-11-alpha"
       },
       {
         "date": "2026-11-13",
@@ -399,7 +401,7 @@
           "worker": 1
         },
         "repoLevel": 1,
-        "rubric": "2026-10-alpha"
+        "rubric": "2026-11-alpha"
       },
       {
         "date": "2026-11-20",
@@ -412,7 +414,7 @@
           "worker": 1
         },
         "repoLevel": 1,
-        "rubric": "2026-10-alpha"
+        "rubric": "2026-11-alpha"
       },
       {
         "date": "2026-11-30",
@@ -425,27 +427,27 @@
           "worker": 1
         },
         "repoLevel": 1,
-        "rubric": "2026-10-alpha"
+        "rubric": "2026-11-alpha"
       }
     ],
     "closed": [
       {
-        "title": "2. Set up Postgres for agents in api",
-        "closed": "2026-10-30",
-        "expected": "Agents can run api's checks before they push, so fewer agent PRs fail CI the first time. Watch: Share of agent PRs touching api that pass CI the first time, 20% (1 of 5).",
-        "observed": "20% (1 of 5) to 78% (7 of 9) (shared with step 3 and step 4)"
-      },
-      {
-        "title": "3. Fix the stale agent instructions",
+        "title": "2. Fix the stale agent instructions",
         "closed": "2026-10-30",
         "expected": "Agents stop following stale steps, such as running pnpm in a repo that doesn't use it. Watch: Agent PRs that add a stray pnpm-lock.yaml, 11% (1 of 9).",
-        "observed": "11% (1 of 9) to 0% (0 of 17) (shared with step 2 and step 4)"
+        "observed": "11% (1 of 9) to 0% (0 of 17) (closed with step 3 and step 4)"
+      },
+      {
+        "title": "3. Set up Postgres for agents in api",
+        "closed": "2026-10-30",
+        "expected": "Agents can run api's checks before they push, so fewer agent PRs fail CI the first time. Watch: Share of agent PRs touching api that pass CI the first time, 20% (1 of 5).",
+        "observed": "20% (1 of 5) to 78% (7 of 9) (closed with step 2 and step 4)"
       },
       {
         "title": "4. Check api's tests with planted faults",
         "closed": "2026-10-30",
         "expected": "Changes in api get a real pass-or-fail signal, so reviewers catch less by hand. Watch: Share of agent PRs touching api where a reviewer requested changes, 40% (2 of 5).",
-        "observed": "40% (2 of 5) to 11% (1 of 9) (shared with step 2 and step 3)"
+        "observed": "40% (2 of 5) to 11% (1 of 9) (closed with step 2 and step 3)"
       }
     ],
     "weakening": "No test files changed since the last audit. No test files were deleted. No test cases were removed overall. No skip markers were added. The CI workflow is unchanged. The lockfile is unchanged.",
@@ -1069,7 +1071,7 @@
       },
       {
         "label": "Rubric",
-        "value": "2026-10-alpha"
+        "value": "2026-11-alpha"
       },
       {
         "label": "Permission tier",
@@ -1077,11 +1079,11 @@
       },
       {
         "label": "Seal",
-        "value": "Scripts match the agent-readiness-v0.1.0 manifest bundled with this copy; the published release isn't checked here"
+        "value": "Scripts match the agent-readiness-v0.1.0 manifest bundled with this copy; the published release isn't checked here, and the seal is an unkeyed digest, which shows edits but not who sealed it"
       },
       {
         "label": "Skill digest",
-        "value": "38b6a0a90a39"
+        "value": "c18125b2b6d3"
       },
       {
         "label": "Planted faults",
@@ -1089,7 +1091,7 @@
       },
       {
         "label": "Replay environment",
-        "value": "docker container, node:22-bookworm-kernel-mirror"
+        "value": "docker container, node:22-bookworm"
       },
       {
         "label": "Stored in",

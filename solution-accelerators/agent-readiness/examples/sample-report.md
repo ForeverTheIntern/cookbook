@@ -1,6 +1,6 @@
 # Agent readiness: monorepo-mixed
 
-> Eval run with a pinned seed; not a production result. Scripts match the agent-readiness-v0.1.0 manifest bundled with this copy; the published release isn't checked here.
+> Eval run with a pinned seed; not a production result. Scripts match the agent-readiness-v0.1.0 manifest bundled with this copy; the published release isn't checked here, and the seal is an unkeyed digest, which shows edits but not who sealed it.
 
 ## 1. Where you stand: Level 1 of 4, bootable
 
@@ -8,9 +8,9 @@ Audited Nov 30, 2026 at 9a2c092. Confidence: high (every check that decides the 
 
 **Agents can build and test worker, but its tests can't yet catch wrong changes, and 25% of recent changes land there. api and shared are already at Level 2.**
 
-- **Components ready for agents:** 2 of 3. Last audit: 2 of 3.
+- **Components ready for agents:** 2 of 3. First audit: 0 of 3; last audit: 2 of 3.
 - **Agent PRs that pass CI the first time:** 65% (11 of 17). Other PRs: 71% (27 of 38), Oct 31 to Nov 30, 2026.
-- **Recent changes in components below Level 2:** 25%. Last audit: 27%, counting the last 90 days.
+- **Recent changes in components below Level 2:** 25%. First audit: 98%; last audit: 27%, counting the last 90 days.
 
 Level 0 Not bootable > [Level 1 Bootable] > Level 2 Verifiable > Level 3 Delegable > Level 4 Scalable
 
@@ -24,7 +24,7 @@ The level covers 3 components and ignores infra (0% of changes, Terraform isn't 
 
 ## 2. Next actions and how they move the needle
 
-Effort against impact (impact is the share of recent changes an action unblocks): 1. Make worker's tests catch wrong behavior (effort medium, 25%).
+Effort against impact (impact is the share of recent changes an action unblocks): 1. Make worker's tests catch wrong behavior (Do first: effort medium, 25%).
 
 ### 1. Make worker's tests catch wrong behavior
 
@@ -41,8 +41,8 @@ Effort against impact (impact is the share of recent changes an action unblocks)
 4 of 8 steps done. Kept in `.agent-readiness/roadmap.json`. Owner: Platform team.
 
 - [x] 1. Name an owner for agent readiness: unlocks a named owner for approvals, targets and the weekly recheck (done Oct 30)
-- [x] 2. Set up Postgres for agents in api: unlocks api to Level 1 (done Oct 30)
-- [x] 3. Fix the stale agent instructions: unlocks shared to Level 2 (done Oct 30)
+- [x] 2. Fix the stale agent instructions: unlocks shared to Level 2 once Level 1 is proven in a clean container (done Oct 30)
+- [x] 3. Set up Postgres for agents in api: unlocks no level change yet (done Oct 30)
 - [x] 4. Check api's tests with planted faults: unlocks nothing on its own; first needs Set up Postgres for agents in api (done Oct 30)
 - [ ] 5. Make worker's tests catch wrong behavior: unlocks worker to Level 2 (next)
 - [ ] 6. Set your Level 3 targets: unlocks a definition of Level 3 for this repo (later)
@@ -53,7 +53,7 @@ Effort against impact (impact is the share of recent changes an action unblocks)
 
 | Date | Record | Repo | api | shared | worker |
 |---|---|---|---|---|---|
-| Oct 27 | audit | 0 | 0 | 1 | 1 |
+| Oct 27 | audit | 0 | 0 | 0 | 0 |
 | Oct 30 | audit | 1 | 2 | 2 | 1 |
 | Nov 6 | recheck | 1 | 2 | 2 | 1 |
 | Nov 13 | recheck failed, npm run lint failed: src/money.js: remove console.log | 1 | 2 | 1 | 1 |
@@ -66,11 +66,11 @@ A failed recheck lowers a level and a later passing recheck restores it. Only an
 
 | Step | Closed | Expected | Observed after |
 |---|---|---|---|
-| 2. Set up Postgres for agents in api | Oct 30 | Agents can run api's checks before they push, so fewer agent PRs fail CI the first time. Watch: Share of agent PRs touching api that pass CI the first time, 20% (1 of 5). | 20% (1 of 5) to 78% (7 of 9) (shared with step 3 and step 4) |
-| 3. Fix the stale agent instructions | Oct 30 | Agents stop following stale steps, such as running pnpm in a repo that doesn't use it. Watch: Agent PRs that add a stray pnpm-lock.yaml, 11% (1 of 9). | 11% (1 of 9) to 0% (0 of 17) (shared with step 2 and step 4) |
-| 4. Check api's tests with planted faults | Oct 30 | Changes in api get a real pass-or-fail signal, so reviewers catch less by hand. Watch: Share of agent PRs touching api where a reviewer requested changes, 40% (2 of 5). | 40% (2 of 5) to 11% (1 of 9) (shared with step 2 and step 3) |
+| 2. Fix the stale agent instructions | Oct 30 | Agents stop following stale steps, such as running pnpm in a repo that doesn't use it. Watch: Agent PRs that add a stray pnpm-lock.yaml, 11% (1 of 9). | 11% (1 of 9) to 0% (0 of 17) (closed with step 3 and step 4) |
+| 3. Set up Postgres for agents in api | Oct 30 | Agents can run api's checks before they push, so fewer agent PRs fail CI the first time. Watch: Share of agent PRs touching api that pass CI the first time, 20% (1 of 5). | 20% (1 of 5) to 78% (7 of 9) (closed with step 2 and step 4) |
+| 4. Check api's tests with planted faults | Oct 30 | Changes in api get a real pass-or-fail signal, so reviewers catch less by hand. Watch: Share of agent PRs touching api where a reviewer requested changes, 40% (2 of 5). | 40% (2 of 5) to 11% (1 of 9) (closed with step 2 and step 3) |
 
-Movement after a step closed, not proof that the step caused it. Steps closed in the same window share one value.
+Movement after a step closed, not proof that the step caused it. Each step shows its own measure; steps closed in the same audit share the window after it, so a change can't be credited to one of them.
 
 No test files changed since the last audit. No test files were deleted. No test cases were removed overall. No skip markers were added. The CI workflow is unchanged. The lockfile is unchanged.
 
@@ -111,7 +111,7 @@ Repo shape: monorepo. Each component gets one standard level; scenarios someone 
 | `worker` › Bug fixes | | | | | | 1 Bootable |
 | `infra` | `infra` | Terraform | none | none | 0% | not assessed: Terraform isn't supported by this rubric |
 
-Repo level: 1 Bootable. The repo level is the lowest level among active components, the assessed components with at least 10% of changes over 90 days; a component joins or leaves that set only after two audits on the same side of the line, and components the audit can't assess never set it.
+Repo level: 1 Bootable. The repo level is the lowest level among active components, the assessed components with at least 10% of changes over 90 days; a component joins or leaves that set only after two audits on the same side of the line, except that one the last audit didn't have joins at once; when no assessed component reaches 10%, the largest sets it; and components the audit can't assess never set it.
 
 What holds the repo at Level 1:
 
@@ -201,10 +201,10 @@ Evidence strength, weakest to strongest: stated in docs, read from files, ran on
 
 - **Audit:** aud-2026-11-30-9a2c092-ae7a
 - **Commit:** 9a2c092 (clean tree)
-- **Rubric:** 2026-10-alpha
+- **Rubric:** 2026-11-alpha
 - **Permission tier:** local-exec
-- **Seal:** Scripts match the agent-readiness-v0.1.0 manifest bundled with this copy; the published release isn't checked here
-- **Skill digest:** 38b6a0a90a39
+- **Seal:** Scripts match the agent-readiness-v0.1.0 manifest bundled with this copy; the published release isn't checked here, and the seal is an unkeyed digest, which shows edits but not who sealed it
+- **Skill digest:** c18125b2b6d3
 - **Planted faults:** seed pinned (eval run; not a production result)
-- **Replay environment:** docker container, node:22-bookworm-kernel-mirror
+- **Replay environment:** docker container, node:22-bookworm
 - **Stored in:** .agent-readiness/history/audits/aud-2026-11-30-9a2c092-ae7a

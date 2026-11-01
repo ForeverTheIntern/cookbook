@@ -6,11 +6,11 @@
     "date": "2026-10-27",
     "commit": "7070f44",
     "dirtyTree": false,
-    "rubric": "2026-10-alpha",
+    "rubric": "2026-11-alpha",
     "tier": "local-exec",
-    "scriptsDigest": "38b6a0a90a39a38945060ae7338a368d5016dbe00e5d0c3ef2e87985e2707f8c",
+    "scriptsDigest": "c18125b2b6d39ea509f7855bd7fb1a0c24252a9701743079b6a48d77be5ea9a0",
     "seedPinned": true,
-    "sealStatus": "Scripts match the agent-readiness-v0.1.0 manifest bundled with this copy; the published release isn't checked here",
+    "sealStatus": "Scripts match the agent-readiness-v0.1.0 manifest bundled with this copy; the published release isn't checked here, and the seal is an unkeyed digest, which shows edits but not who sealed it",
     "staleCopy": null,
     "previous": null,
     "storedAt": ".agent-readiness/history/audits/aud-2026-10-27-7070f44-e101"
@@ -41,42 +41,100 @@
       "level": 3,
       "name": "Delegable",
       "plain": "delegable",
-      "meaning": "Agent PRs meet the outcome targets your team set.",
+      "meaning": "Agent PRs meet the outcome targets your team set, over at least 20 agent PRs in the window (never fewer than 10).",
       "measuredBy": "outcomes"
     },
     {
       "level": 4,
       "name": "Scalable",
       "plain": "scalable",
-      "meaning": "Those targets held while agent PR volume at least doubled.",
+      "meaning": "Those targets held over two back-to-back windows while agent PR volume at least doubled.",
       "measuredBy": "outcomes"
     }
   ],
   "scenarios": [],
   "maturity": {
     "level": 0,
-    "rule": "The repo level is the lowest level among active components, the assessed components with at least 10% of changes over 90 days; a component joins or leaves that set only after two audits on the same side of the line, and components the audit can't assess never set it.",
+    "rule": "The repo level is the lowest level among active components, the assessed components with at least 10% of changes over 90 days; a component joins or leaves that set only after two audits on the same side of the line, except that one the last audit didn't have joins at once; when no assessed component reaches 10%, the largest sets it; and components the audit can't assess never set it.",
     "couldBe": null,
     "couldBeReason": null,
     "setBy": [
-      "api"
+      "api",
+      "shared",
+      "worker"
     ],
     "partialCoverage": false,
     "assessedComponents": 3,
-    "outcome": "proven",
+    "outcome": "blocked",
     "confidence": {
-      "level": "high",
+      "level": "low",
       "reasons": [
-        "every check that decides the level ran"
+        "a check that decides Level 1 was blocked on this machine"
       ]
     },
     "capReasons": [
+      {
+        "component": "api",
+        "condition": "clean.install",
+        "label": "installs from the lockfile in a clean container",
+        "state": "blocked",
+        "reason": "passed on the host, but Level 1 needs a clean container: no container runtime on this machine"
+      },
+      {
+        "component": "api",
+        "condition": "clean.build",
+        "label": "builds in a clean container",
+        "state": "blocked",
+        "reason": "no build step; follows the install"
+      },
       {
         "component": "api",
         "condition": "clean.test",
         "label": "passes every test in a clean container",
         "state": "not_met",
         "reason": "test failed: connection refused on port 5432 (1 of 1 tests failed)"
+      },
+      {
+        "component": "shared",
+        "condition": "clean.install",
+        "label": "installs from the lockfile in a clean container",
+        "state": "blocked",
+        "reason": "passed on the host, but Level 1 needs a clean container: no container runtime on this machine"
+      },
+      {
+        "component": "shared",
+        "condition": "clean.build",
+        "label": "builds in a clean container",
+        "state": "blocked",
+        "reason": "no build step; follows the install"
+      },
+      {
+        "component": "shared",
+        "condition": "clean.test",
+        "label": "passes every test in a clean container",
+        "state": "blocked",
+        "reason": "passed on the host, but Level 1 needs a clean container: no container runtime on this machine"
+      },
+      {
+        "component": "worker",
+        "condition": "clean.install",
+        "label": "installs from the lockfile in a clean container",
+        "state": "blocked",
+        "reason": "passed on the host, but Level 1 needs a clean container: no container runtime on this machine"
+      },
+      {
+        "component": "worker",
+        "condition": "clean.build",
+        "label": "builds in a clean container",
+        "state": "blocked",
+        "reason": "no build step; follows the install"
+      },
+      {
+        "component": "worker",
+        "condition": "clean.test",
+        "label": "passes every test in a clean container",
+        "state": "blocked",
+        "reason": "passed on the host, but Level 1 needs a clean container: no container runtime on this machine"
       }
     ],
     "unproven": false,
@@ -104,6 +162,20 @@
         "capReasons": [
           {
             "component": "api",
+            "condition": "clean.install",
+            "label": "installs from the lockfile in a clean container",
+            "state": "blocked",
+            "reason": "passed on the host, but Level 1 needs a clean container: no container runtime on this machine"
+          },
+          {
+            "component": "api",
+            "condition": "clean.build",
+            "label": "builds in a clean container",
+            "state": "blocked",
+            "reason": "no build step; follows the install"
+          },
+          {
+            "component": "api",
             "condition": "clean.test",
             "label": "passes every test in a clean container",
             "state": "not_met",
@@ -120,16 +192,30 @@
         "lockfile": null,
         "changeShare": 0.15,
         "active": true,
-        "level": 1,
-        "couldBe": null,
-        "unproven": false,
+        "level": 0,
+        "couldBe": 1,
+        "unproven": true,
         "capReasons": [
           {
             "component": "shared",
-            "condition": "instructions",
-            "label": "agent instructions are accurate",
-            "state": "not_met",
-            "reason": "3 of 7 instruction items are wrong"
+            "condition": "clean.install",
+            "label": "installs from the lockfile in a clean container",
+            "state": "blocked",
+            "reason": "passed on the host, but Level 1 needs a clean container: no container runtime on this machine"
+          },
+          {
+            "component": "shared",
+            "condition": "clean.build",
+            "label": "builds in a clean container",
+            "state": "blocked",
+            "reason": "no build step; follows the install"
+          },
+          {
+            "component": "shared",
+            "condition": "clean.test",
+            "label": "passes every test in a clean container",
+            "state": "blocked",
+            "reason": "passed on the host, but Level 1 needs a clean container: no container runtime on this machine"
           }
         ],
         "scenarios": []
@@ -142,23 +228,30 @@
         "lockfile": null,
         "changeShare": 0.27,
         "active": true,
-        "level": 1,
-        "couldBe": null,
-        "unproven": false,
+        "level": 0,
+        "couldBe": 1,
+        "unproven": true,
         "capReasons": [
           {
             "component": "worker",
-            "condition": "faults",
-            "label": "tests catch planted faults",
-            "state": "not_met",
-            "reason": "caught 0 of 5 planted faults; missed: change_constant at packages/worker/src/retry.js:2, change_constant at packages/worker/src/retry.js:9, change_constant at packages/worker/src/retry.js:3, change_constant at packages/worker/src/retry.js:12, change_constant at packages/worker/src/retry.js:5"
+            "condition": "clean.install",
+            "label": "installs from the lockfile in a clean container",
+            "state": "blocked",
+            "reason": "passed on the host, but Level 1 needs a clean container: no container runtime on this machine"
           },
           {
             "component": "worker",
-            "condition": "instructions",
-            "label": "agent instructions are accurate",
-            "state": "not_met",
-            "reason": "3 of 7 instruction items are wrong"
+            "condition": "clean.build",
+            "label": "builds in a clean container",
+            "state": "blocked",
+            "reason": "no build step; follows the install"
+          },
+          {
+            "component": "worker",
+            "condition": "clean.test",
+            "label": "passes every test in a clean container",
+            "state": "blocked",
+            "reason": "passed on the host, but Level 1 needs a clean container: no container runtime on this machine"
           }
         ],
         "scenarios": []
@@ -177,8 +270,8 @@
     ]
   },
   "executive": {
-    "heading": "Level 0 of 4, not bootable",
-    "headline": "Agents can't pass the tests in api from a clean checkout because its tests need Postgres running, which the setup doesn't start, and 56% of recent changes land there.",
+    "heading": "Level 0 of 4, not bootable; Level 1 is blocked on this machine",
+    "headline": "Agents can't pass the tests in api, shared and worker from a clean checkout because their tests need Postgres running, which the setup doesn't start, and 98% of recent changes land there.",
     "numbers": [
       {
         "label": "Components ready for agents",
@@ -191,60 +284,44 @@
         "comparison": "Other PRs: 71% (29 of 41), Sep 27 to Oct 27, 2026"
       },
       {
-        "label": "Recent changes in components below Level 1",
-        "value": "56%",
-        "comparison": "Level 1 needs 0%, counting the last 90 days"
+        "label": "Recent changes in components below or not yet proven at Level 2",
+        "value": "98%",
+        "comparison": "Level 2 needs 0%, counting the last 90 days"
       }
     ],
-    "nextLine": "Next: Level 1, bootable. Met: installs from the lockfile in a clean container. Not yet: api passes every test in a clean container.",
+    "nextLine": "Next: Level 1, bootable. Not yet: api passes every test in a clean container. Blocked on this machine: api, shared and worker installs from the lockfile in a clean container and shared and worker passes every test in a clean container.",
     "gaps": [
       {
         "rank": 1,
-        "text": "Set up Postgres for agents in api",
-        "blocks": "Blocks Level 1 for api",
-        "itemId": "clean.test:api"
-      },
-      {
-        "rank": 2,
         "text": "Fix the stale agent instructions",
         "blocks": "Blocks Level 2 for shared",
         "itemId": "instructions:repo"
       },
       {
+        "rank": 2,
+        "text": "Set up Postgres for agents in api",
+        "blocks": "Blocks the next level",
+        "itemId": "clean.test:api"
+      },
+      {
         "rank": 3,
         "text": "Make worker's tests catch wrong behavior",
-        "blocks": "Blocks Level 2 for worker",
+        "blocks": "Can start now; blocks Level 2 for worker",
         "itemId": "faults:worker"
       }
     ],
-    "ask": "Decision needed: approve committing the setup files. Also name an owner for agent readiness.",
-    "coverage": "The level covers 3 components and ignores infra (2% of changes, Terraform isn't supported by this rubric). Agent PRs are matched by head branch starting with cursor/.",
+    "ask": "Approve the agent's fix for \"Fix the stale agent instructions\". Also name an owner for agent readiness.",
+    "coverage": "The level covers 3 components and ignores infra (2% of changes, Terraform isn't supported by this rubric). Level 1 isn't provable on this machine: it has no container runtime, so setup ran in a fresh copy on the host. Agent PRs are matched by head branch starting with cursor/.",
     "noBlocker": false
   },
   "actions": [
     {
       "rank": 1,
-      "itemId": "clean.test:api",
-      "title": "Set up Postgres for agents in api",
-      "startNow": false,
-      "why": "In a clean container, api's tests fail because nothing starts Postgres: connection refused on port 5432.",
-      "movesTheNeedle": "Takes api to Level 1, covering 56% of recent changes. Agents can run api's checks before they push, so fewer agent PRs fail CI the first time.",
-      "watch": "Share of agent PRs touching api that pass CI the first time. Now: 20% (1 of 5), Sep 27 to Oct 27, 2026.",
-      "research": "In the BootstrapAgent study, a reusable, verified setup cut later agents' token use by 25.9% and build time by 22.3%. Measured on the study's benchmark repositories. https://arxiv.org/abs/2605.15815",
-      "effortAndOwner": "Small: setup scripts and environment config, no source changes. Repo maintainer.",
-      "decision": "Approve committing the setup files",
-      "doneWhen": "`readiness replay --component api` passes every test.",
-      "dependsOn": [],
-      "impact": 0.56,
-      "effort": "small"
-    },
-    {
-      "rank": 2,
       "itemId": "instructions:repo",
       "title": "Fix the stale agent instructions",
       "startNow": false,
       "why": "3 instructions agents would follow are wrong: npm run changelog (no \"changelog\" script in package.json), pnpm test (uses pnpm, but the repo uses npm).",
-      "movesTheNeedle": "Takes shared to Level 2, covering 15% of recent changes. Agents stop following stale steps, such as running pnpm in a repo that doesn't use it.",
+      "movesTheNeedle": "Takes shared to Level 2 once Level 1 is proven in a clean container, covering 15% of recent changes. Agents stop following stale steps, such as running pnpm in a repo that doesn't use it.",
       "watch": "Agent PRs that add a stray pnpm-lock.yaml. Now: 11% (1 of 9), Sep 27 to Oct 27, 2026.",
       "research": null,
       "effortAndOwner": "Small: 2 instruction files. Repo maintainer.",
@@ -255,12 +332,28 @@
       "effort": "small"
     },
     {
+      "rank": 2,
+      "itemId": "clean.test:api",
+      "title": "Set up Postgres for agents in api",
+      "startNow": false,
+      "why": "In a clean container, api's tests fail because nothing starts Postgres: connection refused on port 5432.",
+      "movesTheNeedle": "Changes no level on its own: no level change yet. Agents can run api's checks before they push, so fewer agent PRs fail CI the first time.",
+      "watch": "Share of agent PRs touching api that pass CI the first time. Now: 20% (1 of 5), Sep 27 to Oct 27, 2026.",
+      "research": "In the BootstrapAgent study, a reusable, verified setup cut later agents' token use by 25.9% and build time by 22.3%. Measured on the study's benchmark repositories. https://arxiv.org/abs/2605.15815",
+      "effortAndOwner": "Small: setup scripts and environment config, no source changes. Repo maintainer.",
+      "decision": "Approve committing the setup files",
+      "doneWhen": "`readiness replay --component api` passes every test.",
+      "dependsOn": [],
+      "impact": 0,
+      "effort": "small"
+    },
+    {
       "rank": 3,
       "itemId": "faults:worker",
       "title": "Make worker's tests catch wrong behavior",
-      "startNow": false,
+      "startNow": true,
       "why": "The audit planted 5 faults in worker in a throwaway copy, and the tests caught 0.",
-      "movesTheNeedle": "Changes no level on its own: shared to Level 2, worker to Level 2 together with Fix the stale agent instructions. Changes in worker get a real pass-or-fail signal, so reviewers catch less by hand.",
+      "movesTheNeedle": "Takes shared to Level 2 once Level 1 is proven in a clean container, worker to Level 2 once Level 1 is proven in a clean container together with Fix the stale agent instructions. Changes in worker get a real pass-or-fail signal, so reviewers catch less by hand.",
       "watch": "Share of agent PRs touching worker where a reviewer requested changes. Now: 2 of 3 (too few for a rate), Sep 27 to Oct 27, 2026.",
       "research": "In DeployBench, 53.9% of failed runs passed generic checks and failed only task-specific ones. 51 research-artifact deployment tasks. https://deploybench.vercel.app/",
       "effortAndOwner": "Medium: tests in worker only. Component owner.",
@@ -280,21 +373,27 @@
     ],
     "points": [
       {
-        "label": "1. Set up Postgres for agents in api",
+        "label": "1. Fix the stale agent instructions",
         "x": 0.2,
-        "y": 0.56,
-        "itemId": "clean.test:api"
-      },
-      {
-        "label": "2. Fix the stale agent instructions",
-        "x": 0.24000000000000002,
-        "y": 0.15,
+        "y": 1,
+        "impact": 0.15,
+        "quadrant": "Do first",
         "itemId": "instructions:repo"
       },
       {
-        "label": "3. Make worker's tests catch wrong behavior",
-        "x": 0.63,
+        "label": "2. Set up Postgres for agents in api",
+        "x": 0.22,
         "y": 0,
+        "impact": 0,
+        "quadrant": "Quick fills",
+        "itemId": "clean.test:api"
+      },
+      {
+        "label": "3. Make worker's tests catch wrong behavior",
+        "x": 0.49,
+        "y": 0.75,
+        "impact": 0,
+        "quadrant": "Do first",
         "itemId": "faults:worker"
       }
     ]
@@ -314,29 +413,29 @@
         "decision": "Who owns agent readiness for this repo"
       },
       {
-        "id": "clean.test:api",
-        "order": 2,
-        "title": "Set up Postgres for agents in api",
-        "status": "next",
-        "statusText": "next",
-        "unlocks": "api to Level 1",
-        "decision": "Approve committing the setup files"
-      },
-      {
         "id": "instructions:repo",
-        "order": 3,
+        "order": 2,
         "title": "Fix the stale agent instructions",
         "status": "next",
         "statusText": "next",
-        "unlocks": "shared to Level 2",
+        "unlocks": "shared to Level 2 once Level 1 is proven in a clean container",
         "decision": null
+      },
+      {
+        "id": "clean.test:api",
+        "order": 3,
+        "title": "Set up Postgres for agents in api",
+        "status": "next",
+        "statusText": "next",
+        "unlocks": "no level change yet",
+        "decision": "Approve committing the setup files"
       },
       {
         "id": "faults:api",
         "order": 4,
         "title": "Check api's tests with planted faults",
         "status": "waiting",
-        "statusText": "waiting on step 2",
+        "statusText": "waiting on step 3",
         "unlocks": "nothing on its own; first needs Set up Postgres for agents in api",
         "decision": "What the untested behavior in packages/api should be"
       },
@@ -344,9 +443,9 @@
         "id": "faults:worker",
         "order": 5,
         "title": "Make worker's tests catch wrong behavior",
-        "status": "next",
-        "statusText": "next",
-        "unlocks": "shared to Level 2, worker to Level 2 together with Fix the stale agent instructions",
+        "status": "start_now",
+        "statusText": "can start now",
+        "unlocks": "shared to Level 2 once Level 1 is proven in a clean container, worker to Level 2 once Level 1 is proven in a clean container together with Fix the stale agent instructions",
         "decision": "What the untested behavior in packages/worker/src/retry.js should be"
       },
       {
@@ -363,6 +462,20 @@
   "progress": null,
   "details": {
     "steps": [
+      {
+        "itemId": "instructions:repo",
+        "title": "Fix the stale agent instructions",
+        "steps": [
+          {
+            "title": "Fix each listed item",
+            "detail": "`.cursor/skills/release-notes/SKILL.md:8` `npm run changelog`: no \"changelog\" script in package.json; `AGENTS.md:7` `pnpm test`: uses pnpm, but the repo uses npm; `AGENTS.md:8` `docs/architecture.md`: docs/architecture.md doesn't exist"
+          },
+          {
+            "title": "Prove it",
+            "detail": "`readiness run --instructions` replays every command and checks every path."
+          }
+        ]
+      },
       {
         "itemId": "clean.test:api",
         "title": "Set up Postgres for agents in api",
@@ -386,20 +499,6 @@
           {
             "title": "Re-audit",
             "detail": "The next audit confirms Level 1 and can now plant faults in api."
-          }
-        ]
-      },
-      {
-        "itemId": "instructions:repo",
-        "title": "Fix the stale agent instructions",
-        "steps": [
-          {
-            "title": "Fix each listed item",
-            "detail": "`.cursor/skills/release-notes/SKILL.md:8` `npm run changelog`: no \"changelog\" script in package.json; `AGENTS.md:7` `pnpm test`: uses pnpm, but the repo uses npm; `AGENTS.md:8` `docs/architecture.md`: docs/architecture.md doesn't exist"
-          },
-          {
-            "title": "Prove it",
-            "detail": "`readiness run --instructions` replays every command and checks every path."
           }
         ]
       },
@@ -466,7 +565,7 @@
             "url": "https://arxiv.org/abs/2605.15815"
           }
         ],
-        "result": "failed: api; passed: shared and worker",
+        "result": "failed: api; blocked on this machine: shared and worker",
         "ok": false,
         "counts": {
           "passed": 6,
@@ -819,7 +918,7 @@
         "check": "bootstrap.cold_replay",
         "component": null,
         "ran": "node --version && npm --version",
-        "where": "ran in a clean container",
+        "where": "ran on host",
         "result": "pass",
         "summary": "doctor passed"
       },
@@ -828,7 +927,7 @@
         "check": "bootstrap.cold_replay",
         "component": null,
         "ran": "npm ci",
-        "where": "ran in a clean container",
+        "where": "ran on host",
         "result": "pass",
         "summary": "install passed"
       },
@@ -837,7 +936,7 @@
         "check": "verify.canonical_interface",
         "component": "api",
         "ran": "npm run lint",
-        "where": "ran in a clean container",
+        "where": "ran on host",
         "result": "pass",
         "summary": "lint passed"
       },
@@ -846,7 +945,7 @@
         "check": "bootstrap.cold_replay",
         "component": "api",
         "ran": "npm run test",
-        "where": "ran in a clean container",
+        "where": "ran on host",
         "result": "fail",
         "summary": "test failed: connection refused on port 5432 (1 of 1 tests failed)"
       },
@@ -855,7 +954,7 @@
         "check": "verify.canonical_interface",
         "component": "shared",
         "ran": "npm run lint",
-        "where": "ran in a clean container",
+        "where": "ran on host",
         "result": "pass",
         "summary": "lint passed"
       },
@@ -864,7 +963,7 @@
         "check": "bootstrap.cold_replay",
         "component": "shared",
         "ran": "npm run test",
-        "where": "ran in a clean container",
+        "where": "ran on host",
         "result": "pass",
         "summary": "test passed (3 of 3 tests)"
       },
@@ -873,7 +972,7 @@
         "check": "verify.canonical_interface",
         "component": "worker",
         "ran": "npm run lint",
-        "where": "ran in a clean container",
+        "where": "ran on host",
         "result": "pass",
         "summary": "lint passed"
       },
@@ -882,7 +981,7 @@
         "check": "bootstrap.cold_replay",
         "component": "worker",
         "ran": "npm run test",
-        "where": "ran in a clean container",
+        "where": "ran on host",
         "result": "pass",
         "summary": "test passed (2 of 2 tests)"
       },
@@ -891,7 +990,7 @@
         "check": "bootstrap.cold_replay",
         "component": null,
         "ran": "frozen install reproduced the lockfile",
-        "where": "ran in a clean container",
+        "where": "ran on host",
         "result": "pass",
         "summary": "frozen install reproduced the lockfile"
       },
@@ -909,7 +1008,7 @@
         "check": "verify.behavioral_oracle",
         "component": "shared",
         "ran": "caught 5 of 5 planted faults (tried: drop_throw_or_return, change_constant, negate_condition)",
-        "where": "ran in a clean container",
+        "where": "ran on host",
         "result": "pass",
         "summary": "caught 5 of 5 planted faults (tried: drop_throw_or_return, change_constant, negate_condition)"
       },
@@ -918,7 +1017,7 @@
         "check": "verify.behavioral_oracle",
         "component": "worker",
         "ran": "caught 0 of 5 planted faults; missed: change_constant at packages/worker/src/retry.js:2, change_constant at packages/worker/src/retry.js:9, change_constant at packages/worker/src/retry.js:3, change_constant at packages/worker/src/retry.js:12, change_constant at packages/worker/src/retry.js:5",
-        "where": "ran in a clean container",
+        "where": "ran on host",
         "result": "fail",
         "summary": "caught 0 of 5 planted faults; missed: change_constant at packages/worker/src/retry.js:2, change_constant at packages/worker/src/retry.js:9, change_constant at packages/worker/src/retry.js:3, change_constant at packages/worker/src/retry.js:12, change_constant at packages/worker/src/retry.js:5"
       },
@@ -927,7 +1026,7 @@
         "check": "context.instructions_verified",
         "component": null,
         "ran": "npm run lint -w api",
-        "where": "ran in a clean container",
+        "where": "ran on host",
         "result": "pass",
         "summary": ".cursor/rules/style.mdc:6 `npm run lint -w api` replays"
       },
@@ -936,7 +1035,7 @@
         "check": "context.instructions_verified",
         "component": null,
         "ran": "npm run test -w shared",
-        "where": "ran in a clean container",
+        "where": "ran on host",
         "result": "pass",
         "summary": "AGENTS.md:6 `npm run test -w shared` replays"
       }
@@ -952,7 +1051,7 @@
       },
       {
         "label": "Rubric",
-        "value": "2026-10-alpha"
+        "value": "2026-11-alpha"
       },
       {
         "label": "Permission tier",
@@ -960,11 +1059,11 @@
       },
       {
         "label": "Seal",
-        "value": "Scripts match the agent-readiness-v0.1.0 manifest bundled with this copy; the published release isn't checked here"
+        "value": "Scripts match the agent-readiness-v0.1.0 manifest bundled with this copy; the published release isn't checked here, and the seal is an unkeyed digest, which shows edits but not who sealed it"
       },
       {
         "label": "Skill digest",
-        "value": "38b6a0a90a39"
+        "value": "c18125b2b6d3"
       },
       {
         "label": "Planted faults",
@@ -972,7 +1071,7 @@
       },
       {
         "label": "Replay environment",
-        "value": "docker container, node:22-bookworm-kernel-mirror"
+        "value": "fresh copy on the host (no container runtime)"
       },
       {
         "label": "Stored in",

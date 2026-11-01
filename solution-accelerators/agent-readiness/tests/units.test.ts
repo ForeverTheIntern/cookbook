@@ -136,6 +136,7 @@ describe("diagnosis", () => {
     assert.deepEqual([d.cause, d.detail], ["missing_tool", "dotnet is not installed"]);
     assert.equal(diagnose("bash: line 1: sudo: command not found", false, "start").detail, "sudo is not installed");
     assert.equal(diagnose(".cursor/install.sh: 2: fixturectl: not found", false, "install").detail, "fixturectl is not installed", "dash names the script and line");
+    assert.equal(diagnose("sh: fixturectl: command not found", false, "install").detail, "fixturectl is not installed", "macOS sh names only itself");
     const audit = makeAudit({ components: [{ id: "app", share: 1, test: "not_run" }] });
     const install = audit.evidence.find((e) => e.kind === "install")!;
     Object.assign(install, { result: "fail", where: "fresh_copy", strength: "executed", diagnosis: d, summary: "install failed: dotnet is not installed" });

@@ -8,7 +8,7 @@
     "dirtyTree": false,
     "rubric": "2026-11-alpha",
     "tier": "local-exec",
-    "scriptsDigest": "c18125b2b6d39ea509f7855bd7fb1a0c24252a9701743079b6a48d77be5ea9a0",
+    "scriptsDigest": "69143fa1640c1f19366db7d161ffc15ea932624aca0e62724c7ba6d417dfde34",
     "seedPinned": true,
     "sealStatus": "Scripts match the agent-readiness-v0.1.0 manifest bundled with this copy; the published release isn't checked here, and the seal is an unkeyed digest, which shows edits but not who sealed it",
     "staleCopy": null,
@@ -285,22 +285,22 @@
         "decision": "Who owns agent readiness for this repo"
       },
       {
-        "id": "instructions:repo",
-        "order": 2,
-        "title": "Fix the stale agent instructions",
-        "status": "done",
-        "statusText": "done Oct 30",
-        "unlocks": "shared to Level 2 once Level 1 is proven in a clean container",
-        "decision": null
-      },
-      {
         "id": "clean.test:api",
-        "order": 3,
+        "order": 2,
         "title": "Set up Postgres for agents in api",
         "status": "done",
         "statusText": "done Oct 30",
-        "unlocks": "no level change yet",
+        "unlocks": "api to Level 1",
         "decision": "Approve committing the setup files"
+      },
+      {
+        "id": "instructions:repo",
+        "order": 3,
+        "title": "Fix the stale agent instructions",
+        "status": "done",
+        "statusText": "done Oct 30",
+        "unlocks": "shared to Level 2",
+        "decision": null
       },
       {
         "id": "faults:api",
@@ -358,8 +358,8 @@
         "note": null,
         "levels": {
           "api": 0,
-          "shared": 0,
-          "worker": 0
+          "shared": 1,
+          "worker": 1
         },
         "repoLevel": 0,
         "rubric": "2026-11-alpha"
@@ -432,16 +432,16 @@
     ],
     "closed": [
       {
-        "title": "2. Fix the stale agent instructions",
-        "closed": "2026-10-30",
-        "expected": "Agents stop following stale steps, such as running pnpm in a repo that doesn't use it. Watch: Agent PRs that add a stray pnpm-lock.yaml, 11% (1 of 9).",
-        "observed": "11% (1 of 9) to 0% (0 of 17) (closed with step 3 and step 4)"
-      },
-      {
-        "title": "3. Set up Postgres for agents in api",
+        "title": "2. Set up Postgres for agents in api",
         "closed": "2026-10-30",
         "expected": "Agents can run api's checks before they push, so fewer agent PRs fail CI the first time. Watch: Share of agent PRs touching api that pass CI the first time, 20% (1 of 5).",
-        "observed": "20% (1 of 5) to 78% (7 of 9) (closed with step 2 and step 4)"
+        "observed": "20% (1 of 5) to 78% (7 of 9) (closed with step 3 and step 4)"
+      },
+      {
+        "title": "3. Fix the stale agent instructions",
+        "closed": "2026-10-30",
+        "expected": "Agents stop following stale steps, such as running pnpm in a repo that doesn't use it. Watch: Agent PRs that add a stray pnpm-lock.yaml, 11% (1 of 9).",
+        "observed": "11% (1 of 9) to 0% (0 of 17) (closed with step 2 and step 4)"
       },
       {
         "title": "4. Check api's tests with planted faults",
@@ -1083,7 +1083,7 @@
       },
       {
         "label": "Skill digest",
-        "value": "c18125b2b6d3"
+        "value": "69143fa1640c"
       },
       {
         "label": "Planted faults",

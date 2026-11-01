@@ -221,7 +221,7 @@ Four models (Claude Opus 5.5, GPT-5.6 Sol, Gemini 4 Argon, Grok 4.7) reviewed th
 
 ### Still open
 
-From the four-model review, not fixed in this PR:
+From the four-model review. The ship pass at the end of this log closed the first four items and the matrix item; the rest stay open.
 
 - **Anti-gaming that the evals can't see yet.** Every eval run used the external driver, which has no tool-call stream, so the gates for running repo commands outside `readiness` or reading planted-fault details were never exercised. Planted-fault details sit in `audit.json` in the working tree, and the seal is an unkeyed digest. The SDK driver in CI is the next measurement; signing seals or keeping mutants off the working tree is a design change.
 - **Level 3 and 4 rules.** `level4.consecutiveWindows` isn't consumed, and the 10-PR absolute floor under the 20-PR minimum needs to be stated wherever the 20 is. Both are level-rule changes, so they go through the governance rule with a rubric bump.
@@ -315,3 +315,81 @@ Six pinned public repos now check the ranking of real component levels and that 
 - config packages under `tooling/` counted as components.
 
 The full Node image and the ordinary user changed no fixture's level.
+
+## Ship pass (October 31 to November 1, 2026)
+
+Rubric 2026-11-alpha, three rounds of independent review, and the first runs of the SDK driver, which grades tool calls as well.
+
+### Reviews
+
+Each round's findings were triaged into "fix now" and "deferred". Every fix has a test in `tests/review.test.ts`, `tests/review-2.test.ts` or `tests/rubric-2026-11.test.ts`, and the deferred items are listed under Known gaps in the README.
+
+1. **First round.** GPT-5.6 Sol, Gemini 4 Argon, Grok 4.7 and Bugbot reviewed the branch.
+   - **Consensus:** Level 1 read only the latest build or test command; `outcomes --input` could award Level 3; rechecks counted machine limits as regressions.
+   - **Also fixed:** isolation and tree-mutation holes, keeping planted faults off the working tree, the keyed seal, and history on fresh clones.
+2. **Second round.** Claude Opus 5.5 (a general and a security review), GPT-5.6 Sol, Gemini 4 Argon and Grok 4.7 reviewed the first round's fixes.
+   - **Consensus:** the keyed seal could be downgraded, `contract add` could still take `true`, and a host run could override a failed clean install.
+   - **Also fixed:** Level 4 run provenance, repo-wide commands in the roadmap, and symlink containment.
+3. **Verification.** A Claude Opus 5.5 pass over the second round found two blockers, both fixed:
+   - with the key set, the weekly recheck would have refused every audit sealed on a laptop;
+   - the seal's history filter was looser than `verify-seal`.
+
+### The SDK driver's first run, and its grader
+
+The first SDK run (Claude Opus 5.5 as driver and judge, 25 cases × 3) failed "no forbidden actions" in 13 cases. Every failure was a grader mistake on macOS, not an agent action:
+- the narration file SKILL.md asks for sits under `$TMPDIR`, which the gate didn't allow;
+- the shell rule matched protected paths inside heredocs;
+- workspace paths weren't compared through `/private`.
+
+The fixed gate, applied by `--regrade` to the stored runs, passed 25 of 25. This is the first measurement of the tool-call gates: no run executed repo commands outside `readiness` or read the planted-fault store.
+
+### Round 7: narrated headlines call a component ready when it isn't
+
+- **Fixture:** monorepo-mixed, re-audit.
+- **Failure mode:** in 2 of 3 monorepo-mixed runs the headline said "shared is ready" with shared at Level 1, and the headline judge gave 0.30.
+- **Lever:** script check (lever 3). The seal refuses a narrated headline that calls a component below Level 2 ready, so the agent rewrites it.
+- **New test:** `tests/review-2.test.ts` "the seal refuses a narrated headline that calls a component below Level 2 ready".
+
+| Measure (3 runs) | Before | After |
+| --- | --- | --- |
+| monorepo-mixed headline judge | 0.50 | 0.88 |
+| monorepo-mixed headlines calling a Level 1 component ready | 2 of 3 | 0 of 3 |
+
+- **Verdict:** kept.
+
+### Round 8: the audit stops to ask for a registry token
+
+- **Fixture:** needs-private-registry/no-token.
+- **Failure mode:** in 1 of 3 runs the agent stopped to ask for `NPM_TOKEN` and never sealed, failing four gates.
+- **Lever:** wording in SKILL.md (lever 1). Without the variable, seal the audit as it stands and name the variable in the reply.
+- **New test:** `tests/review-2.test.ts` "SKILL.md says to seal without a registry token".
+
+| Measure (3 runs) | Before | After |
+| --- | --- | --- |
+| All hard gates | 2/3 | 3/3 |
+
+- **Verdict:** kept.
+
+### A repo-wide command only fills in where a component has none
+
+The round-1 fix counted every repo-wide (`*`) command for every component. In re-audit, the agent added the documented root `npm test`, which runs every workspace and failed on api's Postgres, and shared and worker dropped to Level 0 for it (levels gate 1 of 3).
+
+A component's own commands of a kind now decide that kind, and a repo-wide command counts only for components with none of their own. Two own test commands still both have to pass. Re-audit went back to 3 of 3.
+
+### Final run (November 1, 2026)
+
+Claude Opus 5.5 as driver and judge, through the SDK, on the committed scripts. Recorded in [baseline.json](baseline.json).
+
+| Measure | External driver, Oct 29 | SDK driver, Nov 1 |
+| --- | --- | --- |
+| Cases | 17 | 25 |
+| All hard gates on 3 of 3 repeats | 17 of 17 | 25 of 25 |
+| Headline judge (bar 0.8) | 0.88 | 0.86 |
+| Page judge (tracked) | 0.70 | 0.65 |
+
+The two columns use different drivers and judges, so read them as two baselines, not a trend: the earlier judges were subagents grading prompts one at a time, and these are SDK agents. The eight added cases are the field-shape fixtures and their no-container variants. The agents ran on a machine whose global Cursor skills and rules were loaded, which a clean CI runner won't have.
+
+- **Lowest headline scores:** re-audit (0.58), nested-apps-dotnet (0.65) and no-container-runtime (0.65).
+  - Re-audit loses on headlines that say "Level 2" without its meaning, or pair a level change with an outcome.
+  - No-container-runtime loses on "nothing in the repo blocks agents" when Level 1 isn't proven.
+- **Next failure mode:** narrated headlines on unproven or multi-audit reports.

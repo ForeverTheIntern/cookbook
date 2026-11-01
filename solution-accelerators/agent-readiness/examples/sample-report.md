@@ -41,8 +41,8 @@ Effort against impact (impact is the share of recent changes an action unblocks)
 4 of 8 steps done. Kept in `.agent-readiness/roadmap.json`. Owner: Platform team.
 
 - [x] 1. Name an owner for agent readiness: unlocks a named owner for approvals, targets and the weekly recheck (done Oct 30)
-- [x] 2. Fix the stale agent instructions: unlocks shared to Level 2 once Level 1 is proven in a clean container (done Oct 30)
-- [x] 3. Set up Postgres for agents in api: unlocks no level change yet (done Oct 30)
+- [x] 2. Set up Postgres for agents in api: unlocks api to Level 1 (done Oct 30)
+- [x] 3. Fix the stale agent instructions: unlocks shared to Level 2 (done Oct 30)
 - [x] 4. Check api's tests with planted faults: unlocks nothing on its own; first needs Set up Postgres for agents in api (done Oct 30)
 - [ ] 5. Make worker's tests catch wrong behavior: unlocks worker to Level 2 (next)
 - [ ] 6. Set your Level 3 targets: unlocks a definition of Level 3 for this repo (later)
@@ -53,7 +53,7 @@ Effort against impact (impact is the share of recent changes an action unblocks)
 
 | Date | Record | Repo | api | shared | worker |
 |---|---|---|---|---|---|
-| Oct 27 | audit | 0 | 0 | 0 | 0 |
+| Oct 27 | audit | 0 | 0 | 1 | 1 |
 | Oct 30 | audit | 1 | 2 | 2 | 1 |
 | Nov 6 | recheck | 1 | 2 | 2 | 1 |
 | Nov 13 | recheck failed, npm run lint failed: src/money.js: remove console.log | 1 | 2 | 1 | 1 |
@@ -66,8 +66,8 @@ A failed recheck lowers a level and a later passing recheck restores it. Only an
 
 | Step | Closed | Expected | Observed after |
 |---|---|---|---|
-| 2. Fix the stale agent instructions | Oct 30 | Agents stop following stale steps, such as running pnpm in a repo that doesn't use it. Watch: Agent PRs that add a stray pnpm-lock.yaml, 11% (1 of 9). | 11% (1 of 9) to 0% (0 of 17) (closed with step 3 and step 4) |
-| 3. Set up Postgres for agents in api | Oct 30 | Agents can run api's checks before they push, so fewer agent PRs fail CI the first time. Watch: Share of agent PRs touching api that pass CI the first time, 20% (1 of 5). | 20% (1 of 5) to 78% (7 of 9) (closed with step 2 and step 4) |
+| 2. Set up Postgres for agents in api | Oct 30 | Agents can run api's checks before they push, so fewer agent PRs fail CI the first time. Watch: Share of agent PRs touching api that pass CI the first time, 20% (1 of 5). | 20% (1 of 5) to 78% (7 of 9) (closed with step 3 and step 4) |
+| 3. Fix the stale agent instructions | Oct 30 | Agents stop following stale steps, such as running pnpm in a repo that doesn't use it. Watch: Agent PRs that add a stray pnpm-lock.yaml, 11% (1 of 9). | 11% (1 of 9) to 0% (0 of 17) (closed with step 2 and step 4) |
 | 4. Check api's tests with planted faults | Oct 30 | Changes in api get a real pass-or-fail signal, so reviewers catch less by hand. Watch: Share of agent PRs touching api where a reviewer requested changes, 40% (2 of 5). | 40% (2 of 5) to 11% (1 of 9) (closed with step 2 and step 3) |
 
 Movement after a step closed, not proof that the step caused it. Each step shows its own measure; steps closed in the same audit share the window after it, so a change can't be credited to one of them.
@@ -204,7 +204,7 @@ Evidence strength, weakest to strongest: stated in docs, read from files, ran on
 - **Rubric:** 2026-11-alpha
 - **Permission tier:** local-exec
 - **Seal:** Scripts match the agent-readiness-v0.1.0 manifest bundled with this copy; the published release isn't checked here, and the seal is an unkeyed digest, which shows edits but not who sealed it
-- **Skill digest:** c18125b2b6d3
+- **Skill digest:** 69143fa1640c
 - **Planted faults:** seed pinned (eval run; not a production result)
 - **Replay environment:** docker container, node:22-bookworm
 - **Stored in:** .agent-readiness/history/audits/aud-2026-11-30-9a2c092-ae7a

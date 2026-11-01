@@ -145,8 +145,10 @@ export function listFiles(root: string, opts: { includeHidden?: boolean; maxFile
   return out;
 }
 
+// A repo-wide step names "the repo" in prose, and its commands take no --component.
 export function fill(template: string, vars: Record<string, string | number>): string {
-  return template.replace(/\{(\w+)\}/g, (match, key: string) => (key in vars ? String(vars[key]) : match));
+  const out = template.replace(/\{(\w+)\}/g, (match, key: string) => (key in vars ? String(vars[key]) : match));
+  return vars.component === "the repo" ? out.replace(/ --component the repo\b/g, "") : out;
 }
 
 export function fail(message: string, code = 1): never {

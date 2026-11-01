@@ -100,8 +100,11 @@ export function serviceKey(label: string): string | null {
 }
 
 export function renderEnvFiles(audit: Audit, services: string[], opts: { dockerfile: boolean }): EnvFiles {
-  const install = audit.contract.find((c) => c.kind === "install");
-  if (!install) fail("The audit has no install command to build the environment setup from.");
+  // The readiness installs, never the repo's declared one: after a first draft that is this very
+  // script, and calling it from itself would never end.
+  const installs = audit.contract.filter((c) => c.kind === "install" && c.source === "readiness");
+  if (installs.length === 0) fail("The audit has no install command to build the environment setup from.");
+  const installLines = installs.map((c) => (c.cwd === "." ? c.command : `(cd ${JSON.stringify(c.cwd)} && ${c.command})`)).join("\n");
   const svc = services.map((s) => {
     const def = SERVICES[s];
     if (!def) fail(`Unsupported service ${s}. Supported: ${Object.keys(SERVICES).join(", ")}`);
@@ -109,7 +112,7 @@ export function renderEnvFiles(audit: Audit, services: string[], opts: { dockerf
   });
   const sudo = 'SUDO=""; if [ "$(id -u)" != "0" ] && command -v sudo >/dev/null 2>&1; then SUDO="sudo"; fi';
   const aptLine = svc.length ? `if ! dpkg -s ${svc.map((s) => s.apt).join(" ")} >/dev/null 2>&1; then\n  $SUDO apt-get update -qq\n  DEBIAN_FRONTEND=noninteractive $SUDO apt-get install -y -qq ${svc.map((s) => s.apt).join(" ")} >/dev/null\nfi\n` : "";
-  const installSh = `#!/usr/bin/env bash\n# Installs what agents need to build and test this repo. Safe to rerun.\nset -euo pipefail\n${sudo}\n${aptLine}${install.command}\n`;
+  const installSh = `#!/usr/bin/env bash\n# Installs what agents need to build and test this repo. Safe to rerun.\nset -euo pipefail\n${sudo}\n${aptLine}${installLines}\n`;
   const startLines = svc.map((s) => `${s.start}\nfor i in $(seq 1 30); do\n  if ${s.ready}; then break; fi\n  sleep 1\n  if [ "$i" = 30 ]; then echo "${s.label} didn't become ready" >&2; exit 1; fi\ndone`).join("\n");
   const startSh = `#!/usr/bin/env bash\n# Starts the local services tests need and waits until they are ready. Safe to rerun.\nset -euo pipefail\n${sudo}\n${startLines || "true"}\n`;
   const env: Record<string, unknown> = { name: `${audit.repo.name} agents`, install: "bash scripts/agent-install.sh", start: "bash scripts/agent-start.sh" };

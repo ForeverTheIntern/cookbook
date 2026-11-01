@@ -44,11 +44,17 @@ The headline says what holds the repo level and where. It doesn't list everythin
 
 - Every rate shows its n and its window. Below 5, the report shows counts only.
 - Agent PRs always sit next to other PRs from the same window. A later report adds the previous window; it doesn't replace the comparison.
-- A closed step's observed value comes from its own watch metric and scope, in the window after it closed. When several steps closed together, the value is shared and says so. A repo-wide number is never credited to one step.
+- A closed step's observed value comes from its own watch metric and scope, in the window after it closed. When several steps closed in one audit, each keeps its own value, and the report says they share the window, so the change can't be credited to one of them. A repo-wide number is never credited to one step.
 - The trend caveat sits next to the numbers: a trend, not attribution. Model updates or a different mix of tasks could account for part of a change.
 - A PR that touches several components counts in each, and the component table says its rows can add up to more than the total.
 
 ## The header
 
-- "Seal verified against release vX": the scripts that ran the audit match a tagged release. "Seal not verified" means they don't, or no release manifest shipped with the copy.
+- "Scripts match the vX manifest bundled with this copy": the scripts that ran the audit match the release manifest shipped with them. `verify-seal --release-repo` checks the published release. "Seal not verified" means they don't, or no release manifest shipped with the copy.
+- "The seal is keyed": the audit was sealed with `SA_READINESS_SEAL_KEY`, an HMAC key kept as a CI secret, and `verify-seal` needs the same key. "An unkeyed digest" catches edits, but anyone with the scripts could reseal an edited audit.
 - "Eval run with a pinned seed": the planted-fault seed came from `SA_READINESS_EVAL_SEED`. `readiness verify-seal` won't treat it as a production result.
+- "Outcomes come from a recorded PR file": the outcome numbers were read from `--outcomes-input`, not from GitHub. Anyone can write such a file, so `verify-seal` won't treat the audit as a production result either.
+
+## Planted faults
+
+Where each fault was planted stays outside the repository until the seal: the draft audit holds only each fault's result, and `status` and the replay log give counts. The sealed audit and part 4 then name each missed fault's operator, file and line, so the tests can be fixed.

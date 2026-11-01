@@ -14,8 +14,14 @@ export function isAgentPr(pr: PrRecord, f: Filter): boolean {
   if (f.branchPrefixes.some((p) => pr.headRefName.startsWith(p))) return true;
   if (f.labels.some((l) => pr.labels.includes(l))) return true;
   if (f.authors.some((a) => pr.author === a)) return true;
-  if (f.coAuthorTrailers.some((t) => (pr.coAuthors ?? []).some((c) => c.toLowerCase().includes(t.toLowerCase())))) return true;
+  if (f.coAuthorTrailers.some((t) => (pr.coAuthors ?? []).some((c) => coAuthorMatches(c, t)))) return true;
   return false;
+}
+
+// Whole words, so "Cursor" matches "Cursor Agent" and a one-letter filter doesn't match every name.
+export function coAuthorMatches(name: string, trailer: string): boolean {
+  const t = trailer.trim().replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  return t.length > 0 && new RegExp(`(^|[^\\w])${t}([^\\w]|$)`, "i").test(name);
 }
 
 export function emptyStats(): OutcomeStats {
@@ -58,7 +64,7 @@ export function componentsTouched(pr: PrRecord, comps: Component[]): string[] {
   return [...out];
 }
 
-export function computeOutcomes(prs: PrRecord[], comps: Component[], rubric: Rubric, filter: Filter, windowDays: number, source: "gh" | "file", pathPatterns: string[] = []): OutcomesSnapshot {
+export function computeOutcomes(prs: PrRecord[], comps: Component[], rubric: Rubric, filter: Filter, windowDays: number, source: "gh" | "file", pathPatterns: string[] = [], truncated = false): OutcomesSnapshot {
   const to = today();
   const from = addDays(to, -windowDays);
   const inWindow = prs.filter((p) => p.createdAt.slice(0, 10) >= from && p.createdAt.slice(0, 10) <= to);
@@ -83,6 +89,7 @@ export function computeOutcomes(prs: PrRecord[], comps: Component[], rubric: Rub
     byComponent,
     matchedAgentPrs: agent.map((p) => p.number),
     multiComponentPrs: multi,
+    ...(truncated ? { truncated } : {}),
   };
 }
 
@@ -116,17 +123,25 @@ interface CheckRuns {
   check_runs: { conclusion: string | null; status: string }[];
 }
 
-export function fetchPrs(repoSlug: string, windowDays: number, maxPrs = 300): PrRecord[] {
+export const MAX_PRS = 300;
+
+export function fetchPrs(repoSlug: string, windowDays: number, maxPrs = MAX_PRS): { prs: PrRecord[]; truncated: boolean } {
   const since = addDays(today(), -windowDays);
   const list = ghJson<GhPr[]>(["pr", "list", "--repo", repoSlug, "--state", "all", "--limit", String(maxPrs), "--search", `created:>=${since}`, "--json", "number,headRefName,author,labels,createdAt,mergedAt,state,files,reviews,commits"]);
+  return { prs: toRecords(repoSlug, list), truncated: list.length >= maxPrs };
+}
+
+function toRecords(repoSlug: string, list: GhPr[]): PrRecord[] {
   return list.map((p) => {
     let firstCheck: PrRecord["firstCheck"] = null;
     const first = p.commits[0]?.oid;
     if (first) {
       try {
-        const runs = ghJson<CheckRuns>(["api", `repos/${repoSlug}/commits/${first}/check-runs`, "-q", "{check_runs: [.check_runs[] | {conclusion, status}]}"]);
-        const done = runs.check_runs.filter((r) => r.status === "completed");
-        if (done.length) firstCheck = done.every((r) => r.conclusion === "success" || r.conclusion === "skipped" || r.conclusion === "neutral") ? "success" : "failure";
+        const runs = ghJson<CheckRuns>(["api", `repos/${repoSlug}/commits/${first}/check-runs?per_page=100`, "-q", "{check_runs: [.check_runs[] | {conclusion, status}]}"]);
+        // Unknown until every run finished, and a commit whose runs were all skipped proved nothing.
+        const all = runs.check_runs;
+        const ran = all.filter((r) => r.conclusion !== "skipped" && r.conclusion !== "neutral");
+        if (all.length && all.every((r) => r.status === "completed") && ran.length) firstCheck = ran.every((r) => r.conclusion === "success") ? "success" : "failure";
       } catch {
         firstCheck = null;
       }

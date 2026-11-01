@@ -225,6 +225,16 @@ function headlineFor(input: RenderInput, ready: string[], setByShare: number): s
   const their = many ? "their" : "its";
   if (rollup.level === 0) {
     const blockers = new Set(top.filter((t) => t.kind === "fix" && t.fixes.some((f) => rollup.setBy.includes(f.component) || f.component === "*")).map((t) => t.template));
+    // Components held back for different reasons are each named with their own.
+    const phrase: Record<string, string> = { "clean.install": "doesn't install from a clean checkout", "clean.test:missing": "has no tests", "clean.build": "doesn't build from a clean checkout" };
+    const own = rollup.setBy.map((id) => {
+      const t = top.find((x) => x.kind === "fix" && x.fixes.some((f) => f.component === id || f.component === "*"));
+      return { id, says: (t && phrase[t.template]) ?? "fails its tests from a clean checkout" };
+    });
+    if (many && new Set(own.map((o) => o.says)).size > 1) {
+      const each = list(own.map((o) => `${o.id} ${o.says}`));
+      return fit(`${each}, so agents can't check their changes there yet${share}.${readyLine}`, `${each}${share}.`);
+    }
     if (blockers.has("clean.install")) {
       const why = because(input, "clean.install", their);
       return fit(`${names} ${many ? "don't" : "doesn't"} install from a clean checkout${why}, so agents can't build or test ${many ? "them" : "it"} yet.${readyLine}`, `${names} ${many ? "don't" : "doesn't"} install from a clean checkout, so agents can't build or test ${many ? "them" : "it"} yet.${readyLine}`);
@@ -377,8 +387,14 @@ function coverageLine(input: RenderInput): string {
   const parts = [`The level covers ${assessed.length} ${assessed.length === 1 ? "component" : "components"}`];
   if (skipped.length) parts.push(`and ignores ${list(skipped.map((c) => `${c.id} (${pct(c.changeShare, 1)}% of changes, ${c.notAssessedReason})`))}`);
   let line = parts.join(" ") + ".";
-  const low = assessed.filter((c) => !input.active.has(c.id));
-  if (low.length) line += ` ${list(low.map((c) => c.id))} ${low.length > 1 ? "get" : "gets"} under 10% of changes, so ${low.length > 1 ? "they don't" : "it doesn't"} set the repo level.`;
+  const threshold = input.rubric.repoLevel.activeShare;
+  const share = `${Math.round(threshold * 100)}%`;
+  const low = assessed.filter((c) => !input.active.has(c.id) && c.changeShare < threshold);
+  const held = assessed.filter((c) => !input.active.has(c.id) && c.changeShare >= threshold);
+  const fallback = assessed.filter((c) => input.active.has(c.id) && c.changeShare < threshold);
+  if (low.length) line += ` ${list(low.map((c) => c.id))} ${low.length > 1 ? "get" : "gets"} under ${share} of changes, so ${low.length > 1 ? "they don't" : "it doesn't"} set the repo level.`;
+  if (held.length) line += ` ${list(held.map((c) => c.id))} crossed ${share} of changes in this audit only; ${held.length > 1 ? "they set" : "it sets"} the repo level once ${held.length > 1 ? "they stay" : "it stays"} there for a second audit.`;
+  if (fallback.length) line += ` No assessed component gets ${share} of changes, so the largest, ${fallback[0].id}, sets the repo level.`;
   if (input.partial.partial) line += ` Partial coverage: ${pct(input.partial.unassessedShare, 1)}% of changes aren't assessed.`;
   if (audit.tier !== "read-only" && !audit.environment.containerRuntime && audit.evidence.some((e) => e.where === "fresh_copy")) {
     const declared = audit.profile?.environmentJson?.build?.dockerfile;
@@ -524,7 +540,7 @@ export function buildReport(input: RenderInput): ReportJson {
               title: `${i.order}. ${i.title}`,
               closed: i.closedAt as string,
               expected: `${i.expected.outcome} Watch: ${metricLabel(i.expected.watch.metric, i.expected.watch.scope)}, ${i.expected.watch.baseline}.`,
-              observed: i.observed ? `${i.observed.value}${i.observed.sharedWith.length ? ` (shared with ${list(i.observed.sharedWith.map((s) => `step ${roadmap.items.find((x) => x.id === s)?.order ?? s}`))})` : ""}` : "not measurable yet: needs a full outcome window after the fix",
+              observed: i.observed ? `${i.observed.value}${i.observed.sharedWith.length ? ` (closed with ${list(i.observed.sharedWith.map((s) => `step ${roadmap.items.find((x) => x.id === s)?.order ?? s}`))})` : ""}` : "not measurable yet: needs a full outcome window after the fix",
             })),
           weakening: input.weakening,
           rubricChanges: allLines.slice(1).filter((h, i) => h.rubric !== allLines[i].rubric).map((h, i) => ({ date: h.date, from: allLines[i].rubric, to: h.rubric })),
@@ -797,7 +813,8 @@ export function renderMarkdown(r: ReportJson, rubric: Rubric): string {
   const out: string[] = [];
   const ex = r.executive;
   out.push(`# Agent readiness: ${r.repo}`, "");
-  out.push(`> ${r.audit.seedPinned ? "Eval run with a pinned seed; not a production result. " : ""}${r.audit.sealStatus}.${r.audit.staleCopy ? ` ${r.audit.staleCopy}` : ""}`, "");
+  const fromFile = r.details.outcomes !== null && r.details.outcomes.source !== "GitHub through gh";
+  out.push(`> ${r.audit.seedPinned ? "Eval run with a pinned seed; not a production result. " : fromFile ? "Outcomes come from a recorded PR file, not GitHub; not a production result. " : ""}${r.audit.sealStatus}.${r.audit.staleCopy ? ` ${r.audit.staleCopy}` : ""}`, "");
   const conf = r.maturity.confidence;
   out.push(`## 1. Where you stand: ${ex.heading}`, "", `Audited ${fmtDate(r.audit.date)} at ${r.audit.commit}. Confidence: ${conf.level} (${conf.reasons.join("; ")}).`, "", `**${ex.headline}**`, "");
   for (const n of ex.numbers) out.push(`- **${n.label}:** ${n.value}. ${n.comparison}.`);
@@ -837,7 +854,7 @@ export function renderMarkdown(r: ReportJson, rubric: Rubric): string {
     if (r.progress.closed.length) {
       out.push("### What each closed step was expected to move, and what moved after it", "", "| Step | Closed | Expected | Observed after |", "|---|---|---|---|");
       for (const c of r.progress.closed) out.push(`| ${c.title} | ${fmtShortDate(c.closed)} | ${c.expected} | ${c.observed} |`);
-      out.push("", "Movement after a step closed, not proof that the step caused it. Steps closed in the same window share one value.", "");
+      out.push("", "Movement after a step closed, not proof that the step caused it. Each step shows its own measure; steps closed in the same audit share the window after it, so a change can't be credited to one of them.", "");
     }
     if (r.progress.weakening) out.push(r.progress.weakening, "");
   }

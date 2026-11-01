@@ -36,7 +36,10 @@ export function statusFor(asset: Pick<Asset, "kind" | "path" | "frontmatterOk" |
   if (notRun > 0) return { status: `${notRun} ${notRun === 1 ? "command" : "commands"} not checked`, ok: false };
   if (asset.kind === "skill" && asset.frontmatterOk === false) return { status: "Frontmatter is missing a name or description", ok: false };
   if (asset.elevated) return { status: `Present; flagged for review: ${asset.elevated}`, ok: true };
-  return { status: mine.length > 0 ? "Replays" : "Present", ok: true };
+  const replayed = mine.filter((i) => i.result === "pass" && i.category === "replay").length;
+  const unchecked = mine.filter((i) => i.result === "not_run").length;
+  if (replayed === 0 && unchecked > 0) return { status: `Present; ${unchecked} ${unchecked === 1 ? "command needs" : "commands need"} access the replay doesn't give, so ${unchecked === 1 ? "it wasn't" : "they weren't"} run`, ok: true };
+  return { status: replayed > 0 ? "Replays" : "Present", ok: true };
 }
 
 // The sudo command is flagged, not the whole setup: a declared image can grant passwordless sudo.

@@ -67,7 +67,7 @@ export function candidates(ctx: RoadmapContext): Candidate[] {
   const anyRepo = assessed[0] ? ctx.states.get(assessed[0].id) : undefined;
   const credentialComps: string[] = [];
   if (assessed.some((c) => ctx.states.get(c.id)?.["clean.install"].state === "not_met")) {
-    const ev = latestEvidence(audit, (e) => e.kind === "install");
+    const ev = latestEvidence(audit, (e) => e.kind === "install" && e.result === "fail") ?? latestEvidence(audit, (e) => e.kind === "install");
     out.push({ id: "clean.install:repo", template: "clean.install", kind: "fix", component: "*", fixes: assessed.map((c) => ({ condition: "clean.install" as CondId, component: c.id })), vars: { component: "the repo", diagnosis: ev?.diagnosis?.detail ?? ev?.summary ?? "the install failed" }, evidence: ev ? [ev.id] : [] });
   }
   for (const c of assessed) {
@@ -389,7 +389,8 @@ export function updateRoadmap(prev: Roadmap | null, ctx: RoadmapContext): Roadma
 function fillObserved(roadmap: Roadmap, ctx: RoadmapContext): void {
   const o = ctx.outcomes;
   if (!o) return;
-  for (const item of roadmap.items.filter((i) => i.status === "done" && i.closedAt)) {
+  // The first window after a step closed is the one it's judged on; later windows don't replace it.
+  for (const item of roadmap.items.filter((i) => i.status === "done" && i.closedAt && !i.observed)) {
     if (!(o.window.from >= (item.closedAt as string))) continue;
     const [metric, pattern] = item.expected.watch.metric.split(":");
     const now = watchFor(metric, item.expected.watch.scope, o, ctx.rubric, pattern);

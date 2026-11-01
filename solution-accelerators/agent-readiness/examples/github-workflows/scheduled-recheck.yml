@@ -14,6 +14,9 @@ env:
   SA_ACCELERATOR_REPO: cursor/cookbook
   SA_ACCELERATOR_REF: agent-readiness-v0.1.0
   SA_READINESS: node --experimental-strip-types --no-warnings .readiness-accelerator/solution-accelerators/agent-readiness/skill/agent-readiness/scripts/readiness.ts
+  # The key the audits were sealed with. Without it, seals are unkeyed digests: they catch edits,
+  # but anyone with the scripts could reseal an edited audit.
+  SA_READINESS_SEAL_KEY: ${{ secrets.AGENT_READINESS_SEAL_KEY }}
 jobs:
   recheck:
     runs-on: ubuntu-latest

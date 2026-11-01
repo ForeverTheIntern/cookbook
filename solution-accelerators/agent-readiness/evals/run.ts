@@ -2,7 +2,7 @@ import { spawn } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from "node:fs";
 import { basename, dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { compare, summarize, writeJunit } from "./lib/baseline.ts";
+import { compare, crashedRun, summarize, writeJunit } from "./lib/baseline.ts";
 import type { Baseline } from "./lib/baseline.ts";
 import { gradeCase, latestReport } from "./lib/grade.ts";
 import { renderMarkdown } from "../skill/agent-readiness/scripts/lib/render.ts";
@@ -81,7 +81,10 @@ async function worker(flags: Record<string, string | true>): Promise<void> {
 function spawnWorker(c: EvalCase, repeat: number, model: string, out: string, timeoutMin: string): Promise<void> {
   return new Promise((done) => {
     const child = spawn(process.execPath, ["--experimental-strip-types", "--no-warnings", fileURLToPath(import.meta.url), "--worker", "--case", c.id, "--repeat", String(repeat), "--model", model, "--out", out, "--timeout-min", timeoutMin], { stdio: ["ignore", "inherit", "inherit"], env: process.env });
-    child.on("close", () => done());
+    child.on("close", (code, signal) => {
+      if (!existsSync(out)) writeFileSync(out, JSON.stringify({ run: crashedRun(c, repeat, model, `the worker exited ${signal ? `on ${signal}` : `with code ${code}`} without a result`) }, null, 2));
+      done();
+    });
   });
 }
 

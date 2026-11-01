@@ -6,7 +6,7 @@ import { compareAudits, weakeningFlags } from "./lib/diff.ts";
 import { addEvidence, recordObservation } from "./lib/evidence.ts";
 import { ghAvailable, ghJson } from "./lib/gh.ts";
 import { auditIds, loadSealedAudit, pushHistory, readHistory, readRoadmap, writeRoadmap } from "./lib/history.ts";
-import { computeOutcomes, fetchPrs, loadPrsFile } from "./lib/outcomes.ts";
+import { MAX_PRS, computeOutcomes, fetchPrs, loadPrsFile } from "./lib/outcomes.ts";
 import { buildProfile } from "./lib/profile.ts";
 import { redact } from "./lib/redact.ts";
 import { evidenceFromPhase, hostExecutor, newBudget, registryValuesOf, replay, runContract } from "./lib/replay.ts";
@@ -293,6 +293,7 @@ function cmdOutcomes(a: Args): void {
   const days = Number(str(a, "window-days", String(rubric.outcomes.windowDays)));
   let prs;
   let source: "gh" | "file";
+  let truncated = false;
   const input = opt(a, "input");
   if (input) {
     prs = loadPrsFile(resolve(input));
@@ -301,13 +302,15 @@ function cmdOutcomes(a: Args): void {
     requireTier(audit, "external-systems", "Reading pull requests from GitHub");
     if (!ghAvailable()) fail("gh isn't authenticated. Run `gh auth login`, or pass --input with a recorded PR file.");
     const slug = opt(a, "repo-slug") ?? ghJson<{ nameWithOwner: string }>(["repo", "view", "--json", "nameWithOwner"], repo).nameWithOwner;
-    prs = fetchPrs(slug, days);
+    ({ prs, truncated } = fetchPrs(slug, days));
     source = "gh";
   }
-  audit.outcomes = computeOutcomes(prs, audit.profile.components, rubric, filter, days, source, lockPatterns(audit));
+  audit.outcomes = computeOutcomes(prs, audit.profile.components, rubric, filter, days, source, lockPatterns(audit), truncated);
   saveDraft(p, audit);
   const o = audit.outcomes;
   log(`Outcomes ${o.window.from} to ${o.window.to}: ${o.agent.opened} agent PRs (${o.agent.merged} merged), ${o.control.opened} other PRs. Filter: ${JSON.stringify(filter)}.`);
+  if (source === "file") log("Outcomes from a recorded PR file make this an eval audit: verify-seal won't accept it as a production result.");
+  if (truncated) log(`gh returned ${MAX_PRS} PRs, its cap, so the window may hold more. Level 3 isn't measured from a partial window.`);
 }
 
 function cmdNarrate(a: Args): void {
@@ -398,7 +401,7 @@ function cmdVerify(a: Args): void {
   const r = verifySeal(p, audit.id, { releaseRepo: opt(a, "release-repo"), releaseRef: opt(a, "release-ref"), tierExternal: opt(a, "tier") === "external-systems" || audit.tier === "external-systems" });
   for (const l of r.lines) log(l);
   if (!r.ok) fail("Seal verification failed.", 2);
-  if (!r.production && !a.flags["allow-eval"]) fail("This is an eval audit (pinned seed), not a production result. Pass --allow-eval to accept it.", 3);
+  if (!r.production && !a.flags["allow-eval"]) fail(`This is an eval audit (${audit.seed.pinned ? "pinned seed" : "outcomes from a recorded PR file"}), not a production result. Pass --allow-eval to accept it.`, 3);
 }
 
 async function cmdRecheck(a: Args): Promise<void> {

@@ -126,6 +126,15 @@ export function componentStates(audit: Audit, rubric: Rubric, componentId: strin
   return states;
 }
 
+// Says what was checked and what wasn't run, so a list of skipped commands never reads as verified.
+function instructionsMetReason(items: Audit["instructions"]): string {
+  if (items.length === 0) return "no agent instructions to check";
+  const notRun = items.filter((i) => i.result === "not_run").length;
+  const checked = items.length - notRun;
+  if (notRun === 0) return `${items.length} instruction items check out`;
+  return `${checked} of ${items.length} instruction items check out; ${notRun} weren't run because they need access, run long or are risky`;
+}
+
 export function repoStates(audit: Audit, rubric: Rubric): Record<"instructions" | "safety" | "toolchain" | "lockfile", CondDetail> {
   const items = audit.instructions;
   const failed = items.filter((i) => i.result === "fail");
@@ -138,7 +147,7 @@ export function repoStates(audit: Audit, rubric: Rubric): Record<"instructions" 
         ? { state: "blocked", reason: `${pending.length} instruction commands couldn't be replayed: ${pending[0].blocked}`, evidence: insEvidence }
         : pending.length > 0
           ? { state: "unknown", reason: `${pending.length} instruction commands haven't been replayed`, evidence: insEvidence }
-          : { state: "met", reason: items.length ? `${items.length} instruction items check out` : "no agent instructions to check", evidence: insEvidence };
+          : { state: "met", reason: instructionsMetReason(items), evidence: insEvidence };
   const blocking = audit.safety.filter((s) => s.blocking);
   const safety: CondDetail = blocking.length > 0 ? { state: "not_met", reason: blocking.map((b) => b.detail).join("; "), evidence: [] } : { state: "met", reason: "no blocking safety findings", evidence: [] };
   const tc = audit.profile?.toolchain;

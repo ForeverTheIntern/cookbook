@@ -41,12 +41,13 @@ export function scenariosFor(rubric: Rubric, specs: ScenarioSpec[], componentId:
 
 export function activeComponents(rubric: Rubric, components: Component[], previous: HistoryLine[]): Set<string> {
   const threshold = rubric.repoLevel.activeShare;
-  const prev = previous.filter((h) => h.kind === "audit");
+  const prev = previous.filter((h) => h.kind === "audit" && !h.noLevel);
   const last = prev[prev.length - 1];
   const active = new Set<string>();
   for (const c of components.filter((x) => x.assessed)) {
     const nowAbove = c.changeShare >= threshold;
-    if (!last) {
+    // A component the last audit never saw has no earlier share to wait for.
+    if (!last || !(c.id in last.shares)) {
       if (nowAbove) active.add(c.id);
       continue;
     }
@@ -83,7 +84,7 @@ export function partialCoverage(rubric: Rubric, components: Component[]): { part
 export interface OutcomeLevelInput {
   level2: boolean;
   targets: Targets | null;
-  outcomes: { agent: OutcomeStats; control: OutcomeStats } | null;
+  outcomes: { agent: OutcomeStats; control: OutcomeStats; truncated?: boolean } | null;
   // The agent PRs of the last audit where this component was at Level 3 or above.
   previousAtLevel3: OutcomeStats | null;
 }
@@ -107,6 +108,7 @@ export function outcomeLevel(rubric: Rubric, input: OutcomeLevelInput): { level:
   if (!input.level2) return { level: null, reasons: [] };
   if (!input.targets) return { level: null, reasons: ["no Level 3 targets are recorded"] };
   if (!input.outcomes) return { level: null, reasons: ["outcomes weren't measured in this audit"] };
+  if (input.outcomes.truncated) return { level: null, reasons: ["the PR window held more PRs than gh returns at once, so Level 3 isn't measured from a partial window"] };
   const t = targetsMet(rubric, input.targets, input.outcomes);
   if (!t.met) return { level: null, reasons: t.reasons };
   const prev = input.previousAtLevel3;

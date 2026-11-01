@@ -633,7 +633,8 @@ exit 1
     const old = process.env.PATH;
     process.env.PATH = `${bin}:${old}`;
     try {
-      const prs = fetchPrs("example-org/example", 30);
+      const { prs, truncated } = fetchPrs("example-org/example", 30);
+      assert.equal(truncated, false);
       assert.equal(prs.length, 1);
       assert.equal(prs[0].firstCheck, "failure");
       assert.equal(prs[0].changesRequested, true);

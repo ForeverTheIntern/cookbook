@@ -37,25 +37,50 @@ export function writeRoadmap(p: Paths, roadmap: Roadmap): void {
   writeJson(p.roadmap, roadmap);
 }
 
+// A fresh clone has only the remote-tracking branch, and reading neither would start the history
+// over and let the next push overwrite it.
+export function showFromBranch(repo: string, path: string): string | null {
+  for (const ref of [HISTORY_BRANCH, `origin/${HISTORY_BRANCH}`]) {
+    const r = git(["show", `${ref}:${path}`], repo);
+    if (r.ok) return r.stdout;
+  }
+  return null;
+}
+
 export function appendHistory(p: Paths, line: HistoryLine): void {
   const f = join(p.history, "history.jsonl");
   const text = JSON.stringify(line) + "\n";
   guardSecrets("the history line", text);
   ensureDir(p.history);
-  let prev = "";
-  if (exists(f)) prev = readText(f);
-  else {
-    const fromBranch = git(["show", `${HISTORY_BRANCH}:history.jsonl`], p.repo);
-    if (fromBranch.ok) prev = fromBranch.stdout;
-  }
+  const prev = exists(f) ? readText(f) : (showFromBranch(p.repo, "history.jsonl") ?? "");
   writeText(f, prev + text);
 }
 
 export function readHistory(p: Paths): HistoryLine[] {
   const f = join(p.history, "history.jsonl");
   if (exists(f)) return parseHistory(readText(f));
-  const fromBranch = git(["show", `${HISTORY_BRANCH}:history.jsonl`], p.repo);
-  return fromBranch.ok ? parseHistory(fromBranch.stdout) : [];
+  const fromBranch = showFromBranch(p.repo, "history.jsonl");
+  return fromBranch ? parseHistory(fromBranch) : [];
+}
+
+// Lines from both copies, each id once, in the order they were first written.
+export function mergeHistory(...texts: string[]): string {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const line of texts.flatMap((t) => t.split("\n")).filter((l) => l.trim())) {
+    const id = (JSON.parse(line) as HistoryLine).id;
+    if (seen.has(id)) continue;
+    seen.add(id);
+    out.push(line);
+  }
+  return out.length ? out.join("\n") + "\n" : "";
+}
+
+// A sealed file from the local history folder, or from the history branch when the audit came from there.
+export function readSealedFile(p: Paths, dir: string, name: string): string | null {
+  if (exists(join(dir, name))) return readText(join(dir, name));
+  const m = dir.match(/^[^:]+:(audits\/.+)$/);
+  return m ? showFromBranch(p.repo, `${m[1]}/${name}`) : null;
 }
 
 function parseHistory(text: string): HistoryLine[] {
@@ -80,8 +105,8 @@ export function loadSealedAudit(p: Paths, ref: string): { audit: Audit; dir: str
   }
   const dir = join(p.history, "audits", id);
   if (exists(join(dir, "audit.json"))) return { audit: readJson<Audit>(join(dir, "audit.json")), dir };
-  const fromBranch = git(["show", `${HISTORY_BRANCH}:audits/${id}/audit.json`], p.repo);
-  if (fromBranch.ok) return { audit: JSON.parse(fromBranch.stdout) as Audit, dir: `${HISTORY_BRANCH}:audits/${id}` };
+  const fromBranch = showFromBranch(p.repo, `audits/${id}/audit.json`);
+  if (fromBranch) return { audit: JSON.parse(fromBranch) as Audit, dir: `${HISTORY_BRANCH}:audits/${id}` };
   return fail(`No sealed audit ${id}`);
 }
 
@@ -107,7 +132,11 @@ export function pushHistory(p: Paths, opts: { push: boolean; remote: string }): 
       git(["checkout", "--orphan", HISTORY_BRANCH], wt);
       git(["rm", "-rf", "--quiet", "."], wt);
     }
+    const onBranch = exists(join(wt, "history.jsonl")) ? readText(join(wt, "history.jsonl")) : "";
+    const remoteText = hasLocal && hasRemote ? (git(["show", `${opts.remote}/${HISTORY_BRANCH}:history.jsonl`], p.repo).stdout ?? "") : "";
+    const localText = exists(join(p.history, "history.jsonl")) ? readText(join(p.history, "history.jsonl")) : "";
     cpSync(p.history, wt, { recursive: true });
+    writeText(join(wt, "history.jsonl"), mergeHistory(remoteText, onBranch, localText));
     git(["add", "-A"], wt);
     const status = git(["status", "--porcelain"], wt).stdout.trim();
     let message = "history branch already up to date";

@@ -30,7 +30,9 @@ function frozenInstall(pm: Profile["packageManager"], dir: string, ignoreScripts
     case "poetry":
       return { command: "poetry install --no-interaction --sync", reason: "install from poetry.lock" };
     case "pip": {
-      const req = exists(join(dir, "requirements.txt")) ? " -r requirements.txt" : exists(join(dir, "pyproject.toml")) ? " -e ." : "";
+      // The test runner is often only in requirements-dev.txt.
+      const dev = exists(join(dir, "requirements-dev.txt")) ? " -r requirements-dev.txt" : "";
+      const req = exists(join(dir, "requirements.txt")) ? ` -r requirements.txt${dev}` : exists(join(dir, "pyproject.toml")) ? ` -e .${dev}` : dev;
       return { command: `python3 -m venv ${VENV} && ${VENV}/bin/pip install -q --disable-pip-version-check${req}`, reason: "virtualenv install from requirements" };
     }
     default:

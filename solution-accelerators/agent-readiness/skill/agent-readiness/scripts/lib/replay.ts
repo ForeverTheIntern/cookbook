@@ -11,7 +11,7 @@ import type { Rubric } from "./rubric.ts";
 import { SUDO_SHIM_MARK, runCommand, scrubbedEnv } from "./run.ts";
 import type { RunOutcome } from "./run.ts";
 import type { Audit, CommandKind, CondId, ContractCommand, Diagnosis, Evidence, Mutant, Profile, Strength, Where } from "./types.ts";
-import { exists, fail, randomHex, readText, sha256 } from "./util.ts";
+import { exists, fail, randomHex, readJson, readText, sha256, writeJson } from "./util.ts";
 import { refreshTree } from "./workspace.ts";
 
 export interface Executor {
@@ -263,7 +263,7 @@ function lockfileEvidence(audit: Audit, ex: Executor, profile: Profile, copyDir:
   } else if (profile.lockfiles.length === 0) {
     result = "fail";
     summary = "no lockfile is committed";
-  } else if (installCmds.some((c) => c.source === "readiness" && !/(\bci\b|--frozen|--immutable|--frozen-lockfile)/.test(c.command))) {
+  } else if (installCmds.some((c) => c.source === "readiness" && !/(\bci\b|--frozen|--immutable|--frozen-lockfile|^poetry install\b.*--sync)/.test(c.command))) {
     result = "fail";
     summary = "the install isn't frozen";
   } else {
@@ -288,7 +288,7 @@ async function plantFaults(audit: Audit, repo: string, tree: string, ex: Executo
     return;
   }
   const mutants: Mutant[] = [];
-  let n = 1;
+  let n = audit.mutants.filter((m) => m.component === comp.id).length + 1;
   for (const site of sites) {
     const id = `mut-${comp.id}-${n++}`;
     if (overBudget(budget, comp.id)) {
@@ -324,10 +324,12 @@ async function plantFaults(audit: Audit, repo: string, tree: string, ex: Executo
     }
     mutants.push({ id, component: comp.id, file: site.file, line: site.line, operator: site.operator, before: redact(site.before), after: redact(site.after), result, exitCodes: codes });
   }
-  audit.mutants.push(...mutants);
+  saveMutantDetails(tree, mutants);
+  audit.mutants.push(...mutants.map((m) => ({ id: m.id, component: m.component, result: m.result, exitCodes: m.exitCodes })));
   const counted = mutants.filter((m) => m.result === "caught" || m.result === "survived");
   const caught = counted.filter((m) => m.result === "caught").length;
   const operators = [...new Set(mutants.map((m) => m.operator))].join(", ");
+  const missed = mutants.filter((m) => m.result === "survived").map((m) => m.id);
   let result: "pass" | "fail" | "not_run";
   let summary: string;
   if (counted.length < rubric.mutation.minForPass) {
@@ -338,11 +340,36 @@ async function plantFaults(audit: Audit, repo: string, tree: string, ex: Executo
     summary = `caught ${caught} of ${counted.length} planted faults (tried: ${operators})`;
   } else {
     result = "fail";
-    const missed = mutants.filter((m) => m.result === "survived").map((m) => `${m.operator} at ${m.file}:${m.line}`);
-    summary = `caught ${caught} of ${counted.length} planted faults; missed: ${missed.join(", ")}`;
+    summary = `caught ${caught} of ${counted.length} planted faults; missed ${missed.length}${MISSED_AFTER_SEAL}`;
   }
   log(`  faults in ${comp.id}: ${summary}`);
-  addEvidence(audit, { checkId: "verify.behavioral_oracle", condition: "faults", component: comp.id, strength: ex.strength, where: ex.where, result, summary, image: ex.image ?? undefined });
+  addEvidence(audit, { checkId: "verify.behavioral_oracle", condition: "faults", component: comp.id, strength: ex.strength, where: ex.where, result, summary, image: ex.image ?? undefined, ...(missed.length ? { missedFaults: missed } : {}) });
+}
+
+const MISSED_AFTER_SEAL = " (the sealed report says where)";
+
+// Next to the audit tree, outside the repository, and deleted with it once the seal copies it in.
+export function mutantsFile(tree: string): string {
+  return join(dirname(tree), "mutants.json");
+}
+
+function saveMutantDetails(tree: string, mutants: Mutant[]): void {
+  const f = mutantsFile(tree);
+  const prior = exists(f) ? readJson<Mutant[]>(f) : [];
+  writeJson(f, [...prior, ...mutants]);
+}
+
+// At the seal, after every result is final: put each fault's site back and name the missed ones.
+export function revealMutants(audit: Audit, tree: string): void {
+  const f = mutantsFile(tree);
+  if (!exists(f)) return;
+  const details = new Map(readJson<Mutant[]>(f).map((m) => [m.id, m]));
+  audit.mutants = audit.mutants.map((m) => ({ ...details.get(m.id), ...m }));
+  for (const e of audit.evidence) {
+    if (!e.missedFaults?.length || !e.summary.endsWith(MISSED_AFTER_SEAL)) continue;
+    const where = e.missedFaults.map((id) => details.get(id)).filter((m): m is Mutant => Boolean(m)).map((m) => `${m.operator} at ${m.file}:${m.line}`);
+    if (where.length) e.summary = e.summary.replace(/; missed \d+ \(the sealed report says where\)$/, `; missed: ${where.join(", ")}`);
+  }
 }
 
 export function makeExecutor(audit: Audit, copyDir: string, runtimePref: string, log: (s: string) => void, imageOverride?: string): Executor {

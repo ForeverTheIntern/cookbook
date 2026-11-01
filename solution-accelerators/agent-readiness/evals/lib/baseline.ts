@@ -23,6 +23,12 @@ export interface Baseline {
   totals: { cases: number; allGatesPass: string; judgeAverage: number | null; pageAverage: number | null };
 }
 
+// A worker that crashes or times out still leaves a failing run, so a missing repeat can't make a
+// case look like it passed every gate.
+export function crashedRun(c: { id: string }, repeat: number, model: string, why: string): CaseRun {
+  return { id: c.id, repeat, model, driver: "sdk", workspace: "", grade: { gates: [{ name: "the run finished", pass: false, detail: why }], soft: { judge: null, judgeReasons: [], page: null, pageReasons: [], wallMs: 0, toolCalls: 0, tokens: null } }, error: why };
+}
+
 function avg(xs: number[]): number | null {
   return xs.length ? Math.round((xs.reduce((a, b) => a + b, 0) / xs.length) * 1000) / 1000 : null;
 }
@@ -67,6 +73,7 @@ export function compare(current: Baseline, base: Baseline): { regressions: strin
   const regressions: string[] = [];
   const flags: string[] = [];
   for (const [id, c] of Object.entries(current.cases)) {
+    if (c.runs < current.repeats) regressions.push(`${id}: only ${c.runs} of ${current.repeats} repeats left a result`);
     const b = base.cases[id];
     if (!b) continue;
     for (const [g, v] of Object.entries(c.gates)) if (b.gates[g] && ratio(v) < ratio(b.gates[g])) regressions.push(`${id}: "${g}" ${b.gates[g]} -> ${v}`);

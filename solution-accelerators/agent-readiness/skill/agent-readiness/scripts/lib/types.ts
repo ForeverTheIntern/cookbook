@@ -96,6 +96,8 @@ export interface Evidence {
   blocked?: string;
   // The flag that skipped this step on purpose, such as --no-mutants.
   skipped?: string;
+  // For a fault check, the planted faults the tests missed; the seal names where they were.
+  missedFaults?: string[];
   at: string;
 }
 
@@ -129,14 +131,16 @@ export interface SafetyFinding {
   blocking: boolean;
 }
 
+// Where a fault was planted stays outside the repository until the seal: the draft holds only
+// each fault's result, so nothing in the working tree says which lines the tests were checked on.
 export interface Mutant {
   id: string;
   component: string;
-  file: string;
-  line: number;
-  operator: string;
-  before: string;
-  after: string;
+  file?: string;
+  line?: number;
+  operator?: string;
+  before?: string;
+  after?: string;
   result: "caught" | "survived" | "discarded" | "not_run";
   exitCodes: number[];
 }
@@ -187,6 +191,8 @@ export interface OutcomesSnapshot {
   byComponent: Record<string, OutcomeStats>;
   matchedAgentPrs: number[];
   multiComponentPrs: number;
+  // gh returned as many PRs as it was asked for, so the window may hold more than were read.
+  truncated?: boolean;
 }
 
 export interface AuditSkillInfo {
@@ -219,7 +225,7 @@ export interface Audit {
   outcomes: OutcomesSnapshot | null;
   narration: Narration | null;
   signals?: Signal[];
-  sealed?: { at: string; digest: string; reportJsonDigest: string; reportMdDigest: string; roadmapItemsDigest?: string };
+  sealed?: { at: string; digest: string; reportJsonDigest: string; reportMdDigest: string; roadmapItemsDigest?: string; historyLineDigest?: string; keyed?: boolean };
 }
 
 // found is null when the signal doesn't apply, for example no AGENTS.md to measure.
@@ -302,7 +308,7 @@ export interface HistoryLine {
   commit: string;
   rubric: string;
   scriptsDigest: string;
-  result: "sealed" | "passed" | "failed";
+  result: "sealed" | "passed" | "failed" | "blocked";
   note?: string;
   // Each assessed component's standard level, and the repo rollup over the active ones.
   levels: Record<string, Level>;

@@ -2,6 +2,7 @@ import { execSync } from "node:child_process";
 import { mkdtempSync, readdirSync, rmSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { basename, join, relative, resolve } from "node:path";
+import { showFromBranch } from "./history.ts";
 import { latestRubricVersion, rubricDigest } from "./rubric.ts";
 import type { Audit, ScenarioSpec, Tier } from "./types.ts";
 import { SKILL_ROOT, ensureDir, exists, fail, git, gitOrThrow, nowIso, randomHex, readJson, readText, sha256, today, writeJson, writeText } from "./util.ts";
@@ -124,7 +125,7 @@ export function writeRecordsIgnore(p: Paths): void {
 
 function priorAudits(p: Paths): number {
   const local = join(p.history, "history.jsonl");
-  const text = exists(local) ? readText(local) : git(["show", "agent-readiness/history:history.jsonl"], p.repo).stdout;
+  const text = exists(local) ? readText(local) : (showFromBranch(p.repo, "history.jsonl") ?? "");
   return text.split("\n").filter((l) => l.includes('"kind":"audit"')).length;
 }
 

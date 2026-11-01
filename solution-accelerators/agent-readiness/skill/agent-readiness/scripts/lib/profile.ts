@@ -245,18 +245,38 @@ export function discoverLayout(tree: string, files: string[]): { components: Com
   }
   for (const c of comps) c.lockfile = lockfileIn(tree, c.path);
   const satelliteList = [...memberSatellites, ...(deferred ? [] : satellites.map((s) => ({ path: s.dir, manifest: s.manifest, toolchain: s.kind === "js" ? "Node" : s.kind === "py" ? "Python" : s.toolchain!, reason: s.reason })))];
-  if (comps.length === 1 && comps[0].path === ".") return { components: comps, satellites: satelliteList };
-  // Unsupported source with no manifest, such as infra/*.tf, is listed by its top-level folder.
+  // Unsupported source with no manifest, such as infra/*.tf, is listed by its top-level folder,
+  // next to a root package too, so the root doesn't take its share of changes.
+  const soleRoot = comps.length === 1 && comps[0].path === ".";
   const claimed = new Set([...comps.map((c) => c.path), ...satelliteList.map((s) => s.path)].map((p) => p.split("/")[0]));
-  const topDirs = [...new Set(files.filter((f) => f.includes("/")).map((f) => f.split("/")[0]))].filter((d) => !d.startsWith(".") && !claimed.has(d));
+  const topDirs = [...new Set(files.filter((f) => f.includes("/")).map((f) => f.split("/")[0]))].filter((d) => !d.startsWith(".") && !claimed.has(d) && !(soleRoot && NOT_A_PROJECT.test(d)));
   for (const dir of topDirs.sort()) {
     const inside = files.filter((f) => f.startsWith(dir + "/"));
     const hit = UNSUPPORTED.find((u) => inside.some((f) => u.ext.test(f)));
-    if (hit) {
+    // A Go root's own packages are part of it, not another project.
+    if (hit && !(soleRoot && comps[0].toolchain === hit.toolchain)) {
       comps.push({ id: sanitizeId(dir), path: dir, language: "other", manifest: null, scripts: {}, changes: 0, changeShare: 0, assessed: false, toolchain: hit.toolchain, lockfile: null, notAssessedReason: `${hit.toolchain} isn't supported by this rubric` });
     }
   }
-  return { components: comps, satellites: satelliteList };
+  return { components: uniqueIds(comps), satellites: satelliteList };
+}
+
+// Folders that hold a root package's own tests, docs and samples rather than another project.
+const NOT_A_PROJECT = /^(tests?|spec|__tests__|examples?|samples?|docs?|fixtures?|vendor|third_party|node_modules|scripts|bin|lib|src)$/;
+
+// Two folders with one name, such as apps/api and services/api, would merge into one component.
+function uniqueIds(comps: Component[]): Component[] {
+  const count = new Map<string, number>();
+  for (const c of comps) count.set(c.id, (count.get(c.id) ?? 0) + 1);
+  const taken = new Set<string>();
+  for (const c of comps) {
+    if ((count.get(c.id) ?? 0) > 1 && c.path !== ".") c.id = sanitizeId(c.path.replace(/\//g, "-"));
+    let id = c.id;
+    for (let i = 2; taken.has(id); i++) id = `${c.id}-${i}`;
+    c.id = id;
+    taken.add(id);
+  }
+  return comps;
 }
 
 function owningComponent(file: string, comps: Component[]): Component | null {

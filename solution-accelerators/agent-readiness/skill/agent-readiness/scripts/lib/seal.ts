@@ -1,14 +1,15 @@
+import { createHmac } from "node:crypto";
 import { mkdtempSync, rmSync } from "node:fs";
 import { refreshAssetStatus } from "./assets.ts";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { weakening, weakeningText } from "./diff.ts";
 import { ghJson } from "./gh.ts";
-import { appendHistory, loadSealedAudit, readHistory, readRoadmap, storeAudit, storeRecheck, writeLatest, writeRoadmap } from "./history.ts";
+import { appendHistory, loadSealedAudit, readHistory, readRoadmap, readSealedFile, storeAudit, storeRecheck, writeLatest, writeRoadmap } from "./history.ts";
 import type { LevelResult } from "./levels.ts";
 import { activeComponents, capAt, componentLevel, outcomeLevel, partialCoverage, previousAtLevel3, recheckStates, repoLevel, scenariosFor, statesOf } from "./levels.ts";
 import { emptyStats } from "./outcomes.ts";
-import { makeExecutor, newBudget, runContract } from "./replay.ts";
+import { makeExecutor, newBudget, registryValuesOf, revealMutants, runContract } from "./replay.ts";
 import { allowedNumbers, buildReport, danglingEvidence, renderMarkdown, validatePart1 } from "./render.ts";
 import { updateRoadmap } from "./roadmap.ts";
 import type { Rubric } from "./rubric.ts";
@@ -21,17 +22,26 @@ import { exists, fail, fmtShortDate, gitOrThrow, nowIso, randomHex, readText, sh
 import type { LocalInfo, Paths } from "./workspace.ts";
 import { clearCurrent, exportTree, releaseManifest, skillDigest } from "./workspace.ts";
 
-export function auditDigest(audit: Audit): string {
-  const copy = JSON.parse(JSON.stringify(audit)) as Audit;
-  if (copy.sealed) copy.sealed.digest = "";
-  return sha256(stableStringify(copy));
+// An unkeyed digest only shows the audit wasn't edited by accident: anyone with the scripts can
+// recompute it. With SA_READINESS_SEAL_KEY, a CI secret, the digest is an HMAC only the key's
+// holder can produce.
+export function sealKey(): string | null {
+  return process.env.SA_READINESS_SEAL_KEY || null;
 }
 
-export function sealStatusFor(scriptsDigest: string): string {
+export function auditDigest(audit: Audit, key: string | null = null): string {
+  const copy = JSON.parse(JSON.stringify(audit)) as Audit;
+  if (copy.sealed) copy.sealed.digest = "";
+  const text = stableStringify(copy);
+  return key ? createHmac("sha256", key).update(text).digest("hex") : sha256(text);
+}
+
+export function sealStatusFor(scriptsDigest: string, keyed = Boolean(sealKey())): string {
   const m = releaseManifest();
-  if (!m) return "Seal not verified: no release manifest ships with this copy";
-  if (m.scriptsDigest === scriptsDigest) return `Scripts match the ${m.tag} manifest bundled with this copy; the published release isn't checked here`;
-  return `Seal not verified: the scripts differ from release ${m.tag}`;
+  const seal = keyed ? "the seal is keyed" : "the seal is an unkeyed digest, which shows edits but not who sealed it";
+  if (!m) return `Seal not verified: no release manifest ships with this copy; ${seal}`;
+  if (m.scriptsDigest === scriptsDigest) return `Scripts match the ${m.tag} manifest bundled with this copy; the published release isn't checked here, and ${seal}`;
+  return `Seal not verified: the scripts differ from release ${m.tag}; ${seal}`;
 }
 
 export interface ComponentResult {
@@ -61,7 +71,7 @@ export function compute(audit: Audit, rubric: Rubric, history: HistoryLine[], ta
   for (const c of comps) {
     const s = statesOf(states.get(c.id)!);
     const proven = componentLevel(rubric, s);
-    const measured = outcomeLevel(rubric, { level2: proven.level === 2, targets, outcomes: o ? { agent: o.byComponent[c.id] ?? emptyStats(), control: o.control } : null, previousAtLevel3: previousAtLevel3(history, c.id) });
+    const measured = outcomeLevel(rubric, { level2: proven.level === 2, targets, outcomes: o ? { agent: o.byComponent[c.id] ?? emptyStats(), control: o.control, truncated: o.truncated } : null, previousAtLevel3: previousAtLevel3(history, c.id) });
     levels.set(c.id, { level: measured.level ?? proven.level, couldBe: measured.level ? null : proven.couldBe, outcomeReasons: measured.reasons });
     const m = new Map<ScenarioId, LevelResult>();
     for (const id of scenariosFor(rubric, audit.scenarios ?? [], c.id)) m.set(id, componentLevel(rubric, s, id));
@@ -177,6 +187,7 @@ export function seal(audit: Audit, local: LocalInfo, p: Paths, log: (s: string) 
   if (!audit.profile) fail("Run `readiness scan` before sealing.");
   const rubric = loadRubric(audit.rubric);
   if (audit.skill.scriptsDigest !== skillDigest()) fail("The skill's scripts changed since this audit started. Start a new audit with `readiness init --force`.");
+  revealMutants(audit, local.tree);
   const storedAt = join(p.history, "audits", audit.id).replace(p.repo + "/", "");
   const { report, roadmap, line } = buildSealedReport(audit, rubric, readHistory(p), readRoadmap(p), p.repo, storedAt);
   const errors = [
@@ -189,8 +200,9 @@ export function seal(audit: Audit, local: LocalInfo, p: Paths, log: (s: string) 
   if (errors.length) fail(`Seal refused. Fix these and seal again:\n- ${errors.join("\n- ")}`);
   const md = renderMarkdown(report, rubric);
   audit.state = "sealed";
-  audit.sealed = { at: nowIso(), digest: "", reportJsonDigest: sha256(JSON.stringify(report, null, 2) + "\n"), reportMdDigest: sha256(md), roadmapItemsDigest: sha256(stableStringify(roadmap.items)) };
-  audit.sealed.digest = auditDigest(audit);
+  const key = sealKey();
+  audit.sealed = { at: nowIso(), digest: "", reportJsonDigest: sha256(JSON.stringify(report, null, 2) + "\n"), reportMdDigest: sha256(md), roadmapItemsDigest: sha256(stableStringify(roadmap.items)), historyLineDigest: sha256(stableStringify(line)), keyed: Boolean(key) };
+  audit.sealed.digest = auditDigest(audit, key);
   const auditErrors = validateAgainst("audit", audit);
   if (auditErrors.length) fail(`Internal error: the sealed audit doesn't match its schema:\n- ${auditErrors.join("\n- ")}`);
   const dir = storeAudit(p, audit, report, md);
@@ -215,24 +227,41 @@ export function verifySeal(p: Paths, ref: string, opts: { releaseRepo?: string; 
   const lines: string[] = [];
   let ok = true;
   if (audit.state !== "sealed" || !audit.sealed) return { ok: false, production: false, lines: [`${audit.id} isn't sealed`] };
-  const digest = auditDigest(audit);
-  if (digest !== audit.sealed.digest) {
+  const key = sealKey();
+  if (audit.sealed.keyed && !key) {
     ok = false;
-    lines.push(`FAIL: ${audit.id} was edited after sealing (digest mismatch).`);
-  } else lines.push(`OK: ${audit.id} digest matches its seal.`);
-  if (exists(join(dir, "report.json")) && exists(join(dir, "report.md"))) {
-    const rj = sha256(readText(join(dir, "report.json")));
-    const md = sha256(readText(join(dir, "report.md")));
-    if (rj !== audit.sealed.reportJsonDigest || md !== audit.sealed.reportMdDigest) {
-      ok = false;
-      lines.push("FAIL: report.json or report.md was edited after sealing.");
-    } else lines.push("OK: report files match the seal.");
+    lines.push(`FAIL: ${audit.id} has a keyed seal; set SA_READINESS_SEAL_KEY to the key it was sealed with to verify it.`);
+  } else if (auditDigest(audit, audit.sealed.keyed ? key : null) !== audit.sealed.digest) {
+    ok = false;
+    lines.push(`FAIL: ${audit.id} was edited after sealing (digest mismatch${audit.sealed.keyed ? ", or the wrong key" : ""}).`);
+  } else lines.push(`OK: ${audit.id} ${audit.sealed.keyed ? "keyed seal" : "digest"} matches.`);
+  if (!audit.sealed.keyed) lines.push("NOTE: the seal is an unkeyed digest: it catches edits, but anyone with the scripts could reseal an edited audit. Set SA_READINESS_SEAL_KEY from a CI secret to key seals.");
+  const rjText = readSealedFile(p, dir, "report.json");
+  const mdText = readSealedFile(p, dir, "report.md");
+  if (rjText === null || mdText === null) {
+    ok = false;
+    lines.push(`FAIL: ${rjText === null ? "report.json" : "report.md"} is missing from the sealed audit.`);
+  } else if (sha256(rjText) !== audit.sealed.reportJsonDigest || sha256(mdText) !== audit.sealed.reportMdDigest) {
+    ok = false;
+    lines.push("FAIL: report.json or report.md was edited after sealing.");
+  } else lines.push("OK: report files match the seal.");
+  const history = readHistory(p);
+  const ownLine = history.find((h) => h.id === audit.id);
+  if (!ownLine) {
+    ok = false;
+    lines.push(`FAIL: history.jsonl has no line for ${audit.id}.`);
+  } else if (audit.sealed.historyLineDigest && sha256(stableStringify(ownLine)) !== audit.sealed.historyLineDigest) {
+    ok = false;
+    lines.push(`FAIL: ${audit.id}'s line in history.jsonl was edited after sealing.`);
   }
-  const latestLine = [...readHistory(p)].reverse().find((h) => h.kind === "audit");
+  const latestLine = [...history].reverse().find((h) => h.kind === "audit");
   if (latestLine?.id === audit.id) {
     const lj = join(p.latest, "report.json");
     const lm = join(p.latest, "report.md");
-    if (exists(lj) && exists(lm) && (sha256(readText(lj)) !== audit.sealed.reportJsonDigest || sha256(readText(lm)) !== audit.sealed.reportMdDigest)) {
+    if (!exists(lj) || !exists(lm)) {
+      ok = false;
+      lines.push("FAIL: .agent-readiness/latest/ is missing report.json or report.md.");
+    } else if (sha256(readText(lj)) !== audit.sealed.reportJsonDigest || sha256(readText(lm)) !== audit.sealed.reportMdDigest) {
       ok = false;
       lines.push("FAIL: .agent-readiness/latest/ was edited after sealing.");
     }
@@ -268,8 +297,10 @@ export function verifySeal(p: Paths, ref: string, opts: { releaseRepo?: string; 
       lines.push(`FAIL: the scripts that ran this audit don't match the release manifest ${m.tag}; they were edited.`);
     }
   }
-  const production = !audit.seed.pinned;
-  if (!production) lines.push("NOTE: this audit pinned its planted-fault seed (eval run), so it isn't a production result.");
+  if (audit.seed.pinned) lines.push("NOTE: this audit pinned its planted-fault seed (eval run), so it isn't a production result.");
+  // Anyone can write a PR file, so outcomes read from one never stand as a production level.
+  if (audit.outcomes?.source === "file") lines.push("NOTE: this audit's outcomes came from a recorded PR file, not GitHub, so it isn't a production result.");
+  const production = !audit.seed.pinned && audit.outcomes?.source !== "file";
   return { ok, production, lines };
 }
 
@@ -292,12 +323,16 @@ export async function recheck(p: Paths, opts: RecheckOptions): Promise<{ line: H
   const comps = new Set(audit.profile!.components.filter((c) => c.assessed).map((c) => c.id));
   let results;
   try {
-    results = await runContract(ex, audit.contract, { components: comps, budget: newBudget(rubric.budgets.componentMinutes, rubric.budgets.totalMinutes), registryValues: [], onResult: (r) => opts.log(`  ${r.cmd.kind.padEnd(9)} ${r.cmd.component.padEnd(12)} ${r.status}`) });
+    results = await runContract(ex, audit.contract, { components: comps, budget: newBudget(rubric.budgets.componentMinutes, rubric.budgets.totalMinutes), registryValues: registryValuesOf(audit), onResult: (r) => opts.log(`  ${r.cmd.kind.padEnd(9)} ${r.cmd.component.padEnd(12)} ${r.blocked ? "blocked" : r.status}`) });
   } finally {
     ex.close();
     rmSync(root, { recursive: true, force: true });
   }
-  const failed = results.filter((r) => r.status !== "pass");
+  // A limit of this machine is never a regression, and a rerun outside a clean container can't
+  // carry the last audit's levels onto a new commit.
+  const failed = results.filter((r) => r.status !== "pass" && !r.blocked);
+  const blockedBy = ex.where !== "container" ? "no container runtime on this machine" : results.find((r) => r.blocked)?.blocked;
+  const unproven = failed.length === 0 && Boolean(blockedBy);
   const lastLine = [...history].reverse().find((h) => h.id === audit.id);
   const levels: HistoryLine["levels"] = {};
   const scenarioLevels: HistoryLine["scenarioLevels"] = {};
@@ -325,10 +360,11 @@ export async function recheck(p: Paths, opts: RecheckOptions): Promise<{ line: H
     commit,
     rubric: audit.rubric,
     scriptsDigest: skillDigest(),
-    result: failed.length ? "failed" : "passed",
-    note: firstFail ? `${firstFail.cmd.command} ${firstFail.status === "not_run" ? "not run" : "failed"}${firstFail.diagnosis ? `: ${firstFail.diagnosis.detail}` : ""}` : undefined,
+    result: failed.length ? "failed" : unproven ? "blocked" : "passed",
+    note: firstFail ? `${firstFail.cmd.command} ${firstFail.status === "not_run" ? "not run" : "failed"}${firstFail.diagnosis ? `: ${firstFail.diagnosis.detail}` : ""}` : unproven ? `no level: the last audit's levels couldn't be proved here (${blockedBy})` : undefined,
     levels,
     repoLevel: repoLevelNow,
+    ...(unproven ? { noLevel: true } : {}),
     scenarioLevels,
     shares: lastLine?.shares ?? {},
     active: [...active],

@@ -7,7 +7,7 @@ import { fileURLToPath } from "node:url";
 import { mergeHistory } from "../skill/agent-readiness/scripts/lib/history.ts";
 import { level3Run, outcomeLevel } from "../skill/agent-readiness/scripts/lib/levels.ts";
 import { fetchPrs } from "../skill/agent-readiness/scripts/lib/outcomes.ts";
-import { allowedNumbers } from "../skill/agent-readiness/scripts/lib/render.ts";
+import { allowedNumbers, validatePart1 } from "../skill/agent-readiness/scripts/lib/render.ts";
 import { loadRubric } from "../skill/agent-readiness/scripts/lib/rubric.ts";
 import { componentStates } from "../skill/agent-readiness/scripts/lib/score.ts";
 import type { Audit, HistoryLine, Level } from "../skill/agent-readiness/scripts/lib/types.ts";
@@ -86,6 +86,21 @@ describe("fixes from the second independent review", () => {
     audit.evidence.find((e) => e.condition === "faults")!.summary = "planting faults failed: the mutant oracle crashed";
     const r = reportFor(audit);
     for (const field of [r.executive.headline, r.executive.ask]) for (const t of next.part1.bannedTerms) assert.ok(!field.toLowerCase().includes(t.toLowerCase()), `${t} in ${field}`);
+  });
+
+  test("the seal refuses a narrated headline that calls a component below Level 2 ready", () => {
+    const audit = makeAudit({ components: [{ id: "api", share: 0.6, test: "fail" }, { id: "shared", share: 0.4, faults: "fail" }] });
+    audit.rubric = "2026-11-alpha";
+    audit.narration = { headline: "api sets the level: its tests need Postgres. shared is ready for agents." };
+    const r = reportFor(audit);
+    assert.match(validatePart1(r, next, allowedNumbers(r)).join("; "), /the headline calls shared ready, but shared is at Level 1/);
+    audit.narration = { headline: "api sets the level: its tests need Postgres. shared installs and its tests run, but they miss planted bugs, so it isn't ready yet." };
+    const fine = reportFor(audit);
+    assert.deepEqual(validatePart1(fine, next, allowedNumbers(fine)).filter((e) => /calls .* ready/.test(e)), []);
+  });
+
+  test("SKILL.md says to seal without a registry token instead of stopping to ask", () => {
+    assert.match(readFileSync(join(__dirname, "../skill/agent-readiness/SKILL.md"), "utf8"), /If the variable isn't set in this shell, don't stop to ask for it: narrate and seal the audit as it stands/);
   });
 
   test("verify-seal fails when the latest audit's roadmap.json is gone", () => {

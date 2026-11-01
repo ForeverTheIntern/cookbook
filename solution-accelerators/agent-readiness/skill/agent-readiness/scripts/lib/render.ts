@@ -808,6 +808,14 @@ export function validatePart1(report: ReportJson, rubric: Rubric, narratedAllowe
   if (narratedAllowedNumbers) {
     const narrated = [ex.headline, ex.ask, ...ex.gaps.map((g) => g.text)];
     for (const t of narrated) for (const m of t.matchAll(/\d+(?:\.\d+)?%?/g)) if (!narratedAllowedNumbers.has(m[0])) errors.push(`"${m[0]}" in the narrated text isn't a number the audit computed`);
+    // Only a component at Level 2 or above is ready for agents, so a narrated headline can't say
+    // otherwise about one below it.
+    for (const c of report.components.included) {
+      if (c.level === null || c.level >= 2) continue;
+      const id = c.id.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+      const claim = new RegExp(`\\b${id}\\b[^.;:]{0,40}?\\b(?:is|are)\\s+(?:already\\s+)?(?:ready|at Level [2-4]|verifiable|delegable)\\b`, "i");
+      if (claim.test(ex.headline)) errors.push(`the headline calls ${c.id} ready, but ${c.id} is at Level ${c.level}; only a component at Level 2 or above is ready for agents`);
+    }
   }
   return errors;
 }

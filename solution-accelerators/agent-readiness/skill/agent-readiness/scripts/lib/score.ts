@@ -88,8 +88,9 @@ export function componentStates(audit: Audit, rubric: Rubric, componentId: strin
   const evs = audit.evidence;
   const contract = audit.contract;
   const states = {} as CompStates;
-  const repoInstall = latest(evs.filter((e) => e.kind === "install" && (e.component === "*" || !e.component)));
-  const ownInstall = latest(evs.filter((e) => e.kind === "install" && e.component === componentId));
+  const preferReplay = (list: Evidence[]) => latest(list.filter(replayed)) ?? latest(list);
+  const repoInstall = preferReplay(evs.filter((e) => e.kind === "install" && (e.component === "*" || !e.component)));
+  const ownInstall = preferReplay(evs.filter((e) => e.kind === "install" && e.component === componentId));
   const install = ownInstall && !(repoInstall && repoInstall.result !== "pass") ? ownInstall : (repoInstall ?? ownInstall);
   states["clean.install"] = fromEvidence(rubric, install, "bootstrap.cold_replay", "the clean install hasn't run");
   const mine = (c: { component: string }) => c.component === componentId || c.component === "*";
@@ -146,7 +147,7 @@ export function repoStates(audit: Audit, rubric: Rubric): Record<"instructions" 
       : pending.length > 0 && pending.every((i) => i.blocked)
         ? { state: "blocked", reason: `${pending.length} instruction commands couldn't be replayed: ${pending[0].blocked}`, evidence: insEvidence }
         : pending.length > 0
-          ? { state: "unknown", reason: `${pending.length} instruction commands haven't been replayed`, evidence: insEvidence }
+          ? { state: "unknown", reason: `${pending.length} instruction commands haven't been run`, evidence: insEvidence }
           : { state: "met", reason: instructionsMetReason(items), evidence: insEvidence };
   const blocking = audit.safety.filter((s) => s.blocking);
   const safety: CondDetail = blocking.length > 0 ? { state: "not_met", reason: blocking.map((b) => b.detail).join("; "), evidence: [] } : { state: "met", reason: "no blocking safety findings", evidence: [] };

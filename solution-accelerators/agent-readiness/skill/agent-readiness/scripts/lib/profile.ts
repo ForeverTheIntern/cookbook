@@ -2,7 +2,7 @@ import { readdirSync, statSync } from "node:fs";
 import { basename, dirname, join } from "node:path";
 import type { Rubric } from "./rubric.ts";
 import type { Component, Language, PackageManager, Profile } from "./types.ts";
-import { addDays, exists, git, listFiles, readJson, readText, today } from "./util.ts";
+import { addDays, containedPath, exists, git, listFiles, readJson, readText, today } from "./util.ts";
 
 interface PackageJson {
   name?: string;
@@ -262,7 +262,7 @@ export function discoverLayout(tree: string, files: string[]): { components: Com
 }
 
 // Folders that hold a root package's own tests, docs and samples rather than another project.
-const NOT_A_PROJECT = /^(tests?|spec|__tests__|examples?|samples?|docs?|fixtures?|vendor|third_party|node_modules|scripts|bin|lib|src)$/;
+const NOT_A_PROJECT = /^(tests?|spec|__tests__|examples?|samples?|docs?|fixtures?|vendor|third_party|node_modules|scripts|tools|tooling|bin)$/;
 
 // Two folders with one name, such as apps/api and services/api, would merge into one component.
 function uniqueIds(comps: Component[]): Component[] {
@@ -293,9 +293,10 @@ function owningComponent(file: string, comps: Component[]): Component | null {
   return best;
 }
 
-export function computeChangeShares(repo: string, comps: Component[], rubric: Rubric): number {
+// Counted up to the audited commit, so a commit made after `init` can't move the shares.
+export function computeChangeShares(repo: string, comps: Component[], rubric: Rubric, commit = "HEAD"): number {
   const since = addDays(today(), -rubric.components.historyDays);
-  const r = git(["log", `--since=${since}`, "--no-merges", "--name-status", "--no-renames", "--format=@@%an%x09%ae"], repo);
+  const r = git(["log", commit, `--since=${since}`, "--no-merges", "--name-status", "--no-renames", "--format=@@%an%x09%ae"], repo);
   const counts = new Map<string, number>();
   let author = "";
   let commitFiles: string[] = [];
@@ -350,7 +351,13 @@ function nodePins(tree: string, dir: string, pm: PackageManager | null, label: s
 function dockerfilePins(tree: string, dockerfile: string | undefined): { node: boolean; pm: Set<string>; python: boolean } {
   const out = { node: false, pm: new Set<string>(), python: false };
   if (!dockerfile || !exists(join(tree, ".cursor", dockerfile))) return out;
-  const text = readText(join(tree, ".cursor", dockerfile));
+  let path: string;
+  try {
+    path = containedPath(tree, [".cursor", dockerfile], ".cursor/environment.json");
+  } catch {
+    return out;
+  }
+  const text = readText(path);
   out.node = /^\s*FROM\s+(?:\S+\/)?node:\d/im.test(text) || /^\s*(ARG|ENV)\s+NODE_(VERSION|MAJOR)[= ]\s*\d/im.test(text);
   out.python = /^\s*FROM\s+(?:\S+\/)?python:\d/im.test(text) || /^\s*(ARG|ENV)\s+PYTHON_(VERSION|MAJOR)[= ]\s*\d/im.test(text);
   for (const m of text.matchAll(/\b(?:corepack\s+(?:prepare|install\s+-g)|npm\s+(?:i|install)\s+-g)\s+(pnpm|yarn)@\d/g)) out.pm.add(m[1]);
@@ -397,11 +404,11 @@ export function instructionFiles(files: string[]): string[] {
   return files.filter((f) => INSTRUCTION_PATTERNS.some((p) => p.test(f)) && !f.startsWith(".cursor/skills/agent-readiness/"));
 }
 
-export function buildProfile(repo: string, tree: string, rubric: Rubric): Profile {
+export function buildProfile(repo: string, tree: string, rubric: Rubric, commit = "HEAD"): Profile {
   const files = listFiles(tree, { includeHidden: true });
   const pm = detectPackageManager(tree);
   const { components, satellites } = discoverLayout(tree, files);
-  const totalChanges = computeChangeShares(repo, components, rubric);
+  const totalChanges = computeChangeShares(repo, components, rubric, commit);
   const supported = components.filter((c) => !c.notAssessedReason && rubric.mutation.languages.includes(c.language === "other" ? "x" : c.language));
   for (const c of components) {
     if (!c.notAssessedReason && c.language === "other") c.notAssessedReason = "no supported toolchain found";

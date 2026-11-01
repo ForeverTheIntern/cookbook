@@ -1,12 +1,18 @@
 import { spawnSync } from "node:child_process";
 import { runCommand } from "./run.ts";
 import type { RunOutcome } from "./run.ts";
+import { fail } from "./util.ts";
 
 export interface Runtime {
   bin: string;
 }
 
+// Only these runtimes: any other program given as --runtime would have its exit codes recorded as
+// clean-container results.
+export const RUNTIMES = ["auto", "docker", "podman", "none"];
+
 export function detectRuntime(preference: string = "auto"): Runtime | null {
+  if (!RUNTIMES.includes(preference)) fail(`--runtime takes ${RUNTIMES.join(", ")}; got ${preference}.`);
   if (preference === "none") return null;
   const candidates = preference === "auto" ? ["docker", "podman"] : [preference];
   for (const bin of candidates) {

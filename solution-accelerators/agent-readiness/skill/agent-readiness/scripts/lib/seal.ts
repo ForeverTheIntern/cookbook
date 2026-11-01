@@ -20,7 +20,7 @@ import { componentStates, noRealResults } from "./score.ts";
 import type { Audit, CondId, CondState, HistoryLine, Level, OutcomeStats, ReportJson, Roadmap, ScenarioId, Targets } from "./types.ts";
 import { exists, fail, fmtShortDate, gitOrThrow, nowIso, randomHex, readText, sha256, stableStringify, today } from "./util.ts";
 import type { LocalInfo, Paths } from "./workspace.ts";
-import { clearCurrent, exportTree, releaseManifest, skillDigest } from "./workspace.ts";
+import { clearCurrent, exportTree, realSeed, releaseManifest, skillDigest } from "./workspace.ts";
 
 // An unkeyed digest only shows the audit wasn't edited by accident: anyone with the scripts can
 // recompute it. With SA_READINESS_SEAL_KEY, a CI secret, the digest is an HMAC only the key's
@@ -68,10 +68,11 @@ export function compute(audit: Audit, rubric: Rubric, history: HistoryLine[], ta
   const levels = new Map<string, ComponentResult>();
   const scenarioLevels = new Map<string, Map<ScenarioId, LevelResult>>();
   const o = audit.outcomes;
+  const run = { production: !audit.seed.pinned && o?.source !== "file", from: o?.window.from, minOpened: rubric.level3.absoluteMinAgentPRs };
   for (const c of comps) {
     const s = statesOf(states.get(c.id)!);
     const proven = componentLevel(rubric, s);
-    const measured = outcomeLevel(rubric, { level2: proven.level === 2, targets, outcomes: o ? { agent: o.byComponent[c.id] ?? emptyStats(), control: o.control, truncated: o.truncated } : null, previousAtLevel3: previousAtLevel3(history, c.id), level3Run: level3Run(history, c.id) });
+    const measured = outcomeLevel(rubric, { level2: proven.level === 2, targets, outcomes: o ? { agent: o.byComponent[c.id] ?? emptyStats(), control: o.control, truncated: o.truncated, windowDays: o.window.days } : null, previousAtLevel3: previousAtLevel3(history, c.id), level3Run: level3Run(history, c.id, run) });
     levels.set(c.id, { level: measured.level ?? proven.level, couldBe: measured.level ? null : proven.couldBe, outcomeReasons: measured.reasons });
     const m = new Map<ScenarioId, LevelResult>();
     for (const id of scenariosFor(rubric, audit.scenarios ?? [], c.id)) m.set(id, componentLevel(rubric, s, id));
@@ -127,7 +128,7 @@ export function buildSealedReport(audit: Audit, rubric: Rubric, history: History
     ...(noResults ? { noLevel: true } : {}),
     shares: Object.fromEntries(audit.profile.components.map((x) => [x.id, x.changeShare])),
     active: [...c.active],
-    outcomes: o ? { window: `${o.window.from} to ${o.window.to}`, agent: o.agent, control: o.control, byComponent: o.byComponent } : null,
+    outcomes: o ? { window: `${o.window.from} to ${o.window.to}`, agent: o.agent, control: o.control, byComponent: o.byComponent, source: o.source } : null,
     seedPinned: audit.seed.pinned,
   };
   const report = buildReport({
@@ -182,14 +183,38 @@ export function consistencyErrors(audit: Audit, report: ReportJson, roadmap: Roa
   return errors;
 }
 
+// Earlier audit lines feed the active set and the Level 4 run, so only lines that match their
+// sealed audit count. Recheck lines carry no seal and can only lower a level.
+export function trustedHistory(p: Paths, history: HistoryLine[], log: (s: string) => void = () => {}): HistoryLine[] {
+  const key = sealKey();
+  const dropped: string[] = [];
+  const kept = history.filter((h) => {
+    if (h.kind !== "audit") return true;
+    try {
+      const { audit } = loadSealedAudit(p, h.id);
+      const s = audit.sealed;
+      const sealOk = Boolean(s) && (s!.keyed && !key ? true : auditDigest(audit, s!.keyed ? key : null) === s!.digest);
+      const lineOk = !s?.historyLineDigest || sha256(stableStringify(h)) === s.historyLineDigest;
+      if (sealOk && lineOk) return true;
+    } catch {
+      // No sealed audit for this line.
+    }
+    dropped.push(h.id);
+    return false;
+  });
+  if (dropped.length) log(`Left out ${dropped.length} history ${dropped.length === 1 ? "line" : "lines"} that don't match a sealed audit: ${dropped.join(", ")}.`);
+  return kept;
+}
+
 export function seal(audit: Audit, local: LocalInfo, p: Paths, log: (s: string) => void): SealResult {
   if (audit.state !== "draft") fail(`Audit ${audit.id} is already sealed.`);
   if (!audit.profile) fail("Run `readiness scan` before sealing.");
   const rubric = loadRubric(audit.rubric);
   if (audit.skill.scriptsDigest !== skillDigest()) fail("The skill's scripts changed since this audit started. Start a new audit with `readiness init --force`.");
   revealMutants(audit, local.tree);
+  audit.seed.value = realSeed(audit, local);
   const storedAt = join(p.history, "audits", audit.id).replace(p.repo + "/", "");
-  const { report, roadmap, line } = buildSealedReport(audit, rubric, readHistory(p), readRoadmap(p), p.repo, storedAt);
+  const { report, roadmap, line } = buildSealedReport(audit, rubric, trustedHistory(p, readHistory(p), log), readRoadmap(p), p.repo, storedAt);
   const errors = [
     ...consistencyErrors(audit, report, roadmap),
     ...danglingEvidence(report, audit).map((id) => `the report cites ${id}, which isn't in the audit`),
@@ -228,7 +253,11 @@ export function verifySeal(p: Paths, ref: string, opts: { releaseRepo?: string; 
   let ok = true;
   if (audit.state !== "sealed" || !audit.sealed) return { ok: false, production: false, lines: [`${audit.id} isn't sealed`] };
   const key = sealKey();
-  if (audit.sealed.keyed && !key) {
+  // The audit file never chooses how it is checked: with a key configured, only a keyed seal counts.
+  if (key && !audit.sealed.keyed) {
+    ok = false;
+    lines.push(`FAIL: SA_READINESS_SEAL_KEY is set, so ${audit.id}'s unkeyed seal isn't accepted. Seal audits where the key is set, such as CI.`);
+  } else if (audit.sealed.keyed && !key) {
     ok = false;
     lines.push(`FAIL: ${audit.id} has a keyed seal; set SA_READINESS_SEAL_KEY to the key it was sealed with to verify it.`);
   } else if (auditDigest(audit, audit.sealed.keyed ? key : null) !== audit.sealed.digest) {
@@ -265,7 +294,10 @@ export function verifySeal(p: Paths, ref: string, opts: { releaseRepo?: string; 
       ok = false;
       lines.push("FAIL: .agent-readiness/latest/ was edited after sealing.");
     }
-    if (audit.sealed.roadmapItemsDigest && exists(p.roadmap)) {
+    if (audit.sealed.roadmapItemsDigest && !exists(p.roadmap)) {
+      ok = false;
+      lines.push("FAIL: .agent-readiness/roadmap.json is missing; the latest audit sealed one.");
+    } else if (audit.sealed.roadmapItemsDigest) {
       const rm = JSON.parse(readText(p.roadmap)) as { items: unknown };
       if (sha256(stableStringify(rm.items)) !== audit.sealed.roadmapItemsDigest) {
         ok = false;
@@ -330,9 +362,13 @@ export async function recheck(p: Paths, opts: RecheckOptions): Promise<{ line: H
   }
   // A limit of this machine is never a regression, and a rerun outside a clean container can't
   // carry the last audit's levels onto a new commit.
-  const failed = results.filter((r) => r.status !== "pass" && !r.blocked);
-  const blockedBy = ex.where !== "container" ? "no container runtime on this machine" : results.find((r) => r.blocked)?.blocked;
-  const unproven = failed.length === 0 && Boolean(blockedBy);
+  // Only a command that ran and failed lowers a level; one cut off or skipped proves nothing. On the
+  // host nothing is recorded as a level at all, whatever passed.
+  const failed = results.filter((r) => r.status === "fail" && !r.blocked);
+  const onHost = ex.where !== "container";
+  const cutOff = results.find((r) => r.status === "not_run" && !r.blocked);
+  const blockedBy = onHost ? "no container runtime on this machine" : (results.find((r) => r.blocked)?.blocked ?? (cutOff ? `${cutOff.cmd.command} ${cutOff.note || "didn't run"}` : undefined));
+  const unproven = onHost || (failed.length === 0 && Boolean(blockedBy));
   const lastLine = [...history].reverse().find((h) => h.id === audit.id);
   const levels: HistoryLine["levels"] = {};
   const scenarioLevels: HistoryLine["scenarioLevels"] = {};

@@ -81,7 +81,8 @@ describe("scrubbed environment", () => {
     assert.ok(env.HOME.includes("readiness-home-"));
     assert.equal(env.CI, "1");
     assert.equal(scrubbedEnv({ registryEnv: ["NPM_TOKEN"] }).NPM_TOKEN, "registry-value");
-    assert.equal(scrubbedEnv({ inheritEnv: true }).SA_READINESS_TEST_SECRET, "do-not-leak");
+    assert.equal(scrubbedEnv({ inheritEnv: true }).NPM_TOKEN, "registry-value");
+    assert.equal(scrubbedEnv({ inheritEnv: true }).SA_READINESS_TEST_SECRET, undefined, "the audit's own settings, the seal key among them, never reach repo code");
     delete process.env.SA_READINESS_TEST_SECRET;
     delete process.env.NPM_TOKEN;
   });

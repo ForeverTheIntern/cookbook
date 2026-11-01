@@ -1,10 +1,24 @@
 import { createHash, randomBytes } from "node:crypto";
 import { spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from "node:fs";
-import { dirname, join, relative, resolve } from "node:path";
+import { existsSync, mkdirSync, readFileSync, readdirSync, realpathSync, statSync, writeFileSync } from "node:fs";
+import { dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 export const SKILL_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..", "..");
+
+// A repo-controlled path, refused when it or a symlink along it leaves the tree. The repo's own
+// files decide these paths, and tar and git keep symlinks, so the check follows links.
+export function containedPath(root: string, parts: string[], what: string): string {
+  const base = existsSync(root) ? realpathSync(root) : resolve(root);
+  const lexical = resolve(base, ...parts);
+  const real = existsSync(lexical) ? realpathSync(lexical) : lexical;
+  const out = (p: string) => {
+    const rel = relative(base, p);
+    return rel.startsWith("..") || isAbsolute(rel);
+  };
+  if (parts.some((x) => isAbsolute(x)) || out(lexical) || out(real)) fail(`${what} points outside the repository (${join(...parts)}), which the audit refuses.`);
+  return real;
+}
 
 export function sha256(data: string | Buffer): string {
   return createHash("sha256").update(data).digest("hex");

@@ -81,7 +81,10 @@ async function worker(flags: Record<string, string | true>): Promise<void> {
 function spawnWorker(c: EvalCase, repeat: number, model: string, out: string, timeoutMin: string): Promise<void> {
   return new Promise((done) => {
     const child = spawn(process.execPath, ["--experimental-strip-types", "--no-warnings", fileURLToPath(import.meta.url), "--worker", "--case", c.id, "--repeat", String(repeat), "--model", model, "--out", out, "--timeout-min", timeoutMin], { stdio: ["ignore", "inherit", "inherit"], env: process.env });
+    // The worker cancels its own turn at the timeout; this catches a worker that hangs past it.
+    const kill = setTimeout(() => child.kill("SIGKILL"), (Number(timeoutMin) + 10) * 60000);
     child.on("close", (code, signal) => {
+      clearTimeout(kill);
       if (!existsSync(out)) writeFileSync(out, JSON.stringify({ run: crashedRun(c, repeat, model, `the worker exited ${signal ? `on ${signal}` : `with code ${code}`} without a result`) }, null, 2));
       done();
     });

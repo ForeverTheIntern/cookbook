@@ -30,7 +30,8 @@ function sudoShim(bin: string): void {
 export function scrubbedEnv(opts: EnvOptions = {}): Record<string, string> {
   if (opts.inheritEnv) {
     const all: Record<string, string> = {};
-    for (const [k, v] of Object.entries(process.env)) if (v !== undefined) all[k] = v;
+    // The audit's own settings, the seal key among them, never reach the repo's code.
+    for (const [k, v] of Object.entries(process.env)) if (v !== undefined && !k.startsWith("SA_")) all[k] = v;
     const bin = join(mkdtempSync(join(tmpdir(), "readiness-bin-")), "bin");
     ensureDir(bin);
     sudoShim(bin);

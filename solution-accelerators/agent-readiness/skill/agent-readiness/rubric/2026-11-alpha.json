@@ -128,7 +128,7 @@
     "activeShare": 0.1,
     "hysteresisAudits": 2,
     "partialCoverageShare": 0.2,
-    "rule": "the lowest level among active components, the assessed components with at least 10% of changes over 90 days; a component joins or leaves that set only after two audits on the same side of the line, except that one the last audit didn't have joins at once, and components the audit can't assess never set it",
+    "rule": "the lowest level among active components, the assessed components with at least 10% of changes over 90 days; a component joins or leaves that set only after two audits on the same side of the line, except that one the last audit didn't have joins at once; when no assessed component reaches 10%, the largest sets it; and components the audit can't assess never set it",
     "newComponentsJoin": true
   },
   "mutation": {

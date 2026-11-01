@@ -52,28 +52,34 @@ export function appendHistory(p: Paths, line: HistoryLine): void {
   const text = JSON.stringify(line) + "\n";
   guardSecrets("the history line", text);
   ensureDir(p.history);
-  const prev = exists(f) ? readText(f) : (showFromBranch(p.repo, "history.jsonl") ?? "");
+  const prev = mergeHistory(branchHistory(p.repo) ?? "", exists(f) ? readText(f) : "");
   writeText(f, prev + text);
 }
 
 export function readHistory(p: Paths): HistoryLine[] {
   const f = join(p.history, "history.jsonl");
-  if (exists(f)) return parseHistory(readText(f));
-  const fromBranch = showFromBranch(p.repo, "history.jsonl");
-  return fromBranch ? parseHistory(fromBranch) : [];
+  return parseHistory(mergeHistory(branchHistory(p.repo) ?? "", exists(f) ? readText(f) : ""));
 }
 
-// Lines from both copies, each id once, in the order they were first written.
+// Lines from every copy, each id once, in date order and otherwise in the order first written.
 export function mergeHistory(...texts: string[]): string {
   const seen = new Set<string>();
-  const out: string[] = [];
+  const out: { line: string; date: string }[] = [];
   for (const line of texts.flatMap((t) => t.split("\n")).filter((l) => l.trim())) {
-    const id = (JSON.parse(line) as HistoryLine).id;
-    if (seen.has(id)) continue;
-    seen.add(id);
-    out.push(line);
+    const h = JSON.parse(line) as HistoryLine;
+    if (seen.has(h.id)) continue;
+    seen.add(h.id);
+    out.push({ line, date: h.date ?? "" });
   }
-  return out.length ? out.join("\n") + "\n" : "";
+  out.sort((a, b) => a.date.localeCompare(b.date));
+  return out.length ? out.map((x) => x.line).join("\n") + "\n" : "";
+}
+
+// The history branch as this clone knows it: the local branch and the remote one, merged, so a
+// stale local branch doesn't hide CI's newer lines.
+function branchHistory(repo: string): string | null {
+  const texts = [HISTORY_BRANCH, `origin/${HISTORY_BRANCH}`].map((ref) => git(["show", `${ref}:history.jsonl`], repo)).filter((r) => r.ok).map((r) => r.stdout);
+  return texts.length ? mergeHistory(...texts) : null;
 }
 
 // A sealed file from the local history folder, or from the history branch when the audit came from there.
@@ -123,20 +129,31 @@ export function pushHistory(p: Paths, opts: { push: boolean; remote: string }): 
   const wt = join(mkdtempSync(join(tmpdir(), "readiness-history-")), "wt");
   const hasLocal = git(["rev-parse", "--verify", HISTORY_BRANCH], p.repo).ok;
   const hasRemote = git(["rev-parse", "--verify", `${opts.remote}/${HISTORY_BRANCH}`], p.repo).ok;
+  const remoteRef = `${opts.remote}/${HISTORY_BRANCH}`;
+  const localSha = hasLocal ? git(["rev-parse", HISTORY_BRANCH], p.repo).stdout.trim() : "";
+  const show = (ref: string) => {
+    const r = git(["show", `${ref}:history.jsonl`], p.repo);
+    return r.ok ? r.stdout : "";
+  };
+  const branchText = hasLocal ? show(HISTORY_BRANCH) : "";
+  const remoteText = hasRemote ? show(remoteRef) : "";
   try {
-    if (hasLocal) git(["worktree", "add", wt, HISTORY_BRANCH], p.repo);
-    else if (hasRemote) git(["worktree", "add", "-b", HISTORY_BRANCH, wt, `${opts.remote}/${HISTORY_BRANCH}`], p.repo);
+    // Commit on the remote's tip, so a push after CI's rechecks fast-forwards instead of failing,
+    // and lay the local branch's files over it so nothing sealed locally is lost.
+    if (hasRemote) {
+      const r = git(["worktree", "add", "-B", HISTORY_BRANCH, wt, remoteRef], p.repo);
+      if (!r.ok) fail(r.stderr);
+      if (localSha) git(["checkout", localSha, "--", "."], wt);
+    } else if (hasLocal) git(["worktree", "add", wt, HISTORY_BRANCH], p.repo);
     else {
       const r = git(["worktree", "add", "--detach", wt], p.repo);
       if (!r.ok) fail(r.stderr);
       git(["checkout", "--orphan", HISTORY_BRANCH], wt);
       git(["rm", "-rf", "--quiet", "."], wt);
     }
-    const onBranch = exists(join(wt, "history.jsonl")) ? readText(join(wt, "history.jsonl")) : "";
-    const remoteText = hasLocal && hasRemote ? (git(["show", `${opts.remote}/${HISTORY_BRANCH}:history.jsonl`], p.repo).stdout ?? "") : "";
     const localText = exists(join(p.history, "history.jsonl")) ? readText(join(p.history, "history.jsonl")) : "";
     cpSync(p.history, wt, { recursive: true });
-    writeText(join(wt, "history.jsonl"), mergeHistory(remoteText, onBranch, localText));
+    writeText(join(wt, "history.jsonl"), mergeHistory(remoteText, branchText, localText));
     git(["add", "-A"], wt);
     const status = git(["status", "--porcelain"], wt).stdout.trim();
     let message = "history branch already up to date";

@@ -84,7 +84,7 @@ export function partialCoverage(rubric: Rubric, components: Component[]): { part
 export interface OutcomeLevelInput {
   level2: boolean;
   targets: Targets | null;
-  outcomes: { agent: OutcomeStats; control: OutcomeStats; truncated?: boolean } | null;
+  outcomes: { agent: OutcomeStats; control: OutcomeStats; truncated?: boolean; windowDays?: number } | null;
   // The agent PRs of the last audit where this component was at Level 3 or above.
   previousAtLevel3: OutcomeStats | null;
   // The unbroken run of earlier audits at Level 3 or above, oldest first, for the streak rule.
@@ -97,6 +97,8 @@ export function targetsMet(rubric: Rubric, targets: Targets, outcomes: { agent: 
   const reasons: string[] = [];
   if (a.opened < floor) reasons.push(`only ${a.opened} agent PRs in the window; at least ${floor} are needed`);
   if (outcomes.control.opened === 0) reasons.push("no other PRs in the window to compare with");
+  // Under 2026-11-alpha a first-time CI rate needs as many finished CI runs as any other rate.
+  if (rubric.level4.rule === "streak" && a.firstTimeCiKnown < rubric.outcomes.minRateN) reasons.push(`only ${a.firstTimeCiKnown} agent PRs have a finished first CI run; at least ${rubric.outcomes.minRateN} are needed for a rate`);
   const merge = a.opened ? a.merged / a.opened : 0;
   const first = a.firstTimeCiKnown ? a.firstTimeCiPass / a.firstTimeCiKnown : 0;
   const cr = a.opened ? a.changesRequested / a.opened : 1;
@@ -111,6 +113,8 @@ export function outcomeLevel(rubric: Rubric, input: OutcomeLevelInput): { level:
   if (!input.targets) return { level: null, reasons: ["no Level 3 targets are recorded"] };
   if (!input.outcomes) return { level: null, reasons: ["outcomes weren't measured in this audit"] };
   if (input.outcomes.truncated) return { level: null, reasons: ["the PR window held more PRs than gh returns at once, so Level 3 isn't measured from a partial window"] };
+  const days = input.outcomes.windowDays;
+  if (rubric.level4.rule === "streak" && days !== undefined && days !== rubric.outcomes.windowDays) return { level: null, reasons: [`Level 3 is measured over a ${rubric.outcomes.windowDays}-day window; this one was ${days} days`] };
   const t = targetsMet(rubric, input.targets, input.outcomes);
   if (!t.met) return { level: null, reasons: t.reasons };
   if (rubric.level4.rule === "streak") return streakLevel(rubric, input.outcomes.agent, input.level3Run ?? []);
@@ -141,12 +145,33 @@ function streakLevel(rubric: Rubric, now: OutcomeStats, run: OutcomeStats[]): { 
   return { level: 4, reasons: [] };
 }
 
-export function level3Run(history: HistoryLine[], componentId: string): OutcomeStats[] {
-  const audits = history.filter((h) => h.kind === "audit" && !h.noLevel);
+export interface RunOptions {
+  // A production audit counts only windows read from GitHub by production audits.
+  production?: boolean;
+  // Where this audit's window starts; each earlier window must end by the start of the next one.
+  from?: string;
+  // Every window in the run must itself have had enough agent PRs for Level 3.
+  minOpened?: number;
+}
+
+// The unbroken run of earlier windows at Level 3 or above, oldest first. An audit that gave no
+// level, a failed recheck, an overlapping window, or an eval window in a production audit ends it.
+export function level3Run(history: HistoryLine[], componentId: string, opts: RunOptions = {}): OutcomeStats[] {
   const run: OutcomeStats[] = [];
-  for (let i = audits.length - 1; i >= 0; i--) {
-    const s = audits[i].outcomes?.byComponent?.[componentId];
-    if (!s || (audits[i].levels[componentId] ?? 0) < 3) break;
+  let nextFrom = opts.from;
+  for (let i = history.length - 1; i >= 0; i--) {
+    const h = history[i];
+    if (h.kind === "recheck") {
+      if (h.result === "failed" && (h.levels[componentId] ?? 0) < 3) break;
+      continue;
+    }
+    const s = h.outcomes?.byComponent?.[componentId];
+    if (h.noLevel || !s || (h.levels[componentId] ?? 0) < 3) break;
+    if (opts.production && (h.seedPinned || h.outcomes?.source === "file")) break;
+    if ((opts.minOpened ?? 0) > s.opened) break;
+    const [from, to] = (h.outcomes?.window ?? "").split(" to ");
+    if (nextFrom && to && to > nextFrom) break;
+    nextFrom = from;
     run.unshift(s);
   }
   return run;

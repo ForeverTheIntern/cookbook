@@ -90,7 +90,7 @@ function targetedSignal(profile: Profile, contract: ContractCommand[]): Signal {
   const comps = profile.components.filter((c) => c.assessed);
   if (comps.length === 0) return { id: "targeted_tests", label: "A way to run one test file", found: null, detail: "no component was assessed" };
   const parts = comps.map((c) => {
-    const test = contract.find((k) => k.component === c.id && k.kind === "test");
+    const test = contract.find((k) => k.component === c.id && k.kind === "test") ?? contract.find((k) => k.component === "*" && k.kind === "test");
     const script = c.scripts.test ?? test?.command ?? "";
     const hit = TARGETED.find((t) => t.re.test(script) || t.re.test(test?.command ?? ""));
     return { id: c.id, ok: Boolean(test && hit), text: !test ? `${c.id}: no test command` : hit ? `${c.id}: ${hit.how}` : `${c.id}: its test command shows no way to run one file` };

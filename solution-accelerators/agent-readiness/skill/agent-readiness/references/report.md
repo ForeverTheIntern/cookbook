@@ -51,10 +51,10 @@ The headline says what holds the repo level and where. It doesn't list everythin
 ## The header
 
 - "Scripts match the vX manifest bundled with this copy": the scripts that ran the audit match the release manifest shipped with them. `verify-seal --release-repo` checks the published release. "Seal not verified" means they don't, or no release manifest shipped with the copy.
-- "The seal is keyed": the audit was sealed with `SA_READINESS_SEAL_KEY`, an HMAC key kept as a CI secret, and `verify-seal` needs the same key. "An unkeyed digest" catches edits, but anyone with the scripts could reseal an edited audit.
+- "The seal is keyed": the audit was sealed with `SA_READINESS_SEAL_KEY`, an HMAC key kept as a CI secret, and `verify-seal` needs the same key. Where the key is set, `verify-seal` refuses an unkeyed seal. "An unkeyed digest" catches edits, but anyone with the scripts could reseal an edited audit.
 - "Eval run with a pinned seed": the planted-fault seed came from `SA_READINESS_EVAL_SEED`. `readiness verify-seal` won't treat it as a production result.
 - "Outcomes come from a recorded PR file": the outcome numbers were read from `--outcomes-input`, not from GitHub. Anyone can write such a file, so `verify-seal` won't treat the audit as a production result either.
 
 ## Planted faults
 
-Where each fault was planted stays outside the repository until the seal: the draft audit holds only each fault's result, and `status` and the replay log give counts. The sealed audit and part 4 then name each missed fault's operator, file and line, so the tests can be fixed.
+Where each fault was planted stays outside the repository until the seal: the draft audit holds only each fault's result and a digest of the seed, and `status` and the replay log give counts. The sealed audit and part 4 then name each missed fault's operator, file and line, so the tests can be fixed.

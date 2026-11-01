@@ -318,7 +318,7 @@ export interface HistoryLine {
   noLevel?: boolean;
   shares: Record<string, number>;
   active: string[];
-  outcomes?: { window: string; agent: OutcomeStats; control: OutcomeStats; byComponent: Record<string, OutcomeStats> } | null;
+  outcomes?: { window: string; agent: OutcomeStats; control: OutcomeStats; byComponent: Record<string, OutcomeStats>; source?: "gh" | "file" } | null;
   seedPinned: boolean;
 }
 

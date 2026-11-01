@@ -11,8 +11,8 @@ import type { Rubric } from "./rubric.ts";
 import { SUDO_SHIM_MARK, runCommand, scrubbedEnv } from "./run.ts";
 import type { RunOutcome } from "./run.ts";
 import type { Audit, CommandKind, CondId, ContractCommand, Diagnosis, Evidence, Mutant, Profile, Strength, Where } from "./types.ts";
-import { exists, fail, randomHex, readJson, readText, sha256, writeJson } from "./util.ts";
-import { refreshTree } from "./workspace.ts";
+import { containedPath, exists, fail, randomHex, readJson, readText, sha256, writeJson } from "./util.ts";
+import { realSeed, refreshTree } from "./workspace.ts";
 
 export interface Executor {
   where: Where;
@@ -43,10 +43,7 @@ export function registryValuesOf(audit: Audit): string[] {
 
 // A path from .cursor/environment.json, refused when it leaves the audited tree.
 export function insideTree(root: string, ...parts: string[]): string {
-  const base = resolve(root);
-  const p = resolve(base, ...parts);
-  if (p !== base && !p.startsWith(base + sep)) fail(`.cursor/environment.json points outside the repository (${join(...parts)}), which the audit refuses.`);
-  return p;
+  return containedPath(root, parts, ".cursor/environment.json");
 }
 
 export function hostExecutor(root: string, registryEnv: string[], inheritEnv: boolean, where: Where = "fresh_copy"): Executor {
@@ -282,7 +279,7 @@ export const NO_MUTANTS = "planted faults skipped by --no-mutants";
 
 async function plantFaults(audit: Audit, repo: string, tree: string, ex: Executor, rubric: Rubric, testCmd: ContractCommand, budget: Budget, log: (s: string) => void): Promise<void> {
   const comp = audit.profile!.components.find((c) => c.id === testCmd.component)!;
-  const sites = chooseSites(repo, tree, comp, audit.seed.value, rubric.mutation.perComponent);
+  const sites = chooseSites(repo, tree, comp, realSeed(audit, { tree, createdAt: audit.createdAt }), rubric.mutation.perComponent);
   if (sites.length === 0) {
     addEvidence(audit, { checkId: "verify.behavioral_oracle", condition: "faults", component: comp.id, strength: ex.strength, where: ex.where, result: "not_run", summary: "no places to plant a fault were found in files the tests import" });
     return;
@@ -309,7 +306,7 @@ async function plantFaults(audit: Audit, repo: string, tree: string, ex: Executo
           result = "not_run";
           break;
         }
-        if (out.exitCode === 0) {
+        if (out.exitCode === 0 && !((testCounts(out.output)?.failed ?? 0) > 0)) {
           result = run === 0 ? "survived" : "discarded";
           break;
         }
@@ -467,7 +464,7 @@ export async function replay(audit: Audit, repo: string, tree: string, rubric: R
           continue;
         }
         const second = await ex.exec(testRes.cmd.command, testRes.cmd.cwd, testRes.cmd.timeoutSec);
-        if (second.exitCode !== 0) {
+        if (second.exitCode !== 0 || (testCounts(second.output)?.failed ?? 0) > 0) {
           addEvidence(audit, { checkId: "verify.behavioral_oracle", condition: "faults", component: comp, strength: ex.strength, where: ex.where, result: "not_run", summary: "tests passed once and failed on a second run, so faults weren't planted (possible flaky tests)" });
           continue;
         }
@@ -501,6 +498,12 @@ export async function replay(audit: Audit, repo: string, tree: string, rubric: R
         const ok = out.exitCode === 0 && !out.timedOut;
         const redacted = redact(out.output, registryValues);
         const why = ok ? null : diagnose(out.output, out.timedOut, "instruction");
+        if (!ok && ex.where !== "container" && out.output.includes(SUDO_SHIM_MARK)) {
+          item.result = "not_run";
+          item.reason = "not replayed: it uses sudo, which the audit never runs on the host";
+          item.blocked = "it uses sudo, which the audit never runs on the host";
+          continue;
+        }
         if (why?.cause === "missing_tool" && ex.where !== "container") {
           item.result = "not_run";
           item.reason = `not replayed: ${why.detail} on this machine, an environment limit rather than a repo defect`;

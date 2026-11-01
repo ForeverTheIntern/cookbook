@@ -70,20 +70,24 @@ export function candidates(ctx: RoadmapContext): Candidate[] {
     const ev = latestEvidence(audit, (e) => e.kind === "install" && e.result === "fail") ?? latestEvidence(audit, (e) => e.kind === "install");
     out.push({ id: "clean.install:repo", template: "clean.install", kind: "fix", component: "*", fixes: assessed.map((c) => ({ condition: "clean.install" as CondId, component: c.id })), vars: { component: "the repo", diagnosis: ev?.diagnosis?.detail ?? ev?.summary ?? "the install failed" }, evidence: ev ? [ev.id] : [] });
   }
+  // A component's commands include the repo-wide ones, and a replay result outranks a host run.
+  const replayed = (e: { where: string }) => e.where === "container" || e.where === "fresh_copy";
+  const resultOf = (contractId: string) => latestEvidence(audit, (e) => e.contractId === contractId && replayed(e)) ?? latestEvidence(audit, (e) => e.contractId === contractId);
   for (const c of assessed) {
     const s = ctx.states.get(c.id)!;
+    const mine = (component: string | undefined) => component === c.id || component === "*";
     if (s["clean.build"].state === "not_met" && s["clean.install"].state !== "not_met") {
-      const ev = latestEvidence(audit, (e) => e.kind === "build" && e.component === c.id);
+      const ev = latestEvidence(audit, (e) => e.kind === "build" && mine(e.component) && e.result === "fail") ?? latestEvidence(audit, (e) => e.kind === "build" && mine(e.component));
       out.push({ id: `clean.build:${c.id}`, template: "clean.build", kind: "fix", component: c.id, fixes: [{ condition: "clean.build", component: c.id }], vars: { component: c.id, diagnosis: ev?.diagnosis?.detail ?? "the build failed" }, evidence: ev ? [ev.id] : [] });
     }
     const failedKinds = audit.contract
-      .filter((k) => k.component === c.id && ["build", "lint", "typecheck", "test"].includes(k.kind))
-      .filter((k) => latestEvidence(audit, (e) => e.contractId === k.id)?.result === "fail")
+      .filter((k) => mine(k.component) && ["build", "lint", "typecheck", "test"].includes(k.kind))
+      .filter((k) => resultOf(k.id)?.result === "fail")
       .map((k) => k.kind);
     if (s["clean.test"].state === "not_met" && s["clean.install"].state !== "not_met") {
-      const ev = latestEvidence(audit, (e) => e.kind === "test" && e.component === c.id && e.result === "fail");
+      const ev = latestEvidence(audit, (e) => e.kind === "test" && mine(e.component) && e.result === "fail" && replayed(e));
       const d = ev?.diagnosis;
-      const missing = !audit.contract.some((k) => k.component === c.id && k.kind === "test");
+      const missing = !audit.contract.some((k) => mine(k.component) && k.kind === "test");
       const template = missing ? "clean.test:missing" : d?.cause === "service" ? "clean.test:service" : d?.cause === "credential" ? "clean.test:credential" : "clean.test";
       const fixes: Fix[] = [{ condition: "clean.test", component: c.id }];
       if (failedKinds.filter((k) => k !== "test").length === 0) fixes.push({ condition: "commands", component: c.id });
@@ -92,7 +96,7 @@ export function candidates(ctx: RoadmapContext): Candidate[] {
     }
     const otherKinds = failedKinds.filter((k) => k !== "test" || s["clean.test"].state !== "not_met");
     if (s.commands.state === "not_met" && otherKinds.length > 0) {
-      const ev = latestEvidence(audit, (e) => e.component === c.id && e.result === "fail" && e.contractId !== undefined && e.kind !== undefined && otherKinds.includes(e.kind));
+      const ev = latestEvidence(audit, (e) => mine(e.component) && e.result === "fail" && e.contractId !== undefined && e.kind !== undefined && otherKinds.includes(e.kind));
       out.push({ id: `commands:${c.id}`, template: "commands", kind: "fix", component: c.id, fixes: [{ condition: "commands", component: c.id }], vars: { component: c.id, kinds: otherKinds.join(" and "), diagnosis: ev?.diagnosis?.detail ?? s.commands.reason }, evidence: ev ? [ev.id] : [] });
     }
     if (goalNeedsFaults && s.faults.state === "not_met") {

@@ -120,6 +120,7 @@ interface GhPr {
 }
 
 interface CheckRuns {
+  total_count?: number;
   check_runs: { conclusion: string | null; status: string }[];
 }
 
@@ -137,11 +138,13 @@ function toRecords(repoSlug: string, list: GhPr[]): PrRecord[] {
     const first = p.commits[0]?.oid;
     if (first) {
       try {
-        const runs = ghJson<CheckRuns>(["api", `repos/${repoSlug}/commits/${first}/check-runs?per_page=100`, "-q", "{check_runs: [.check_runs[] | {conclusion, status}]}"]);
-        // Unknown until every run finished, and a commit whose runs were all skipped proved nothing.
+        const runs = ghJson<CheckRuns>(["api", `repos/${repoSlug}/commits/${first}/check-runs?per_page=100`, "-q", "{total_count, check_runs: [.check_runs[] | {conclusion, status}]}"]);
+        // Unknown until every run finished, when runs sit past the first page, or when every run
+        // was skipped, which proves nothing.
         const all = runs.check_runs;
         const ran = all.filter((r) => r.conclusion !== "skipped" && r.conclusion !== "neutral");
-        if (all.length && all.every((r) => r.status === "completed") && ran.length) firstCheck = ran.every((r) => r.conclusion === "success") ? "success" : "failure";
+        const complete = (runs.total_count ?? all.length) <= all.length;
+        if (complete && all.length && all.every((r) => r.status === "completed") && ran.length) firstCheck = ran.every((r) => r.conclusion === "success") ? "success" : "failure";
       } catch {
         firstCheck = null;
       }

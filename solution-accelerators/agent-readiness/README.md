@@ -9,7 +9,7 @@ It is not a gate to pass before you start using agents. When it finds no blocker
 ## How it works
 
 - **It scores only what it ran.** Scripts install, build and test the repo in a clean container, plant faults its tests should catch, and replay every command in AGENTS.md, rules, skills and the README. The presence of a file never passes a check.
-- **The agent can't grade its own work.** The skill's scripts create the evidence, choose the planted faults, compute every level and seal the audit with a digest of the scripts and rubric. The agent picks the scope, explains the result and stops. Where faults were planted stays outside the repository until the seal, and in CI `SA_READINESS_SEAL_KEY` keys the seal so only the key's holder can produce one.
+- **The agent can't grade its own work.** The skill's scripts create the evidence, choose the planted faults, compute every level and seal the audit with a digest of the scripts and rubric. The agent picks the scope, explains the result and stops. The seed and where faults were planted stay outside the repository until the seal, and a hand edit to the draft audit is refused at the next step. In CI, `SA_READINESS_SEAL_KEY` keys the seal, and wherever the key is set `verify-seal` accepts only keyed seals, so a seal from anywhere else doesn't verify there. The key never reaches the repo's code. These raise the bar; they don't make an audit on a machine the agent controls tamper-proof, so treat a keyed seal from CI as the production result.
 - **Levels follow the work, in three tiers.** The repo gets one rollup level. Each app or component the scan finds gets one standard level, and part 4 lists every component included or left out, with the reason. Scenarios, such as bug fixes or repo-wide changes, are optional breakdowns nested under the components they cover, present only when someone adds them. A monorepo can be at Level 2 in one package and not bootable in another.
 - **The rollup rule is explicit.** The repo level is the lowest standard level among active components: the assessed ones with at least 10% of changes over 90 days, where a component joins or leaves that set only after two audits on the same side of the line. Components the audit can't assess never set it, and scenarios never change it. With no real check result there is no level at any tier. See [references/levels.md](skill/agent-readiness/references/levels.md).
 - **It keeps score over time.** A roadmap with stable item IDs, a weekly recheck, and agent PR outcomes against other PRs show whether fixes paid off.
@@ -118,7 +118,7 @@ Fifteen fixtures under `fixtures/`, each a tiny repo with one planted defect or 
 The evals run the real Cursor agent on each fixture with a pinned prompt and grade what the scripts wrote: at most five hard gates per case (a sealed audit that `verify-seal` accepts, levels, top items, the part 1 rules, no forbidden action), plus two soft judge scores for part 1. The headline judge carries the bar of 0.8; the page judge is tracked.
 
 - `npm run evals -- --tag smoke|full --repeats 3 --json out.json --junit out.xml --compare evals/baseline.json` drives the agent through `@cursor/sdk` and needs a `CURSOR_API_KEY`. CI runs this.
-- Without a key, any agent can be the driver: `--prepare` builds the workspaces and a manifest of prompts, the agent runs each prompt, `--grade <root>` grades one workspace, and `--collect <dir>` summarizes. `--rerender <root>` rebuilds a run's report with the current scripts, so a rendering change can be judged on earlier runs.
+- Without a key, any agent can be the driver: `--prepare` builds the workspaces and a manifest of prompts, the agent runs each prompt, `--grade <root>` grades one workspace, and `--collect <dir>` summarizes. `--rerender <root>` rebuilds a run's report with the current scripts, so a rendering change can be judged on earlier runs, and `--regrade <dir>` grades stored SDK runs again from their saved tool calls after a grader fix.
 
 [evals/baseline.json](evals/baseline.json) is the result CI compares against, and [evals/HILLCLIMB.md](evals/HILLCLIMB.md) logs how it was reached, one failure mode per round.
 
@@ -133,7 +133,14 @@ Six pinned public repos, from a well-tested npm package down to a monorepo with 
 - Components are found by walking the whole tree for manifests: workspaces, standalone Node and Python packages at any depth, each with its own install, and .NET, Go, Rust, JVM, Ruby and PHP projects, which are listed as not assessed. Manifests under test, sample or tooling folders are listed as satellites, not components.
 - The instruction check reads a fenced `npm test` after a `cd apps/web` line as a root command.
 - Node and Python components in one repo share the Node image, which needs `python3-venv` from apt for the Python ones. Where apt is blocked, their installs fail and read as repo failures.
-- First-time CI pass is read from the check runs on a PR's first commit.
+- First-time CI pass is read from the check runs on a PR's first commit. A commit with more than 100 check runs reads as unknown, and a PR list cut off at 300 blocks Level 3; PR file lists aren't paged, so a very large PR can miss a component.
+- With no container runtime, the replay runs repo code on the host in a scrubbed copy. It is disclosed in the report and can't prove Level 1, but it is still repo code on your machine; use a container where that matters.
+- The seed and planted-fault sites sit in the temp folder next to the audit tree until the seal. An agent on the same machine could read them; the skill evals fail any run that does, and the seal is the production control only when it is keyed in CI.
+- Planted faults follow relative imports only: path aliases and barrel re-exports aren't followed, and compiled TypeScript isn't rebuilt between faults.
+- A narrated headline is checked for length, banned terms and numbers, not against the level.
+- A command that times out in a container is killed on the host; the process in the container keeps running until the container is removed.
+- Two components with the same folder name get path-based ids, so adding the second renames the first.
+- A failing declared `start` or `doctor` command doesn't set a level on its own.
 - Follow-ups outside this folder: the cookbook index row, a docs page, a blog post, and running the recheck from a Cursor automation.
 
 ## Design notes

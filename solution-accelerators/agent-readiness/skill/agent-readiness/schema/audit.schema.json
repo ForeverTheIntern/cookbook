@@ -59,7 +59,7 @@
       "type": "array",
       "items": {
         "type": "object",
-        "required": ["id", "component", "file", "line", "operator", "result", "exitCodes"],
+        "required": ["id", "component", "result", "exitCodes"],
         "properties": { "result": { "enum": ["caught", "survived", "discarded", "not_run"] } }
       }
     },

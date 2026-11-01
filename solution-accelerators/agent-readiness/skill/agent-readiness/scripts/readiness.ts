@@ -19,7 +19,7 @@ import { staticSignals } from "./lib/signals.ts";
 import { instructionItems, safetyScan } from "./lib/static.ts";
 import type { Audit, CommandKind, Narration, Result, Roadmap, ScenarioId, ScenarioSpec, Strength, Tier } from "./lib/types.ts";
 import { addDays, exists, fail, git, nowIso, randomHex, readJson, readText, sha256, today, writeJson } from "./lib/util.ts";
-import { initAudit, loadDraft, paths, refreshTree, releaseManifest, resolveRepo, saveDraft, scratchTree } from "./lib/workspace.ts";
+import { commitReader, initAudit, loadDraft, paths, refreshTree, releaseManifest, resolveRepo, saveDraft, scratchTree } from "./lib/workspace.ts";
 
 const BOOLEAN = new Set(["force", "remediate", "inherit-env", "no-mutants", "no-instructions", "no-outcomes", "json", "push", "allow-eval", "dockerfile", "instructions", "strict", "help"]);
 
@@ -105,6 +105,7 @@ function cmdInit(a: Args): void {
   if (!TIERS.includes(tier)) fail(`--tier must be one of ${TIERS.join(", ")}`);
   const registryEnv = csv(opt(a, "registry-env"));
   for (const k of registryEnv) if (!/^[A-Z_][A-Z0-9_]*$/.test(k)) fail(`--registry-env takes variable names, not values: ${k}`);
+  for (const k of registryEnv) if (k.startsWith("SA_")) fail(`--registry-env can't pass ${k}: the audit's own settings, such as the seal key, never reach the repo's code.`);
   const { audit, local } = initAudit({ repo: repoOf(a), scenarios, tier, registryEnv, inheritEnv: Boolean(a.flags["inherit-env"]), force: Boolean(a.flags.force) });
   log(`Opened ${audit.id} (${tier}) at ${audit.repo.commit.slice(0, 7)}${scenarios.length ? `, with the ${scenarios.map((s) => s.id).join(" and ")} ${scenarios.length > 1 ? "scenarios" : "scenario"} for every component` : ""}${audit.repo.dirtyTree ? "; uncommitted changes are not audited" : ""}.`);
   log(`Audit tree: ${local.tree}`);
@@ -116,7 +117,7 @@ function cmdScan(a: Args): void {
   const { audit, local, paths: p } = loadDraft(repo);
   const rubric = loadRubric(audit.rubric);
   refreshTree(repo, audit.repo.commit, local.tree);
-  const profile = buildProfile(repo, local.tree, rubric);
+  const profile = buildProfile(repo, local.tree, rubric, audit.repo.commit);
   audit.profile = profile;
   audit.safety = safetyScan(local.tree, profile);
   audit.instructions = instructionItems(local.tree, profile);
@@ -159,7 +160,7 @@ function cmdContract(a: Args): void {
       command: str(a, "cmd"),
       source: str(a, "source", "agent"),
       reason: str(a, "reason"),
-    }, audit.profile, local.tree);
+    }, audit.profile, commitReader(repo, audit.repo.commit));
     saveDraft(p, audit);
     log(`Added ${cmd.id}: ${cmd.command}`);
     return;
@@ -208,7 +209,7 @@ async function cmdRun(a: Args): Promise<void> {
   const component = opt(a, "component");
   if (component) checkComponent(audit.profile, component);
   if (opt(a, "cmd")) {
-    const cmd = addContractCommand(audit.contract, { kind: str(a, "kind") as CommandKind, component: str(a, "component"), cwd: str(a, "cwd", "."), command: str(a, "cmd"), source: str(a, "source", "agent"), reason: str(a, "reason") }, audit.profile, local.tree);
+    const cmd = addContractCommand(audit.contract, { kind: str(a, "kind") as CommandKind, component: str(a, "component"), cwd: str(a, "cwd", "."), command: str(a, "cmd"), source: str(a, "source", "agent"), reason: str(a, "reason") }, audit.profile, commitReader(repo, audit.repo.commit));
     log(`Added ${cmd.id} to the contract.`);
   }
   const id = opt(a, "id");

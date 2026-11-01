@@ -100,7 +100,7 @@ function action(item: RoadmapItem, rank: number, rubric: Rubric, roadmap: Roadma
     why: item.why,
     movesTheNeedle:
       item.kind === "fix"
-        ? `${item.impact > 0 ? `Takes ${item.unlocks}, covering ${pct(item.impact, 1)}% of recent changes` : `Changes no level on its own: ${item.unlocks}`}. ${item.expected.outcome}`
+        ? `${item.impact > 0 ? `Takes ${item.unlocks}, covering ${pct(item.impact, 1)}% of recent changes` : item.unlocks.includes(" together with ") ? `Takes ${item.unlocks}` : `Changes no level on its own: ${item.unlocks}`}. ${item.expected.outcome}`
         : `Unlocks ${item.unlocks}. ${item.expected.outcome}`,
     watch: watchLine(item, rubric, outcomes),
     research: researchFor(rubric, item),
@@ -243,7 +243,11 @@ function headlineFor(input: RenderInput, ready: string[], setByShare: number): s
     if (blockers.has("clean.build")) return fit(`${names} ${many ? "don't" : "doesn't"} build from a clean checkout${because(input, "clean.build", their)}${share}.${readyLine}`, `${names} ${many ? "don't" : "doesn't"} build from a clean checkout${share}.${readyLine}`);
     return fit(`Agents can't pass the tests in ${names} from a clean checkout${because(input, "clean.test", their)}${share}.${readyLine}`, `Agents can't pass the tests in ${names} from a clean checkout${share}.${readyLine}`);
   }
-  const failingKinds = [...new Set(input.audit.contract.filter((c) => rollup.setBy.includes(c.component) && ["build", "lint", "typecheck", "test"].includes(c.kind) && [...input.audit.evidence].reverse().find((e) => e.contractId === c.id)?.result === "fail").map((c) => (c.kind === "typecheck" ? "type-check" : c.kind)))];
+  const resultOf = (id: string) => {
+    const evs = [...input.audit.evidence].reverse().filter((e) => e.contractId === id);
+    return (evs.find((e) => e.where === "container" || e.where === "fresh_copy") ?? evs[0])?.result;
+  };
+  const failingKinds = [...new Set(input.audit.contract.filter((c) => (rollup.setBy.includes(c.component) || c.component === "*") && ["build", "lint", "typecheck", "test"].includes(c.kind) && resultOf(c.id) === "fail").map((c) => (c.kind === "typecheck" ? "type-check" : c.kind)))];
   const why: Partial<Record<CondId, string>> = {
     commands: failingKinds.length ? `${their} ${list(failingKinds)} ${failingKinds.length > 1 ? "commands fail" : "command fails"}` : `${their} checks don't all pass`,
     faults: `${their} tests can't yet catch wrong changes`,
@@ -269,7 +273,8 @@ function notMachineCause(input: RenderInput): string | null {
   const caps = capReasons(input);
   if (caps.length === 0 || caps.some((c) => c.state === "blocked")) return null;
   const reason = caps.find((c) => c.state === "unknown")?.reason;
-  return reason ? reason.replace(/^planted faults skipped by --no-mutants$/, "this run skipped planted faults") : null;
+  // Part 1 carries this reason, so the audit's own words for its steps become plain ones.
+  return reason ? reason.replace(/^planted faults skipped by --no-mutants$/, "this run skipped planted faults").replace(/\breplay(ed|s)?\b/g, (_m, s?: string) => (s === "ed" ? "run" : s === "s" ? "runs" : "run")) : null;
 }
 
 function because(input: RenderInput, cond: CondId, their: string): string {
@@ -410,7 +415,10 @@ function coverageLine(input: RenderInput): string {
   const share = `${Math.round(threshold * 100)}%`;
   const low = assessed.filter((c) => !input.active.has(c.id) && c.changeShare < threshold);
   const held = assessed.filter((c) => !input.active.has(c.id) && c.changeShare >= threshold);
-  const fallback = assessed.filter((c) => input.active.has(c.id) && c.changeShare < threshold);
+  // The fallback is only the case where no active component reaches the line; one kept active by
+  // the two-audit rule is still set by that rule.
+  const activeRows = assessed.filter((c) => input.active.has(c.id));
+  const fallback = activeRows.length === 1 && activeRows[0].changeShare < threshold && assessed.every((c) => c.changeShare < threshold) ? activeRows : [];
   if (low.length) line += ` ${list(low.map((c) => c.id))} ${low.length > 1 ? "get" : "gets"} under ${share} of changes, so ${low.length > 1 ? "they don't" : "it doesn't"} set the repo level.`;
   if (held.length) line += ` ${list(held.map((c) => c.id))} crossed ${share} of changes in this audit only; ${held.length > 1 ? "they set" : "it sets"} the repo level once ${held.length > 1 ? "they stay" : "it stays"} there for a second audit.`;
   if (fallback.length) line += ` No assessed component gets ${share} of changes, so the largest, ${fallback[0].id}, sets the repo level.`;
@@ -536,8 +544,11 @@ export function buildReport(input: RenderInput): ReportJson {
   const clamp = (v: number) => Math.max(0, Math.min(1, v));
   const maxImpact = Math.max(0, ...actions.map((a) => a.impact));
   const points = actions.map((a, i) => {
-    const x = Math.min(0.95, rubric.effortX[a.effort] + i * (relative ? 0.02 : 0.04));
-    const y = relative && maxImpact > 0 ? clamp(a.impact / maxImpact) : clamp(a.impact);
+    const x = Math.round(Math.min(0.95, rubric.effortX[a.effort] + i * (relative ? 0.02 : 0.04)) * 1000) / 1000;
+    // With no action moving a level on its own, the actions only unblock together, so they share
+    // the top half instead of all reading as no impact.
+    const raw = relative ? (maxImpact > 0 ? a.impact / maxImpact : 0.75) : a.impact;
+    const y = Math.round(clamp(raw) * 1000) / 1000;
     return { label: `${a.rank}. ${a.title}`, x, y, impact: clamp(a.impact), quadrant: quadrantOf(rubric, x, y), itemId: a.itemId };
   });
   const o = audit.outcomes;
@@ -824,6 +835,8 @@ export function allowedNumbers(report: ReportJson): Set<string> {
   for (const m of JSON.stringify(computed).matchAll(/\d+(?:\.\d+)?%?/g)) set.add(m[0]);
   for (const c of report.components.included) set.add(`${Math.round(c.changeShare * 100)}%`);
   for (const a of report.actions) if (a.impact > 0) set.add(`${Math.round(a.impact * 100)}%`);
+  const setBy = report.components.included.filter((c) => report.maturity.setBy.includes(c.id)).reduce((s, c) => s + c.changeShare, 0);
+  if (setBy > 0) set.add(`${Math.round(setBy * 100)}%`);
   for (let i = 0; i <= 4; i++) set.add(String(i));
   return set;
 }

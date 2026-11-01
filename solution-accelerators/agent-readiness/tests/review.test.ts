@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, test } from "node:test";
@@ -92,8 +92,11 @@ describe("fixes from the independent pre-ship review", () => {
 
   test("a declared Dockerfile or build context outside the repository is refused", () => {
     const root = mkdtempSync(join(tmpdir(), "inside-"));
-    assert.equal(insideTree(root, ".cursor", "Dockerfile"), join(root, ".cursor", "Dockerfile"));
+    assert.equal(insideTree(root, ".cursor", "Dockerfile"), join(realpathSync(root), ".cursor", "Dockerfile"));
     assert.throws(() => insideTree(root, ".cursor", "../../../etc"), /points outside the repository/);
+    mkdirSync(join(root, ".cursor"));
+    symlinkSync(tmpdir(), join(root, ".cursor", "ctx"));
+    assert.throws(() => insideTree(root, ".cursor", "ctx"), /points outside the repository/, "a symlink out of the tree is refused too");
   });
 
   test("on the host, a script that reaches for sudo is refused and reads as a limit of this machine", async () => {
@@ -123,15 +126,25 @@ describe("fixes from the independent pre-ship review", () => {
     assert.equal(readiness(repo, ["init", "--tier", "local-exec"]).code, 0);
     assert.equal(readiness(repo, ["scan"]).code, 0);
     const add = (cmd: string, source: string) => readiness(repo, ["contract", "add", "--kind", "test", "--component", "healthy-node", "--cmd", cmd, "--source", source, "--reason", "documented"]);
-    const madeUp = add("true", "agent");
-    assert.notEqual(madeUp.code, 0);
-    assert.match(madeUp.out, /doesn't run a script or Make target the repo defines/);
-    const wrongLine = add("node --test test/extra.test.js", "AGENTS.md:1");
-    assert.notEqual(wrongLine.code, 0);
-    assert.match(wrongLine.out, /doesn't name `node --test test\/extra\.test\.js`/);
-    const missing = add("npm run e2e", "docs/TESTING.md:4");
-    assert.notEqual(missing.code, 0);
-    assert.match(missing.out, /isn't in the audited commit/);
+    const refused = (cmd: string, source: string, why: RegExp) => {
+      const r = add(cmd, source);
+      assert.notEqual(r.code, 0, `${cmd} --source ${source}`);
+      assert.match(r.out, why);
+    };
+    refused("true", "agent", /passes whatever the repo does/);
+    refused("true", "package.json:4", /passes whatever the repo does/);
+    refused("true", "readiness", /--source must be `agent` or a file:line/);
+    refused("npm run check || true", "agent", /hides its own failure/);
+    refused("npm run check && node -e 1", "agent", /chains commands/);
+    refused("node scripts/build.mjs", "agent", /doesn't run a script or Make target the repo defines/);
+    refused("node --test test/extra.test.js", "AGENTS.md:1", /doesn't name `node --test test\/extra\.test\.js`/);
+    refused("npm run docs", "AGENTS.md:3", /doesn't name `npm run docs`/);
+    refused("npm run e2e", "docs/TESTING.md:4", /isn't in the audited commit/);
+    refused("npm test", "../outside.md:1", /points outside the repository/);
+    assert.match(readiness(repo, ["contract", "add", "--kind", "test", "--component", "healthy-node", "--cwd", "../..", "--cmd", "npm test", "--source", "AGENTS.md:5", "--reason", "x"]).out, /--cwd \.\.\/\.\. points outside the repository/);
+    const tree = JSON.parse(readFileSync(join(repo, ".agent-readiness/work", readFileSync(join(repo, ".agent-readiness/work/CURRENT"), "utf8").trim(), "local.json"), "utf8")).tree;
+    writeFileSync(join(tree, "AGENTS.md"), "`node -e 0`\n");
+    refused("node -e 0", "AGENTS.md:1", /doesn't name `node -e 0`/);
     const cited = readiness(repo, ["contract", "add", "--kind", "test", "--component", "healthy-node", "--cwd", "test", "--cmd", "npm test", "--source", "AGENTS.md:5", "--reason", "documented"]);
     assert.equal(cited.code, 0, cited.out);
   });

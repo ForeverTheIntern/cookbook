@@ -1,4 +1,4 @@
-import { join } from "node:path";
+import { isAbsolute, join, normalize } from "node:path";
 import type { Rubric } from "./rubric.ts";
 import type { CommandKind, ContractCommand, Profile, SafetyFinding } from "./types.ts";
 import { exists, fail, readText } from "./util.ts";
@@ -132,40 +132,69 @@ export function checkComponent(profile: Profile | null, component: string): void
   if (!c.assessed) fail(`${component} isn't assessed (${c.notAssessedReason ?? "not supported"}), so replay wouldn't run its commands. ${choices}`);
 }
 
-function makeTargets(dir: string): string[] {
-  const f = join(dir, "Makefile");
-  return exists(f) ? [...readText(f).matchAll(/^([\w.-]+)\s*:(?!=)/gm)].map((m) => m[1]) : [];
+// Reads a file as it is in the audited commit, or null when the commit doesn't have it.
+export type CommitReader = (path: string) => string | null;
+
+function escapes(path: string): boolean {
+  return isAbsolute(path) || normalize(path).split(/[\\/]/).includes("..");
 }
 
-// The repo has to define a command before it joins the contract: the cited line names it, or the
-// manifest or Makefile it runs exists. Otherwise anything, even `true`, could stand in for the tests.
-function checkSource(tree: string, profile: Profile, input: { component: string; cwd: string; command: string; source: string }): void {
-  const script = scriptOf(input.command);
+function makeTargets(text: string | null): string[] {
+  return text ? [...text.matchAll(/^([\w.-]+)\s*:(?!=)/gm)].map((m) => m[1]) : [];
+}
+
+// Commands that pass whatever the repo does, so they can never stand in for a check.
+const TRIVIAL = /^\s*(true|:|\/bin\/true|exit(\s+0)?|echo\b.*|printf\b.*|sleep\s+\d+|test\s+\S+|\[[^\]]*\])\s*$/;
+const CHAINED = /\|\||&&|;|\||`|\$\(|\n/;
+
+// The command as the cited line writes it: in a code span, after a CI `run:`, or the whole line.
+function commandsOn(line: string): string[] {
+  const spans = [...line.matchAll(/`([^`]+)`/g)].map((m) => m[1].trim());
+  const run = line.match(/^\s*-?\s*run:\s*(.+)$/)?.[1]?.trim();
+  return [...spans, ...(run ? [run] : []), line.trim().replace(/^[-*]\s+/, "").replace(/^\$\s+/, "")];
+}
+
+// The repo has to define a command before it joins the contract: the cited line of the audited
+// commit names it, or it runs a manifest script or Make target. Otherwise anything, even `true`,
+// could stand in for the tests.
+function checkSource(read: CommitReader, profile: Profile, input: { component: string; cwd: string; command: string; source: string }): void {
+  const command = input.command.trim();
+  if (TRIVIAL.test(command)) fail(`\`${command}\` passes whatever the repo does, so it can't be a check.`);
+  if (/\|\|\s*(true|:|exit(\s+0)?)\s*$/.test(command)) fail(`\`${command}\` hides its own failure, so it can't be a check.`);
+  const script = scriptOf(command);
   const cited = input.source.match(/^(.+):(\d+)$/);
   if (cited) {
-    const file = join(tree, cited[1]);
-    const line = exists(file) ? readText(file).split("\n")[Number(cited[2]) - 1] ?? "" : null;
-    if (line === null) fail(`--source ${input.source}: ${cited[1]} isn't in the audited commit.`);
-    if (!line.includes(input.command.trim()) && !(script && new RegExp(`\\b${script.replace(/[.:]/g, "\\$&")}\\b`).test(line))) fail(`--source ${input.source} doesn't name \`${input.command}\`. Cite the line where the repo documents or runs it.`);
+    if (escapes(cited[1])) fail(`--source ${input.source} points outside the repository.`);
+    const text = read(cited[1]);
+    if (text === null) fail(`--source ${input.source}: ${cited[1]} isn't in the audited commit.`);
+    const line = text.split("\n")[Number(cited[2]) - 1] ?? "";
+    const named = commandsOn(line).some((c) => c === command || (script !== null && scriptOf(c) === script));
+    if (!named) fail(`--source ${input.source} doesn't name \`${command}\`. Cite the line where the repo documents or runs it.`);
     return;
   }
-  if (input.source !== "agent") return;
+  if (CHAINED.test(command)) fail(`\`${command}\` chains commands; add each one the repo defines on its own, citing where with --source file:line.`);
   const comp = profile.components.find((c) => c.id === input.component);
-  const make = input.command.trim().match(/^make\s+([\w.-]+)/);
+  const make = command.match(/^make\s+([\w.-]+)$/);
   if (script && (comp?.scripts[script] || profile.components.some((c) => c.path === input.cwd && c.scripts[script]))) return;
-  if (make && makeTargets(join(tree, input.cwd)).includes(make[1])) return;
-  fail(`\`${input.command}\` doesn't run a script or Make target the repo defines. Add only commands the repo defines, and cite where with --source file:line.`);
+  if (make && makeTargets(read(join(input.cwd, "Makefile"))).includes(make[1])) return;
+  fail(`\`${command}\` doesn't run a script or Make target the repo defines. Add only commands the repo defines, and cite where with --source file:line.`);
 }
 
-export function addContractCommand(cmds: ContractCommand[], input: { kind: CommandKind; component: string; cwd: string; command: string; source: string; reason: string; timeoutSec?: number }, profile: Profile | null, tree?: string): ContractCommand {
+export function addContractCommand(cmds: ContractCommand[], input: { kind: CommandKind; component: string; cwd: string; command: string; source: string; reason: string; timeoutSec?: number }, profile: Profile | null, read?: CommitReader): ContractCommand {
   checkComponent(profile, input.component);
   if (!input.reason.trim()) fail("contract add needs --reason");
-  if (!/^(agent|[^:]+:\d+|readiness|[^\s]+ scripts\.[\w:-]+)$/.test(input.source)) fail("--source must be `agent` or a file:line where the command was found");
+  // From the CLI a command is the agent's (`agent`) or the repo's (`file:line`); the scan's own
+  // sources aren't for the agent to claim.
+  const sources = read ? /^(agent|[^:\s]+:\d+)$/ : /^(agent|[^:]+:\d+|readiness|[^\s]+ scripts\.[\w:-]+)$/;
+  if (!sources.test(input.source)) fail("--source must be `agent` or a file:line where the command was found");
+  if (escapes(input.cwd)) fail(`--cwd ${input.cwd} points outside the repository, which the audit refuses.`);
+  const citedFile = input.source.match(/^(.+):\d+$/)?.[1];
+  if (citedFile && escapes(citedFile)) fail(`--source ${input.source} points outside the repository.`);
   const dir = (d: string) => d.replace(/^\.\//, "").replace(/\/+$/, "") || ".";
   const script = scriptOf(input.command);
   const same = cmds.find((c) => c.component === input.component && dir(c.cwd) === dir(input.cwd) && (c.command.trim() === input.command.trim() || (script !== null && scriptOf(c.command) === script)));
   if (same) fail(`${same.id} already runs ${script ? `the ${script} script` : "this command"} for ${input.component === "*" ? "the repo" : input.component} (\`${same.command}\`), so it would run twice. Leave it out of the contract.`);
-  if (tree && profile) checkSource(tree, profile, input);
+  if (read && profile) checkSource(read, profile, input);
   const base = `cmd-${input.component === "*" ? "repo" : input.component}-${input.kind}`;
   let id = base;
   let i = 2;

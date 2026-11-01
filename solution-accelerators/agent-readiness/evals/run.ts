@@ -170,6 +170,20 @@ async function main(): Promise<void> {
     for (const g of gates) process.stdout.write(`${g.pass ? "PASS" : "FAIL"}  ${g.name}: ${g.detail}\n`);
     return;
   }
+  // Grades stored SDK runs again from their saved trajectories, for a grader fix with no new agent runs.
+  if (typeof flags.regrade === "string") {
+    const dir = resolve(flags.regrade);
+    for (const f of readdirSync(dir).filter((n) => n.endsWith(".run.json"))) {
+      const saved = JSON.parse(readFileSync(join(dir, f), "utf8")) as { run: CaseRun; trajectory?: Trajectory };
+      const c = all.find((x) => x.id === saved.run.id);
+      if (!c || !saved.trajectory || !saved.run.workspace) continue;
+      const { ws } = loadWorkspace(dirname(saved.run.workspace));
+      saved.run.grade.gates = gradeCase(ws, saved.trajectory, c);
+      writeFileSync(join(dir, f), JSON.stringify(saved, null, 2));
+    }
+    process.exitCode = report(collect(dir), flags, String(flags.model ?? DEFAULT_MODEL), "sdk", repeats);
+    return;
+  }
   if (typeof flags.collect === "string") {
     process.exitCode = report(collect(resolve(flags.collect)), flags, String(flags.model ?? "external"), String(flags.driver ?? "external"), repeats);
     return;

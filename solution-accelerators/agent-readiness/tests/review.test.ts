@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, test } from "node:test";
 import { compare, crashedRun, summarize } from "../evals/lib/baseline.ts";
-import { faultStoreReads } from "../evals/lib/trajectory.ts";
+import { faultStoreReads, shellWritesProtected } from "../evals/lib/trajectory.ts";
 import { mergeHistory } from "../skill/agent-readiness/scripts/lib/history.ts";
 import { activeComponents } from "../skill/agent-readiness/scripts/lib/levels.ts";
 import { coAuthorMatches } from "../skill/agent-readiness/scripts/lib/outcomes.ts";
@@ -240,6 +240,13 @@ describe("fixes from the independent pre-ship review", () => {
     const call = (name: string, args: Record<string, unknown>) => ({ name, status: "completed", args });
     const t = { driver: "sdk" as const, text: "", durationMs: 0, tokens: null, error: null, toolCalls: [call("Read", { path: "/tmp/readiness-aud-1/mutants.json" }), call("Shell", { command: "cat $TMPDIR/readiness-aud-1/mutants.json" }), call("Read", { path: "src/pricing.js" })] };
     assert.equal(faultStoreReads(t).length, 2);
+  });
+
+  test("the shell gate flags writes to protected files, not protected paths that only appear in a heredoc or a later command", () => {
+    for (const cmd of ["echo x > .agent-readiness/latest/report.md", "sed -i 's/1/2/' .agent-readiness/roadmap.json", "printf x | tee -a .cursor/skills/agent-readiness/rubric/2026-11-alpha.json", "rm -rf .agent-readiness/history"]) assert.ok(shellWritesProtected(cmd), cmd);
+    const narrate = `cat > "$TMPDIR/readiness-narration.json" <<'EOF'\n{ "headline": "see .agent-readiness/latest/report.md" }\nEOF\nr() { node .cursor/skills/agent-readiness/scripts/readiness.ts "$@"; }; r narrate --file "$TMPDIR/readiness-narration.json" && r seal`;
+    assert.equal(shellWritesProtected(narrate), false);
+    assert.equal(shellWritesProtected("node .cursor/skills/agent-readiness/scripts/readiness.ts status > /tmp/status.txt"), false);
   });
 
   test("a crashed eval worker counts as a failed run, and a missing repeat is a regression", () => {

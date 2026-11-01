@@ -12,6 +12,7 @@ import { SUDO_SHIM_MARK, runCommand, scrubbedEnv } from "./run.ts";
 import type { RunOutcome } from "./run.ts";
 import type { Audit, CommandKind, CondId, ContractCommand, Diagnosis, Evidence, Mutant, Profile, Strength, Where } from "./types.ts";
 import { containedPath, exists, fail, randomHex, readJson, readText, sha256, writeJson } from "./util.ts";
+import { commandsFor } from "./score.ts";
 import { realSeed, refreshTree } from "./workspace.ts";
 
 export interface Executor {
@@ -453,7 +454,8 @@ export async function replay(audit: Audit, repo: string, tree: string, rubric: R
     }
     if (opts.mutants) {
       for (const comp of components) {
-        const testRuns = results.filter((r) => r.cmd.kind === "test" && (r.cmd.component === comp || r.cmd.component === "*"));
+        const mine = new Set(commandsFor(audit.contract, comp, "test").map((c) => c.id));
+        const testRuns = results.filter((r) => mine.has(r.cmd.id));
         const testRes = testRuns.find((r) => r.cmd.component === comp) ?? testRuns[0];
         if (!testRes || testRuns.some((r) => r.status !== "pass")) {
           addEvidence(audit, { checkId: "verify.behavioral_oracle", condition: "faults", component: comp, strength: ex.strength, where: ex.where, result: "not_run", summary: testRes ? "tests must pass before faults can be planted" : "no test command found" });

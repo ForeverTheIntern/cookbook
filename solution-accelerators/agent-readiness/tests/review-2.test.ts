@@ -88,6 +88,20 @@ describe("fixes from the second independent review", () => {
     for (const field of [r.executive.headline, r.executive.ask]) for (const t of next.part1.bannedTerms) assert.ok(!field.toLowerCase().includes(t.toLowerCase()), `${t} in ${field}`);
   });
 
+  test("a failing root test command can't be pinned on components whose own tests pass", () => {
+    const audit = makeAudit({ components: [{ id: "api", share: 0.5, test: "fail" }, { id: "shared", share: 0.5, faults: "pass" }] });
+    audit.rubric = "2026-11-alpha";
+    audit.contract.push({ id: "cmd-repo-test", kind: "test", component: "*", cwd: ".", command: "npm test", source: "AGENTS.md:3", reason: "documented", timeoutSec: 600 });
+    audit.evidence.push({ id: "ev-root", at: audit.createdAt, checkId: "bootstrap.cold_replay", condition: "clean.test", component: "*", kind: "test", contractId: "cmd-repo-test", strength: "clean_replay", where: "container", result: "fail", command: "npm test", summary: "test failed: connection refused on port 5432" });
+    const rubric = loadRubric("2026-11-alpha");
+    assert.equal(componentStates(audit, rubric, "shared")["clean.test"].state, "met", "shared's own tests decide it");
+    assert.equal(componentStates(audit, rubric, "api")["clean.test"].state, "not_met");
+    const noOwn = makeAudit({ components: [{ id: "app", share: 1, test: "missing" }] });
+    noOwn.contract.push(audit.contract.at(-1)!);
+    noOwn.evidence.push(audit.evidence.at(-1)!);
+    assert.equal(componentStates(noOwn, rubric, "app")["clean.test"].state, "not_met", "a component with no test of its own gets the repo's");
+  });
+
   test("the seal refuses a narrated headline that calls a component below Level 2 ready", () => {
     const audit = makeAudit({ components: [{ id: "api", share: 0.6, test: "fail" }, { id: "shared", share: 0.4, faults: "fail" }] });
     audit.rubric = "2026-11-alpha";

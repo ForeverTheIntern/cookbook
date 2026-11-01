@@ -19,6 +19,14 @@ function latest(evs: Evidence[]): Evidence | undefined {
 
 const replayed = (e: Evidence) => e.where === "container" || e.where === "fresh_copy";
 
+// A component's own commands of a kind decide it. A repo-wide command fills in only where the
+// component has none of that kind: a root `npm test` that fails in one workspace can't be pinned
+// on the others, and a component with no test of its own still gets the repo's.
+export function commandsFor(contract: Audit["contract"], componentId: string, kind: string): Audit["contract"] {
+  const own = contract.filter((c) => c.component === componentId && c.kind === kind);
+  return own.length ? own : contract.filter((c) => c.component === "*" && c.kind === kind);
+}
+
 // A replay result for a command outranks a later diagnostic run of it on the host, so
 // `readiness run` can't turn a clean-container failure into a pass.
 function commandEvidence(evs: Evidence[], contractId: string, replayOnly: boolean): Evidence | undefined {
@@ -93,21 +101,20 @@ export function componentStates(audit: Audit, rubric: Rubric, componentId: strin
   const ownInstall = preferReplay(evs.filter((e) => e.kind === "install" && e.component === componentId));
   const install = ownInstall && !(repoInstall && repoInstall.result !== "pass") ? ownInstall : (repoInstall ?? ownInstall);
   states["clean.install"] = fromEvidence(rubric, install, "bootstrap.cold_replay", "the clean install hasn't run");
-  const mine = (c: { component: string }) => c.component === componentId || c.component === "*";
-  const builds = contract.filter((c) => mine(c) && c.kind === "build");
+  const builds = commandsFor(contract, componentId, "build");
   if (builds.length === 0) {
     states["clean.build"] = { state: states["clean.install"].state, reason: "no build step; follows the install", evidence: states["clean.install"].evidence };
   } else {
     states["clean.build"] = allPass(builds.map((c) => fromEvidence(rubric, commandEvidence(evs, c.id, true), "bootstrap.cold_replay", "the clean build hasn't run")), `${builds.length} build commands pass`);
   }
-  const tests = contract.filter((c) => mine(c) && c.kind === "test");
+  const tests = commandsFor(contract, componentId, "test");
   if (tests.length === 0) {
     states["clean.test"] = { state: "not_met", reason: "no test command was found", evidence: [] };
   } else {
     states["clean.test"] = allPass(tests.map((c) => fromEvidence(rubric, commandEvidence(evs, c.id, true), "bootstrap.cold_replay", "the clean test run hasn't run")), `${tests.length} test commands pass`);
   }
   const cmdKinds = ["build", "lint", "typecheck", "test"] as const;
-  const discovered = contract.filter((c) => mine(c) && (cmdKinds as readonly string[]).includes(c.kind));
+  const discovered = cmdKinds.flatMap((k) => commandsFor(contract, componentId, k));
   if (!discovered.some((c) => c.kind === "test")) {
     states.commands = { state: "not_met", reason: "no test command was found", evidence: [] };
   } else {

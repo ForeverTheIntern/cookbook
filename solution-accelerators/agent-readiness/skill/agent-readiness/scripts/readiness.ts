@@ -21,7 +21,7 @@ import type { Audit, CommandKind, Narration, Result, Roadmap, ScenarioId, Scenar
 import { addDays, exists, fail, git, nowIso, randomHex, readJson, readText, sha256, today, writeJson } from "./lib/util.ts";
 import { commitReader, initAudit, loadDraft, paths, refreshTree, releaseManifest, resolveRepo, saveDraft, scratchTree } from "./lib/workspace.ts";
 
-const BOOLEAN = new Set(["force", "remediate", "inherit-env", "no-mutants", "no-instructions", "no-outcomes", "json", "push", "allow-eval", "dockerfile", "instructions", "strict", "help"]);
+const BOOLEAN = new Set(["force", "remediate", "inherit-env", "no-mutants", "no-instructions", "no-outcomes", "json", "push", "allow-eval", "allow-unkeyed", "dockerfile", "instructions", "strict", "help"]);
 
 interface Args {
   positional: string[];
@@ -399,7 +399,7 @@ function cmdSeal(a: Args): void {
 function cmdVerify(a: Args): void {
   const p = paths(repoOf(a));
   const { audit } = loadSealedAudit(p, a.positional[1] ?? "latest");
-  const r = verifySeal(p, audit.id, { releaseRepo: opt(a, "release-repo"), releaseRef: opt(a, "release-ref"), tierExternal: opt(a, "tier") === "external-systems" || audit.tier === "external-systems" });
+  const r = verifySeal(p, audit.id, { releaseRepo: opt(a, "release-repo"), releaseRef: opt(a, "release-ref"), tierExternal: opt(a, "tier") === "external-systems" || audit.tier === "external-systems", allowUnkeyed: Boolean(a.flags["allow-unkeyed"]) });
   for (const l of r.lines) log(l);
   if (!r.ok) fail("Seal verification failed.", 2);
   if (!r.production && !a.flags["allow-eval"]) fail(`This is an eval audit (${audit.seed.pinned ? "pinned seed" : "outcomes from a recorded PR file"}), not a production result. Pass --allow-eval to accept it.`, 3);
@@ -408,7 +408,7 @@ function cmdVerify(a: Args): void {
 async function cmdRecheck(a: Args): Promise<void> {
   const p = paths(repoOf(a));
   const r = await recheck(p, { runtime: str(a, "runtime", process.env.SA_READINESS_RUNTIME || "auto"), image: opt(a, "image") ?? (process.env.SA_READINESS_IMAGE || undefined), log });
-  log(`Recheck ${r.line.id}: ${r.line.result}${r.line.note ? ` (${r.line.note})` : ""}. Repo level: ${r.line.repoLevel}; components: ${JSON.stringify(r.line.levels)}.`);
+  log(`Recheck ${r.line.id}: ${r.line.result}${r.line.note ? ` (${r.line.note})` : ""}. ${r.line.noLevel ? "Repo level: not assessed on this machine." : `Repo level: ${r.line.repoLevel}; components: ${JSON.stringify(r.line.levels)}.`}`);
   if (r.line.result === "failed") process.exitCode = 1;
 }
 
@@ -595,7 +595,7 @@ Audit
   audit --tier T [--scenario S] [--outcomes-input f] [--narration f]   init, scan, replay, outcomes and seal in one go
 
 After an audit
-  verify-seal [audit-id|latest] [--release-repo owner/repo --release-ref tag --tier external-systems] [--allow-eval]
+  verify-seal [audit-id|latest] [--release-repo owner/repo --release-ref tag --tier external-systems] [--allow-eval] [--allow-unkeyed]   with SA_READINESS_SEAL_KEY set, only keyed seals pass unless --allow-unkeyed
   recheck [--runtime auto|docker|podman|none] [--image ref]
   diff [from] [to] [--json]
   history [--json] | history push [--push] [--remote origin]

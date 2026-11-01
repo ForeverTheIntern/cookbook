@@ -1,8 +1,9 @@
 import assert from "node:assert/strict";
 import { chmodSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { describe, test } from "node:test";
+import { fileURLToPath } from "node:url";
 import { mergeHistory } from "../skill/agent-readiness/scripts/lib/history.ts";
 import { level3Run, outcomeLevel } from "../skill/agent-readiness/scripts/lib/levels.ts";
 import { fetchPrs } from "../skill/agent-readiness/scripts/lib/outcomes.ts";
@@ -14,6 +15,7 @@ import { exportTree } from "../skill/agent-readiness/scripts/lib/workspace.ts";
 import { commitAll, materialize, readiness } from "../tools/fixture.ts";
 import { instruction, makeAudit, reportFor, stats } from "./helpers.ts";
 
+const __dirname = dirname(fileURLToPath(import.meta.url));
 const next = loadRubric("2026-11-alpha");
 const targets = { mergeRate: 0.7, firstPass: 0.6, maxChangesRequested: 0.3, minAgentPrs: 20 };
 const control = stats(40, 35, 30, 5);
@@ -31,6 +33,59 @@ describe("fixes from the second independent review", () => {
     const v = readiness(repo, ["verify-seal"], { SA_READINESS_SEAL_KEY: "ci-key" });
     assert.equal(v.code, 2);
     assert.match(v.out, /SA_READINESS_SEAL_KEY is set, so .*'s unkeyed seal isn't accepted/);
+  });
+
+  test("--allow-unkeyed lets the weekly recheck verify an audit sealed on a laptop, and the digest still has to match", () => {
+    const repo = materialize("healthy-node");
+    hostAudit(repo, { SA_READINESS_SEAL_KEY: "" });
+    const v = readiness(repo, ["verify-seal", "--allow-unkeyed"], { SA_READINESS_SEAL_KEY: "ci-key" });
+    assert.equal(v.code, 0, v.out);
+    assert.match(v.out, /accepted unkeyed because of --allow-unkeyed/);
+    assert.match(readFileSync(join(__dirname, "../examples/github-workflows/scheduled-recheck.yml"), "utf8"), /verify-seal latest .*--allow-unkeyed/);
+  });
+
+  test("with a seal key set, seal leaves out unkeyed history lines, which anyone could have written", () => {
+    const repo = materialize("healthy-node");
+    hostAudit(repo, { SA_READINESS_SEAL_KEY: "" });
+    const r = readiness(repo, ["audit", "--tier", "local-exec", "--runtime", "none", "--no-mutants"], { SA_READINESS_SEAL_KEY: "ci-key" });
+    assert.equal(r.code, 0, r.out);
+    assert.match(r.out, /Left out 1 history line that don't match a sealed audit/);
+  });
+
+  test("a deleted draft digest, or a seal key that changed since init, is refused with its own reason", () => {
+    const repo = materialize("healthy-node");
+    assert.equal(readiness(repo, ["init", "--tier", "local-exec"], { SA_READINESS_SEAL_KEY: "" }).code, 0);
+    assert.match(readiness(repo, ["scan"], { SA_READINESS_SEAL_KEY: "k" }).out, /SA_READINESS_SEAL_KEY was unset when .* started and is set now/);
+    const tree = JSON.parse(readFileSync(join(draftDir(repo), "local.json"), "utf8")).tree as string;
+    rmSync(join(tree, "..", "draft.digest"));
+    assert.match(readiness(repo, ["scan"], { SA_READINESS_SEAL_KEY: "" }).out, /draft digest is missing/);
+  });
+
+  test("a cited line adds exactly what it says, or the bare script; nothing that could mask a failure", () => {
+    const repo = materialize("healthy-node");
+    writeFileSync(join(repo, "README.md"), "Run the checks:\n\n    npm run check\n\n- CI: `cd tools && npm run check`\n");
+    commitAll(repo, "Document a check script");
+    assert.equal(readiness(repo, ["init", "--tier", "local-exec"]).code, 0);
+    assert.equal(readiness(repo, ["scan"]).code, 0);
+    const add = (cmd: string, line: number) => readiness(repo, ["contract", "add", "--kind", "lint", "--component", "healthy-node", "--cmd", cmd, "--source", `README.md:${line}`, "--reason", "documented"]);
+    for (const cmd of ["npm run check ; true", "npm run check || echo ok", "npm run check | cat", "npm run check -- --passWithNoTests"]) assert.notEqual(add(cmd, 3).code, 0, cmd);
+    const ok = add("npm run check", 5);
+    assert.equal(ok.code, 0, ok.out);
+  });
+
+  test("a re-audit inside a window doesn't end a Level 3 run", () => {
+    const first = line("a1", 3, stats(20, 18, 16, 2), {}, "2026-08-01 to 2026-08-31");
+    const second = line("a2", 4, stats(42, 38, 34, 4), {}, "2026-09-01 to 2026-09-30");
+    const reaudit = line("a3", 4, stats(43, 39, 35, 4), {}, "2026-09-03 to 2026-10-02");
+    assert.equal(level3Run([first, second, reaudit], "web", { from: "2026-10-03" }).length, 2, "the overlapping re-audit is skipped; the two whole windows still count");
+  });
+
+  test("a part 1 reason that still holds a banned word gives way to a plain sentence", () => {
+    const audit = makeAudit({ components: [{ id: "app", share: 1, faults: "not_run" }] });
+    audit.rubric = "2026-11-alpha";
+    audit.evidence.find((e) => e.condition === "faults")!.summary = "planting faults failed: the mutant oracle crashed";
+    const r = reportFor(audit);
+    for (const field of [r.executive.headline, r.executive.ask]) for (const t of next.part1.bannedTerms) assert.ok(!field.toLowerCase().includes(t.toLowerCase()), `${t} in ${field}`);
   });
 
   test("verify-seal fails when the latest audit's roadmap.json is gone", () => {
@@ -133,7 +188,8 @@ describe("fixes from the second independent review", () => {
     audit.contract.push({ id: "cmd-repo-typecheck", kind: "typecheck", component: "*", cwd: ".", command: "tsc --noEmit", source: "AGENTS.md:3", reason: "x", timeoutSec: 600 });
     audit.evidence.push({ id: "ev-tc", at: audit.createdAt, checkId: "verify.canonical_interface", condition: "commands", component: "*", kind: "typecheck", contractId: "cmd-repo-typecheck", strength: "clean_replay", where: "container", result: "fail", command: "tsc --noEmit", summary: "typecheck failed: error TS2322" });
     const r = reportFor(audit);
-    assert.ok(r.roadmap.items.some((i) => i.id === "commands:api"), JSON.stringify(r.roadmap.items.map((i) => i.id)));
+    assert.deepEqual(r.roadmap.items.filter((i) => i.id.startsWith("commands:")).map((i) => i.id), ["commands:repo"], "one fix for the repo-wide command, not one per component");
+    assert.match(r.roadmap.items.find((i) => i.id === "commands:repo")!.title, /^Fix the failing typecheck command in the repo$/);
     assert.equal(r.maturity.unproven, false);
     assert.doesNotMatch(r.executive.headline, /couldn't be proved/);
     assert.match(r.executive.headline, /type-check command fails/);

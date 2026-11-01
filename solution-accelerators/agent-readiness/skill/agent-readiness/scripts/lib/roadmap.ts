@@ -73,6 +73,13 @@ export function candidates(ctx: RoadmapContext): Candidate[] {
   // A component's commands include the repo-wide ones, and a replay result outranks a host run.
   const replayed = (e: { where: string }) => e.where === "container" || e.where === "fresh_copy";
   const resultOf = (contractId: string) => latestEvidence(audit, (e) => e.contractId === contractId && replayed(e)) ?? latestEvidence(audit, (e) => e.contractId === contractId);
+  // A failing repo-wide lint, type-check or build is one fix for the repo, not one per component.
+  const repoWide = audit.contract.filter((k) => k.component === "*" && ["build", "lint", "typecheck"].includes(k.kind) && resultOf(k.id)?.result === "fail");
+  const heldByRepoWide = assessed.filter((c) => ctx.states.get(c.id)?.commands.state === "not_met");
+  if (repoWide.length && heldByRepoWide.length) {
+    const ev = resultOf(repoWide[0].id);
+    out.push({ id: "commands:repo", template: "commands", kind: "fix", component: "*", fixes: heldByRepoWide.map((c) => ({ condition: "commands" as CondId, component: c.id })), vars: { component: "the repo", kinds: [...new Set(repoWide.map((k) => k.kind))].join(" and "), diagnosis: ev?.diagnosis?.detail ?? "the command fails" }, evidence: ev ? [ev.id] : [] });
+  }
   for (const c of assessed) {
     const s = ctx.states.get(c.id)!;
     const mine = (component: string | undefined) => component === c.id || component === "*";
@@ -94,7 +101,8 @@ export function candidates(ctx: RoadmapContext): Candidate[] {
       if (template === "clean.test:credential") credentialComps.push(c.id);
       out.push({ id: `clean.test:${c.id}`, template, kind: "fix", component: c.id, fixes, vars: { component: c.id, service: d?.service ?? "", diagnosis: d?.detail ?? s["clean.test"].reason }, evidence: ev ? [ev.id] : s["clean.test"].evidence });
     }
-    const otherKinds = failedKinds.filter((k) => k !== "test" || s["clean.test"].state !== "not_met");
+    const ownFailed = audit.contract.filter((k) => k.component === c.id && ["build", "lint", "typecheck", "test"].includes(k.kind) && resultOf(k.id)?.result === "fail").map((k) => k.kind);
+    const otherKinds = [...ownFailed, ...audit.contract.filter((k) => k.component === "*" && k.kind === "test" && resultOf(k.id)?.result === "fail").map((k) => k.kind)].filter((k) => k !== "test" || s["clean.test"].state !== "not_met");
     if (s.commands.state === "not_met" && otherKinds.length > 0) {
       const ev = latestEvidence(audit, (e) => mine(e.component) && e.result === "fail" && e.contractId !== undefined && e.kind !== undefined && otherKinds.includes(e.kind));
       out.push({ id: `commands:${c.id}`, template: "commands", kind: "fix", component: c.id, fixes: [{ condition: "commands", component: c.id }], vars: { component: c.id, kinds: otherKinds.join(" and "), diagnosis: ev?.diagnosis?.detail ?? s.commands.reason }, evidence: ev ? [ev.id] : [] });

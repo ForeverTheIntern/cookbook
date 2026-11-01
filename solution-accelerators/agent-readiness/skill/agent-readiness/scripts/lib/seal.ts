@@ -193,7 +193,9 @@ export function trustedHistory(p: Paths, history: HistoryLine[], log: (s: string
     try {
       const { audit } = loadSealedAudit(p, h.id);
       const s = audit.sealed;
-      const sealOk = Boolean(s) && (s!.keyed && !key ? true : auditDigest(audit, s!.keyed ? key : null) === s!.digest);
+      // The same rule as verify-seal: with a key, only keyed seals that verify with it. Without
+      // one, an unkeyed seal must match; a keyed one can't be checked here and is kept.
+      const sealOk = Boolean(s) && (key ? s!.keyed === true && auditDigest(audit, key) === s!.digest : s!.keyed === true || auditDigest(audit, null) === s!.digest);
       const lineOk = !s?.historyLineDigest || sha256(stableStringify(h)) === s.historyLineDigest;
       if (sealOk && lineOk) return true;
     } catch {
@@ -247,16 +249,21 @@ export interface VerifyResult {
   lines: string[];
 }
 
-export function verifySeal(p: Paths, ref: string, opts: { releaseRepo?: string; releaseRef?: string; tierExternal: boolean }): VerifyResult {
+export function verifySeal(p: Paths, ref: string, opts: { releaseRepo?: string; releaseRef?: string; tierExternal: boolean; allowUnkeyed?: boolean }): VerifyResult {
   const { audit, dir } = loadSealedAudit(p, ref);
   const lines: string[] = [];
   let ok = true;
   if (audit.state !== "sealed" || !audit.sealed) return { ok: false, production: false, lines: [`${audit.id} isn't sealed`] };
   const key = sealKey();
   // The audit file never chooses how it is checked: with a key configured, only a keyed seal counts.
-  if (key && !audit.sealed.keyed) {
+  if (key && !audit.sealed.keyed && !opts.allowUnkeyed) {
     ok = false;
-    lines.push(`FAIL: SA_READINESS_SEAL_KEY is set, so ${audit.id}'s unkeyed seal isn't accepted. Seal audits where the key is set, such as CI.`);
+    lines.push(`FAIL: SA_READINESS_SEAL_KEY is set, so ${audit.id}'s unkeyed seal isn't accepted. Seal audits where the key is set, such as CI, or pass --allow-unkeyed while audits are still sealed elsewhere.`);
+  } else if (key && !audit.sealed.keyed) {
+    if (auditDigest(audit, null) !== audit.sealed.digest) {
+      ok = false;
+      lines.push(`FAIL: ${audit.id} was edited after sealing (digest mismatch).`);
+    } else lines.push(`OK: ${audit.id} digest matches; accepted unkeyed because of --allow-unkeyed.`);
   } else if (audit.sealed.keyed && !key) {
     ok = false;
     lines.push(`FAIL: ${audit.id} has a keyed seal; set SA_READINESS_SEAL_KEY to the key it was sealed with to verify it.`);

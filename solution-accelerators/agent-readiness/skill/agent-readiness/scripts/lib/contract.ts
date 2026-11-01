@@ -147,12 +147,17 @@ function makeTargets(text: string | null): string[] {
 const TRIVIAL = /^\s*(true|:|\/bin\/true|exit(\s+0)?|echo\b.*|printf\b.*|sleep\s+\d+|test\s+\S+|\[[^\]]*\])\s*$/;
 const CHAINED = /\|\||&&|;|\||`|\$\(|\n/;
 
-// The command as the cited line writes it: in a code span, after a CI `run:`, or the whole line.
+// The commands the cited line writes: in a code span, after a CI `run:`, or the whole line, each
+// split at && and ; with a leading `cd <dir>` dropped.
 function commandsOn(line: string): string[] {
   const spans = [...line.matchAll(/`([^`]+)`/g)].map((m) => m[1].trim());
   const run = line.match(/^\s*-?\s*run:\s*(.+)$/)?.[1]?.trim();
-  return [...spans, ...(run ? [run] : []), line.trim().replace(/^[-*]\s+/, "").replace(/^\$\s+/, "")];
+  const whole = [...spans, ...(run ? [run] : []), line.trim().replace(/^[-*]\s+/, "").replace(/^\$\s+/, "")];
+  return [...whole, ...whole.flatMap((c) => c.split(/\s*(?:&&|;)\s*/)).filter((c) => !/^cd\s/.test(c))].map((c) => c.trim()).filter(Boolean);
 }
+
+// A bare script call, with nothing after the script name that could change what it checks.
+const BARE_SCRIPT = /^(corepack\s+)?(npm|pnpm|yarn|bun)\s+(run(-script)?\s+)?[\w:.-]+$/;
 
 // The repo has to define a command before it joins the contract: the cited line of the audited
 // commit names it, or it runs a manifest script or Make target. Otherwise anything, even `true`,
@@ -168,11 +173,17 @@ function checkSource(read: CommitReader, profile: Profile, input: { component: s
     const text = read(cited[1]);
     if (text === null) fail(`--source ${input.source}: ${cited[1]} isn't in the audited commit.`);
     const line = text.split("\n")[Number(cited[2]) - 1] ?? "";
-    const named = commandsOn(line).some((c) => c === command || (script !== null && scriptOf(c) === script));
+    const on = commandsOn(line);
+    // Exactly what the line says, or the same bare script call: extra arguments or a pipe could
+    // turn the check into one that always passes.
+    const exact = on.includes(command);
+    if (!exact && CHAINED.test(command)) fail(`\`${command}\` chains commands; add each one the repo defines on its own, citing where with --source file:line.`);
+    const named = exact || (script !== null && BARE_SCRIPT.test(command) && on.some((c) => scriptOf(c) === script));
     if (!named) fail(`--source ${input.source} doesn't name \`${command}\`. Cite the line where the repo documents or runs it.`);
     return;
   }
   if (CHAINED.test(command)) fail(`\`${command}\` chains commands; add each one the repo defines on its own, citing where with --source file:line.`);
+  if (script && !BARE_SCRIPT.test(command)) fail(`\`${command}\` passes extra arguments to the ${script} script; add the script as the repo defines it.`);
   const comp = profile.components.find((c) => c.id === input.component);
   const make = command.match(/^make\s+([\w.-]+)$/);
   if (script && (comp?.scripts[script] || profile.components.some((c) => c.path === input.cwd && c.scripts[script]))) return;

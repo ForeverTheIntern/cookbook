@@ -273,8 +273,11 @@ function notMachineCause(input: RenderInput): string | null {
   const caps = capReasons(input);
   if (caps.length === 0 || caps.some((c) => c.state === "blocked")) return null;
   const reason = caps.find((c) => c.state === "unknown")?.reason;
-  // Part 1 carries this reason, so the audit's own words for its steps become plain ones.
-  return reason ? reason.replace(/^planted faults skipped by --no-mutants$/, "this run skipped planted faults").replace(/\breplay(ed|s)?\b/g, (_m, s?: string) => (s === "ed" ? "run" : s === "s" ? "runs" : "run")) : null;
+  if (!reason) return null;
+  // Part 1 carries this reason, so the audit's own words for its steps become plain ones, and a
+  // reason that still holds one gives way to a plain sentence the seal will accept.
+  const plain = reason.replace(/^planted faults skipped by --no-mutants$/, "this run skipped planted faults").replace(/\breplay(ed|s|ing)?\b/gi, (_m, s?: string) => (s?.toLowerCase() === "ed" ? "run" : s?.toLowerCase() === "s" ? "runs" : s?.toLowerCase() === "ing" ? "running" : "run"));
+  return input.rubric.part1.bannedTerms.some((t) => plain.toLowerCase().includes(t.toLowerCase())) ? "a check that decides it didn't produce a result" : plain;
 }
 
 function because(input: RenderInput, cond: CondId, their: string): string {
@@ -547,7 +550,8 @@ export function buildReport(input: RenderInput): ReportJson {
     const x = Math.round(Math.min(0.95, rubric.effortX[a.effort] + i * (relative ? 0.02 : 0.04)) * 1000) / 1000;
     // With no action moving a level on its own, the actions only unblock together, so they share
     // the top half instead of all reading as no impact.
-    const raw = relative ? (maxImpact > 0 ? a.impact / maxImpact : 0.75) : a.impact;
+    const together = roadmap.items.find((i) => i.id === a.itemId)?.unlocks.includes(" together with ") ?? false;
+    const raw = relative ? Math.max(maxImpact > 0 ? a.impact / maxImpact : 0, together ? 0.75 : 0) : a.impact;
     const y = Math.round(clamp(raw) * 1000) / 1000;
     return { label: `${a.rank}. ${a.title}`, x, y, impact: clamp(a.impact), quadrant: quadrantOf(rubric, x, y), itemId: a.itemId };
   });

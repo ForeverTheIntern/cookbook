@@ -162,15 +162,16 @@ export function level3Run(history: HistoryLine[], componentId: string, opts: Run
   for (let i = history.length - 1; i >= 0; i--) {
     const h = history[i];
     if (h.kind === "recheck") {
-      if (h.result === "failed" && (h.levels[componentId] ?? 0) < 3) break;
+      if (h.result === "failed" && !h.noLevel && (h.levels[componentId] ?? 0) < 3) break;
       continue;
     }
     const s = h.outcomes?.byComponent?.[componentId];
     if (h.noLevel || !s || (h.levels[componentId] ?? 0) < 3) break;
     if (opts.production && (h.seedPinned || h.outcomes?.source === "file")) break;
     if ((opts.minOpened ?? 0) > s.opened) break;
+    // A re-audit inside a window isn't a window of its own: skip it rather than end the run.
     const [from, to] = (h.outcomes?.window ?? "").split(" to ");
-    if (nextFrom && to && to > nextFrom) break;
+    if (nextFrom && to && to > nextFrom) continue;
     nextFrom = from;
     run.unshift(s);
   }

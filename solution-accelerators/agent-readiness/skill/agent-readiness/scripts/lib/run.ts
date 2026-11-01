@@ -76,7 +76,8 @@ const MAX_OUTPUT = 1024 * 1024;
 export function runCommand(command: string, cwd: string, env: Record<string, string>, timeoutSec: number): Promise<RunOutcome> {
   return new Promise((resolve) => {
     const started = Date.now();
-    const child = spawn("bash", ["-c", command], { cwd, env, stdio: ["ignore", "pipe", "pipe"], detached: true });
+    // pipefail, as CI shells run, so `tests | tee` fails when the tests do.
+    const child = spawn("bash", ["-o", "pipefail", "-c", command], { cwd, env, stdio: ["ignore", "pipe", "pipe"], detached: true });
     let output = "";
     let timedOut = false;
     const onData = (chunk: Buffer) => {

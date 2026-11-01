@@ -36,7 +36,7 @@ export function startArgs(name: string, image: string, hostDir: string, registry
 
 export function execArgs(name: string, command: string, cwd: string, user: string | null = null): string[] {
   const dir = cwd === "." || cwd === "" ? "/work" : `/work/${cwd}`;
-  return ["exec", ...(user ? ["-u", user] : []), "-w", dir, name, "bash", "-lc", command];
+  return ["exec", ...(user ? ["-u", user] : []), "-w", dir, name, "bash", "-o", "pipefail", "-lc", command];
 }
 
 // CI runs the repo's commands as an ordinary user, and tests that check file permissions only

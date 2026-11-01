@@ -39,7 +39,9 @@ jobs:
       - name: Verify the last audit's seal against the release
         env:
           GH_TOKEN: ${{ github.token }}
-        run: $SA_READINESS verify-seal latest --release-repo "$SA_ACCELERATOR_REPO" --release-ref "$SA_ACCELERATOR_REF" --tier external-systems
+        # Audits sealed on a laptop are unkeyed. Keep --allow-unkeyed until audits are sealed in CI
+        # with the key; then drop it, so a seal from anywhere else no longer verifies here.
+        run: $SA_READINESS verify-seal latest --release-repo "$SA_ACCELERATOR_REPO" --release-ref "$SA_ACCELERATOR_REF" --tier external-systems --allow-unkeyed
       - name: Recheck
         id: recheck
         run: $SA_READINESS recheck

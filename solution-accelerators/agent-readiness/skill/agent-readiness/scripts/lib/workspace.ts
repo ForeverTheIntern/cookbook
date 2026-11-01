@@ -203,7 +203,18 @@ export function realSeed(audit: Audit, local: LocalInfo): string {
 function draftDigest(audit: Audit): string {
   const text = stableStringify(audit);
   const key = process.env.SA_READINESS_SEAL_KEY;
-  return key ? createHmac("sha256", key).update(text).digest("hex") : sha256(text);
+  return key ? `keyed:${createHmac("sha256", key).update(text).digest("hex")}` : `plain:${sha256(text)}`;
+}
+
+function checkDraft(p: Paths, id: string, audit: Audit): void {
+  const f = digestFile(p, id);
+  if (!f || !exists(dirname(f))) return;
+  if (!exists(f)) fail(`${id}'s draft digest is missing, so edits to audit.json can't be ruled out. Start again with \`readiness init --force\`.`);
+  const stored = readText(f).trim();
+  const now = draftDigest(audit);
+  if (stored === now) return;
+  if (stored.split(":")[0] !== now.split(":")[0]) fail(`SA_READINESS_SEAL_KEY was ${stored.startsWith("keyed:") ? "set" : "unset"} when ${id} started and is ${now.startsWith("keyed:") ? "set" : "unset"} now. Run every step of an audit with the same setting, or start again with \`readiness init --force\`.`);
+  fail(`${id}'s audit.json was edited outside the scripts. Start again with \`readiness init --force\`.`);
 }
 
 function digestFile(p: Paths, id: string): string | null {
@@ -224,8 +235,7 @@ export function loadDraft(repo: string, id?: string): { audit: Audit; local: Loc
   if (!draftId) fail("No draft audit is open. Run `readiness init` first.");
   const audit = readJson<Audit>(join(p.work, draftId, "audit.json"));
   const local = readJson<LocalInfo>(join(p.work, draftId, "local.json"));
-  const f = digestFile(p, draftId);
-  if (f && exists(f) && readText(f).trim() !== draftDigest(audit)) fail(`${draftId}'s audit.json was edited outside the scripts. Start again with \`readiness init --force\`.`);
+  checkDraft(p, draftId, audit);
   return { audit, local, paths: p };
 }
 

@@ -71,6 +71,8 @@ export interface ContractCommand {
   timeoutSec: number;
   // Runs only when this machine blocks the named command, as a frozen install behind a declared one.
   fallbackFor?: string;
+  // The command as the repo declares it, when the audit runs a check-only form without its write flags.
+  declared?: string;
 }
 
 export interface Evidence {
@@ -113,7 +115,8 @@ export interface InstructionItem {
   line: number;
   kind: "command" | "path";
   text: string;
-  category: "replay" | "install" | "long_running" | "risky" | "needs_access" | "path";
+  // skipped: from a vendored skill, or a placeholder, interactive or package-adding command; never run.
+  category: "replay" | "install" | "long_running" | "risky" | "needs_access" | "path" | "skipped";
   staticResult: Result;
   staticReason?: string;
   result: Result;

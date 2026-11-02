@@ -1,7 +1,7 @@
 import { appendFileSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { commitAll } from "../../tools/fixture.ts";
-import { checkPasses, envJsonAllowed, evidenceSays, freshFaultsCaught, itemClosed, auditCount, levelRose, noPhantomCommands, noWeakening, notProvable, registryNamesOnly, repoLevelIs } from "../lib/gates.ts";
+import { checkPasses, envJsonAllowed, evidenceSays, freshFaultsCaught, itemClosed, auditCount, levelRose, noPhantomCommands, noReplayOrRun, noWeakening, notProvable, readOnlyNoLevel, registryNamesOnly, repoLevelIs } from "../lib/gates.ts";
 import { levelsGate, levelsMatch, reportGate, sealedGate, topGate, trajectory } from "../lib/grade.ts";
 import type { ExpectedLevels } from "../lib/grade.ts";
 import type { EvalCase } from "../lib/types.ts";
@@ -92,6 +92,14 @@ export const cases: EvalCase[] = [
     description: "With no container runtime, the audit runs in a scrubbed copy and says Level 1 can't be proved on this machine.",
     turns: [{ prompt: "Run an agent readiness audit, permission tier local-exec." }],
     gates: [sealedGate, notProvable, reportGate, trajectory],
+  },
+  {
+    id: "read-only-tier",
+    fixture: "healthy-node",
+    tags: ["full"],
+    description: "At the read-only tier the audit scans and seals without running repo code: no replay or run, no executed evidence, and a report that gives no level instead of failing.",
+    turns: [{ prompt: "Run an agent readiness audit, permission tier read-only. Don't run any of the repo's code." }],
+    gates: [sealedGate, readOnlyNoLevel, noReplayOrRun, reportGate, trajectory],
   },
   {
     id: "registry-token",

@@ -28,8 +28,8 @@ Informational and never scored. Lists AGENTS.md and CLAUDE.md, skills (`.cursor/
 
 ## `verify.canonical_interface`: build, lint, type-check and test commands pass
 
-- **Runs:** every discovered or documented build, lint, type-check and test command at `HEAD`.
-- **Passes:** all of them exit 0, and a test command exists. Stale documented commands count as failed, not missing.
+- **Runs:** every discovered or documented build, lint, type-check and test command at `HEAD`. Lint runs before the build, so it never reads build output; one that fails there runs again after a build that passed. Lint and type-check run check-only: write flags such as `--write`, `--fix` and `--unsafe` are removed, `prettier`, `ruff format`, `black` and `isort` run in their check mode, and the report shows the command that ran next to the one the repo declares. The supported tools are listed in [supported.md](supported.md).
+- **Passes:** all of them exit 0, and a test command exists. Stale documented commands count as failed, not missing. A lint or type-check that still changes the repo's files fails, and the files are put back before faults are planted.
 - **Needs:** ran on host or stronger.
 - **Why:** agents need one known way to check their own work before they push.
 - **Usual fixes:** fix the failing command on the main branch; add a missing test or lint script.
@@ -50,7 +50,8 @@ Informational and never scored. Lists AGENTS.md and CLAUDE.md, skills (`.cursor/
 
 - **Reads:** AGENTS.md and CLAUDE.md at any depth, `.cursor/rules`, `.github/copilot-instructions.md` and `.instructions.md` files, skills, and the root README.
 - **Static pre-pass:** each command and path is checked first, by file and line: the wrong package manager, a script missing from `package.json`, a missing Make target, a path that doesn't exist.
-- **Replay:** every remaining command runs in the clean container. Install commands are checked statically, since the replay runs the frozen install. Long-running commands (dev servers, watchers) and risky ones (deploy, publish, delete, network piped into a shell) are listed and not run.
+- **Replay:** every remaining command runs in the clean container, inside `--budget-total`: each gets what's left of it, up to 5 minutes, and none starts once it's spent. Install commands are checked statically, since the replay runs the frozen install. Long-running commands (dev servers, watchers) and risky ones (deploy, publish, delete, network piped into a shell) are listed and not run.
+- **Skipped:** commands with a placeholder to fill in (`<component>`), commands that ask questions (`init`, `create`, `login`), commands that add or remove packages (`pnpm add`, `npm i <pkg>`), and every command in a vendored third-party skill are listed as skipped and never run. A skill is vendored when `skills-lock.json` lists it, a license ships with it, or its frontmatter names a `source`. An instruction file reached twice, through a symlink or as an identical skill copy, is checked once.
 - **Passes:** no item fails and every replayable command replayed.
 - **Needs:** ran on host or stronger.
 - **Why:** agents follow these files literally, so a stale command costs more than a missing one. The conventions scanned are AGENTS.md (Codex's `/init` and its root-to-folder discovery), GitHub's `copilot-instructions.md` and path-specific `.instructions.md`, and Cursor's `.cursor/rules` plus AGENTS.md. No outcome study yet measures how much these files help.

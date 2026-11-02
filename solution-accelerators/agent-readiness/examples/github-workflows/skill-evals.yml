@@ -31,12 +31,28 @@ jobs:
       - run: npm ci
       - run: npm run check
 
+  # Scripted gamed fixes the grader must reject, and an honest fix it must pass. No API key needed.
+  negative-evals:
+    needs: check
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      SA_READINESS_GRADER_SEED: ${{ secrets.SA_READINESS_GRADER_SEED }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: solution-accelerators/agent-readiness/.nvmrc
+      - run: npm ci
+      - run: npm run evals -- --tag negative --concurrency 3 --junit evals/runs/negative-junit.xml
+
   skill-evals:
     needs: check
     runs-on: ubuntu-latest
     timeout-minutes: 120
     env:
       CURSOR_API_KEY: ${{ secrets.CURSOR_API_KEY }}
+      SA_READINESS_GRADER_SEED: ${{ secrets.SA_READINESS_GRADER_SEED }}
     steps:
       - uses: actions/checkout@v4
         with:

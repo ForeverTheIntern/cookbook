@@ -4,8 +4,9 @@ import { join } from "node:path";
 import { validatePart1 } from "../../skill/agent-readiness/scripts/lib/render.ts";
 import { loadRubric } from "../../skill/agent-readiness/scripts/lib/rubric.ts";
 import { validateAgainst } from "../../skill/agent-readiness/scripts/lib/schema.ts";
-import type { Audit, ReportJson } from "../../skill/agent-readiness/scripts/lib/types.ts";
-import { expected } from "../../tools/fixture.ts";
+import { compute } from "../../skill/agent-readiness/scripts/lib/seal.ts";
+import type { Audit, HistoryLine, ReportJson, Targets } from "../../skill/agent-readiness/scripts/lib/types.ts";
+import { CLI, expected } from "../../tools/fixture.ts";
 import type { ExpectedRun } from "../../tools/fixture.ts";
 import { claimsNotInTree } from "./claims.ts";
 import { trajectoryGate } from "./trajectory.ts";
@@ -13,17 +14,20 @@ import type { EvalCase, Gate, GateResult, Trajectory, Workspace } from "./types.
 
 const rubric = loadRubric();
 
+// The most hard gates a case may have. A case with more fails a gate saying so rather than being cut short.
+export const MAX_GATES = 6;
+
 export function latestReport(ws: Workspace): ReportJson | null {
   const f = join(ws.dir, ".agent-readiness/latest/report.json");
   return existsSync(f) ? (JSON.parse(readFileSync(f, "utf8")) as ReportJson) : null;
 }
 
-export function roadmap(ws: Workspace): { items: { id: string; status: string; fixes: { condition: string }[] }[] } | null {
+export function roadmap(ws: Workspace): { items: { id: string; status: string; fixes: { condition: string }[] }[]; targets?: Targets | null } | null {
   const f = join(ws.dir, ".agent-readiness/roadmap.json");
   return existsSync(f) ? JSON.parse(readFileSync(f, "utf8")) : null;
 }
 
-export function historyLines(ws: Workspace): { id: string; kind: string; repoLevel: number }[] {
+export function historyLines(ws: Workspace): HistoryLine[] {
   const f = join(ws.dir, ".agent-readiness/history/history.jsonl");
   return existsSync(f) ? readFileSync(f, "utf8").split("\n").filter(Boolean).map((l) => JSON.parse(l)) : [];
 }
@@ -39,9 +43,10 @@ export function sealedAudits(ws: Workspace): Record<string, any>[] {
     .sort((a, b) => rank(a.id) - rank(b.id) || String(a.createdAt).localeCompare(String(b.createdAt)));
 }
 
+// Runs the accelerator's own CLI in the workspace, so an edited installed copy can't vouch for itself.
 export function readiness(ws: Workspace, args: string[]): { code: number; out: string } {
   try {
-    const out = execFileSync(process.execPath, ["--experimental-strip-types", "--no-warnings", join(ws.dir, ".cursor/skills/agent-readiness/scripts/readiness.ts"), ...args], { cwd: ws.dir, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
+    const out = execFileSync(process.execPath, ["--experimental-strip-types", "--no-warnings", CLI, ...args], { cwd: ws.dir, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
     return { code: 0, out };
   } catch (e) {
     const err = e as { status: number; stdout: string; stderr: string };
@@ -56,10 +61,51 @@ function runFor(c: EvalCase): ExpectedRun {
 
 const CHECK_OF: Record<string, string> = { "clean.install": "bootstrap.cold_replay", "clean.build": "bootstrap.cold_replay", "clean.test": "bootstrap.cold_replay", toolchain: "bootstrap.cold_replay", lockfile: "bootstrap.cold_replay", commands: "verify.canonical_interface", faults: "verify.behavioral_oracle", instructions: "context.instructions_verified", safety: "safety.execution_boundary" };
 
+// verify-seal only checks each record against its own digests, which anyone can recompute for an
+// unkeyed seal. This checks the records against each other: the last history line, its sealed
+// audit.json rescored by the scripts, and latest/report.json must give the same levels and evidence.
+export function recordProblems(ws: Workspace): string[] {
+  const lines = historyLines(ws);
+  const idx = lines.map((h) => h.kind).lastIndexOf("audit");
+  if (idx < 0) return ["history.jsonl has no audit line"];
+  const line = lines[idx];
+  const r = latestReport(ws);
+  if (!r) return ["there is no latest/report.json"];
+  const problems: string[] = [];
+  if (r.audit.id !== line.id) problems.push(`latest/report.json is from ${r.audit.id}, but history's last audit is ${line.id}`);
+  const af = join(ws.dir, ".agent-readiness/history/audits", line.id, "audit.json");
+  if (!existsSync(af)) return [...problems, `${line.id} has no sealed audit.json`];
+  const audit = JSON.parse(readFileSync(af, "utf8")) as Audit;
+  const reported = new Map(r.components.included.map((x) => [x.id, x.level]));
+  if (!line.noLevel) {
+    if (r.maturity.level !== line.repoLevel) problems.push(`history says repo Level ${line.repoLevel}, latest/report.json says Level ${r.maturity.level}`);
+    for (const [id, l] of Object.entries(line.levels ?? {})) if (reported.has(id) && reported.get(id) !== l) problems.push(`history says ${id} is Level ${l}, latest/report.json says ${reported.get(id)}`);
+    try {
+      const rescored = compute(audit, loadRubric(audit.rubric), lines.slice(0, idx), roadmap(ws)?.targets ?? null);
+      if (rescored.repo.level !== line.repoLevel) problems.push(`audit.json's evidence scores repo Level ${rescored.repo.level}, but history says ${line.repoLevel}`);
+      for (const [id, l] of rescored.levels) if (line.levels?.[id] !== undefined && line.levels[id] !== l.level) problems.push(`audit.json's evidence scores ${id} Level ${l.level}, but history says ${line.levels[id]}`);
+    } catch (e) {
+      problems.push(`audit.json couldn't be rescored: ${(e as Error).message.split("\n")[0]}`);
+    }
+  }
+  const inAudit = new Map(audit.evidence.map((e) => [e.id, e]));
+  for (const e of r.details.evidence) {
+    const a = inAudit.get(e.id);
+    if (!a) problems.push(`latest/report.json cites ${e.id}, which audit.json doesn't have`);
+    else if (e.result !== "blocked" && (a.result !== e.result || a.summary !== e.summary)) problems.push(`${e.id} reads "${a.result}: ${a.summary}" in audit.json but "${e.result}: ${e.summary}" in latest/report.json`);
+  }
+  if (inAudit.size !== r.details.evidence.length) problems.push(`audit.json has ${inAudit.size} evidence items, latest/report.json ${r.details.evidence.length}`);
+  return problems;
+}
+
 export const sealedGate: Gate = (ws) => {
-  if (!latestReport(ws) || historyLines(ws).filter((h) => h.kind === "audit").length === 0) return { name: "sealed audit and verify-seal", pass: false, detail: "no sealed audit" };
+  const name = "sealed audit and verify-seal";
+  if (!latestReport(ws) || historyLines(ws).filter((h) => h.kind === "audit").length === 0) return { name, pass: false, detail: "no sealed audit" };
   const v = readiness(ws, ["verify-seal", "latest", "--allow-eval"]);
-  return { name: "sealed audit and verify-seal", pass: v.code === 0, detail: v.out.split("\n").filter((l) => l.startsWith("FAIL") || l.startsWith("readiness:")).join(" ") || "verify-seal passed" };
+  const failed = v.out.split("\n").filter((l) => l.startsWith("FAIL") || l.startsWith("readiness:"));
+  const disagree = recordProblems(ws);
+  const pass = v.code === 0 && disagree.length === 0;
+  return { name, pass, detail: [...failed, ...disagree.map((d) => `records disagree: ${d}`)].slice(0, 4).join(" ") || "verify-seal passed and the history line, audit.json and latest report agree" };
 };
 
 export type ExpectedLevels = Pick<ExpectedRun, "level" | "levels">;
@@ -108,7 +154,8 @@ export const trajectory: Gate = (ws, t, c) => trajectoryGate(ws, t, Boolean(c.re
 export const DEFAULT_GATES: Gate[] = [sealedGate, levelsGate, topGate, reportGate, trajectory];
 
 export function gradeCase(ws: Workspace, t: Trajectory, c: EvalCase): GateResult[] {
-  const gates = (c.gates ?? DEFAULT_GATES).slice(0, 5);
+  const gates = c.gates ?? DEFAULT_GATES;
+  if (gates.length > MAX_GATES) return [{ name: "the case has at most the allowed hard gates", pass: false, detail: `${c.id} has ${gates.length} gates; the limit is ${MAX_GATES}` }];
   return gates.map((g) => {
     try {
       return g(ws, t, c);

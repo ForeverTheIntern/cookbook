@@ -48,12 +48,12 @@ export const cases: EvalCase[] = [
     fixture: "hidden-service",
     tags: ["full"],
     remediation: true,
-    description: "After an audit, the user asks to fix the primary blocker. The new audit's level rises and fresh planted faults are caught.",
+    description: "After an audit, the user asks to fix the primary blocker. The grader's own audit of the fix rises a level and catches fresh planted faults, no test is weakened, and the original tests pass in the declared environment.",
     turns: [
       { prompt: "Run an agent readiness audit, permission tier local-exec." },
       { prompt: "Fix the primary blocker, commit it on a branch, and prove it." },
     ],
-    gates: [sealedGate, levelRose(1), freshFaultsCaught("hidden-service"), envJsonAllowed, trajectory],
+    gates: [sealedGate, levelRose(1), freshFaultsCaught("hidden-service"), noWeakening, envJsonAllowed, trajectory],
   },
   {
     id: "re-audit",

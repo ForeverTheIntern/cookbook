@@ -116,9 +116,10 @@ Fifteen fixtures under `fixtures/`, each a tiny repo with one planted defect or 
 
 ### Skill evals
 
-The evals run the real Cursor agent on each fixture with a pinned prompt and grade what the scripts wrote: at most five hard gates per case (a sealed audit that `verify-seal` accepts, levels, top items, the part 1 rules, no forbidden action), plus two soft judge scores for part 1. The headline judge carries the bar of 0.8; the page judge is tracked.
+The evals run the real Cursor agent on each fixture with a pinned prompt and grade what the scripts wrote: at most six hard gates per case (a sealed audit that `verify-seal` accepts and whose records agree, levels, top items, the part 1 rules, no forbidden action), plus two soft judge scores for part 1. The headline judge carries the bar of 0.8; the page judge is tracked. Gates that judge a fix don't trust the agent's `.agent-readiness/` at all: the grader audits the agent's final commit itself, outside the agent's workspace, with its own seed and seal key. [evals/README.md](evals/README.md#grader-integrity) explains how.
 
 - `npm run evals -- --tag smoke|full --repeats 3 --json out.json --junit out.xml --compare evals/baseline.json` drives the agent through `@cursor/sdk` and needs a `CURSOR_API_KEY`. CI runs this.
+- `npm run evals -- --tag negative` needs no key. Scripts play gamed fixes (a resealed forgery, a tampered seal, a test that hashes the source, a dropped database setup) and each case passes only if its gates reject them. An honest scripted fix next to them must pass, which needs a container runtime.
 - Without a key, any agent can be the driver: `--prepare` builds the workspaces and a manifest of prompts, the agent runs each prompt, `--grade <root>` grades one workspace, and `--collect <dir>` summarizes. `--rerender <root>` rebuilds a run's report with the current scripts, so a rendering change can be judged on earlier runs, and `--regrade <dir>` grades stored SDK runs again from their saved tool calls after a grader fix.
 
 [evals/baseline.json](evals/baseline.json) is the result CI compares against, and [evals/HILLCLIMB.md](evals/HILLCLIMB.md) logs how it was reached, one failure mode per round.
@@ -136,7 +137,7 @@ Six pinned public repos, from a well-tested npm package down to a monorepo with 
 - Node and Python components in one repo share the Node image, which needs `python3-venv` from apt for the Python ones. Where apt is blocked, their installs are reported as blocked, so those components get no level on that machine.
 - First-time CI pass is read from the check runs on a PR's first commit. A commit with more than 100 check runs reads as unknown, and a PR list cut off at 300 blocks Level 3; PR file lists aren't paged, so a very large PR can miss a component.
 - With no container runtime, the replay runs repo code on the host in a scrubbed copy. It is disclosed in the report and can't prove Level 1, but it is still repo code on your machine; use a container where that matters.
-- The seed and planted-fault sites sit in the temp folder next to the audit tree until the seal. An agent on the same machine could read them; the skill evals fail any run that does, and the seal is the production control only when it is keyed in CI.
+- The seed and planted-fault sites sit in the temp folder next to the audit tree until the seal. An agent on the same machine could read them; the skill evals fail any run whose tool calls do, grade fixes from their own audit with a seed the agent's audits didn't use, and the seal is the production control only when it is keyed in CI.
 - Planted faults follow relative imports only: path aliases and barrel re-exports aren't followed, and compiled TypeScript isn't rebuilt between faults.
 - A narrated headline is checked for length, banned terms, numbers and false "ready" claims for below-Level-2 components, not for overall quality. Bare Level N restatements and "nothing blocks" when Level 1 is unproven still score poorly with the headline judge (hill-climb round 9 deferred).
 - A command that times out in a container is killed on the host; the process in the container keeps running until the container is removed.

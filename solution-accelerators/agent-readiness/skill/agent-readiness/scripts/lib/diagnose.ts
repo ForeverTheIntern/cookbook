@@ -14,7 +14,7 @@ const PORTS: Record<string, string> = {
 const SECRET_NAME = /(KEY|SECRET|TOKEN|PASSWORD|CREDENTIAL)/;
 
 // The test totals a runner prints, so the report can say "82 of 82 tests" instead of "passed".
-// Covers node --test (tap and spec), vitest, jest, mocha, pytest and unittest; null when none match.
+// Covers node --test (tap and spec), bun test, vitest, jest, mocha, pytest and unittest; null when none match.
 export function testCounts(output: string): { passed: number; failed: number; total: number } | null {
   const text = output.replace(/\x1b\[[0-9;]*m/g, "");
   const num = (re: RegExp) => {
@@ -25,6 +25,11 @@ export function testCounts(output: string): { passed: number; failed: number; to
   if (nodePass !== null) {
     const failed = num(/^\s*[#ℹ] fail (\d+)\s*$/m) ?? 0;
     return { passed: nodePass, failed, total: num(/^\s*[#ℹ] tests (\d+)\s*$/m) ?? nodePass + failed };
+  }
+  const bunRan = num(/^Ran (\d+) tests? across \d+ files?\./m);
+  if (bunRan !== null) {
+    const failed = num(/^\s*(\d+) fail\s*$/m) ?? 0;
+    return { passed: num(/^\s*(\d+) pass\s*$/m) ?? bunRan - failed, failed, total: bunRan };
   }
   const vitest = [...text.matchAll(/Tests\s+(?:(\d+) failed \|\s*)?(\d+) passed[^(\n]*\((\d+)\)/g)].pop();
   if (vitest) return { passed: Number(vitest[2]), failed: Number(vitest[1] ?? 0), total: Number(vitest[3]) };

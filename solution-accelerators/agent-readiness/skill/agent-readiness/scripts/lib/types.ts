@@ -60,6 +60,22 @@ export interface Profile {
   satellites: { path: string; manifest: string; toolchain: string; reason: string }[];
   historyDays: number;
   totalChanges: number;
+  scope?: ScanScope;
+}
+
+// What the scan read. On a large repo the listing stops at a file cap, and the secret scan and the
+// agent assets' git history stop at the scan's time bound; the report states what was sampled.
+export interface ScanScope {
+  boundMinutes: number;
+  files: number;
+  fileCap: number | null;
+  secrets: { scanned: number; total: number };
+  assetHistory: { read: number; total: number };
+}
+
+export interface ScanBound {
+  until: number;
+  scope: ScanScope;
 }
 
 export interface ContractCommand {
@@ -219,7 +235,8 @@ export interface Audit {
   rubric: string;
   skill: AuditSkillInfo;
   seed: { value: string; pinned: boolean };
-  environment: { containerRuntime: string | null; image: string | null; imageOverride?: string; registryEnv: string[]; inheritEnv: boolean };
+  // tools: what the audit added to its own image for the frozen install, such as bun@1.2.19, and whether it could.
+  environment: { containerRuntime: string | null; image: string | null; imageOverride?: string; registryEnv: string[]; inheritEnv: boolean; tools?: { spec: string; added: boolean }[] };
   profile: Profile | null;
   assets: Asset[];
   contract: ContractCommand[];

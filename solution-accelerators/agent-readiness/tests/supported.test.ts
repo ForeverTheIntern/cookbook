@@ -64,7 +64,7 @@ describe("supported.md", () => {
   });
 
   test("a stack outside the supported tier says it isn't supported yet, with its reason", () => {
-    assert.equal(notSupportedReason("poetry"), "Poetry isn't supported yet: the audit's Python image has no Poetry");
+    assert.equal(notSupportedReason("task-graph"), "a package that needs a sibling package built first isn't supported yet: the audit builds packages one by one, not in Turbo's or Nx's order");
     assert.equal(notSupportedReason("go"), "Go isn't supported yet");
     assert.match(notSupportedReason("python-behind-root-package"), /^a Python app next to a root package\.json isn't supported yet: /);
   });

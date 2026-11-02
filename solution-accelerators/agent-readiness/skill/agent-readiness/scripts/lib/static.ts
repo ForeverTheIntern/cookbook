@@ -3,14 +3,14 @@ import { dirname, join, normalize } from "node:path";
 import { checkOnly } from "./contract.ts";
 import { readPackageJson } from "./profile.ts";
 import { scanText } from "./redact.ts";
-import type { InstructionItem, Profile, SafetyFinding } from "./types.ts";
-import { exists, listFiles, readText, sha256 } from "./util.ts";
+import type { InstructionItem, Profile, SafetyFinding, ScanBound } from "./types.ts";
+import { MAX_FILES, exists, listFiles, readText, sha256 } from "./util.ts";
 
 const COMMAND_START = /^(npm|pnpm|yarn|npx|corepack|make|python3?|pip3?|pytest|uv|poetry|node|bun|cargo|go|tsc|eslint|ruff|\.\/[\w./-]+)(\s|$)/;
 const SHELL_LANGS = new Set(["", "sh", "bash", "shell", "console", "zsh", "terminal"]);
 const PATH_LIKE = /^(?:\.{1,2}\/)[\w./-]+$|^[\w.-]+(?:\/[\w.-]+)*\/$|^(?:[\w.-]+\/)*[\w.-]+\.(md|mdc|ts|tsx|js|mjs|cjs|json|py|ya?ml|sh|toml|txt|sql)$/;
 
-const INSTALL = /^(npm (ci|install|i)\b|pnpm (install|i)\b|yarn( install)?\s*$|yarn install\b|corepack \w+ install\b|pip3? install\b|python3? -m pip install\b|uv sync\b|poetry install\b)/;
+const INSTALL = /^(npm (ci|install|i)\b|pnpm (install|i)\b|yarn( install)?\s*$|yarn install\b|corepack \w+ install\b|bun (install|i)\b|pip3? install\b|python3? -m pip install\b|uv sync\b|poetry (install|sync)\b)/;
 const LONG_RUNNING = /\b(run )?(dev|start|serve|watch)(\s|$)|--watch\b|compose up\b|docker run\b/;
 const NETWORK_PIPED = /\b(curl|wget)\b[^|;&]*\|\s*(sudo\s+)?(ba|z)?sh\b/;
 const DESTRUCTIVE = /rm -rf\s+(\/|~|\*|\$HOME)|\bdrop (database|table)\b|db:(reset|drop)|migrate(:| )reset|\btruncate\b|prisma migrate reset/i;
@@ -307,12 +307,21 @@ export function notShipped(file: string): string | null {
   return NOT_SHIPPED.find((n) => n.re.test(file))?.where ?? null;
 }
 
-export function safetyScan(tree: string, profile: Profile): SafetyFinding[] {
+// Past the scan's time bound, the secret scan stops and records how many files it read; the
+// manifest and script checks after it are cheap and always run.
+export function safetyScan(tree: string, profile: Profile, bound?: ScanBound): SafetyFinding[] {
   const findings: SafetyFinding[] = [];
   let n = 1;
   const add = (f: Omit<SafetyFinding, "id">) => findings.push({ id: `saf-${String(n++).padStart(3, "0")}`, ...f });
   const files = listFiles(tree, { includeHidden: true });
+  if (bound) {
+    bound.scope.files = files.length;
+    bound.scope.fileCap = files.length >= MAX_FILES ? MAX_FILES : null;
+    bound.scope.secrets = { scanned: 0, total: files.length };
+  }
   for (const file of files) {
+    if (bound && Date.now() > bound.until) break;
+    if (bound) bound.scope.secrets.scanned++;
     if (/(^|\/)(package-lock\.json|pnpm-lock\.yaml|yarn\.lock|uv\.lock|poetry\.lock|bun\.lock)$/.test(file)) continue;
     const full = join(tree, file);
     if (!isText(full)) continue;

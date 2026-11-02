@@ -38,19 +38,45 @@ export function detectPackageManager(tree: string): PackageManager | null {
     if (pm.startsWith("yarn")) return "yarn";
     return "npm";
   }
-  if (exists(join(tree, "uv.lock"))) return "uv";
+  if (exists(join(tree, "uv.lock")) || UV_WORKSPACE.test(pyproject(tree))) return "uv";
   if (exists(join(tree, "poetry.lock")) || /^\[tool\.poetry\]/m.test(pyproject(tree))) return "poetry";
   if (exists(join(tree, "pyproject.toml")) || exists(join(tree, "requirements.txt")) || exists(join(tree, "setup.py"))) return "pip";
   return null;
 }
 
-function pyproject(dir: string): string {
+export function pyproject(dir: string): string {
   return exists(join(dir, "pyproject.toml")) ? readText(join(dir, "pyproject.toml")) : "";
 }
 
+const UV_WORKSPACE = /^\[tool\.uv\.workspace\]/m;
+
+// The folders a root pyproject.toml's [tool.uv.workspace] lists, less its excludes, each with its
+// own pyproject.toml. They share the root's uv.lock and .venv.
+export function uvWorkspaceMembers(tree: string): string[] {
+  const section = pyproject(tree).match(/^\[tool\.uv\.workspace\][^\n]*\n([\s\S]*?)(?=^\[|(?![\s\S]))/m)?.[1];
+  if (section === undefined) return [];
+  const list = (key: string) => [...(section.match(new RegExp(`^${key}\\s*=\\s*\\[([\\s\\S]*?)\\]`, "m"))?.[1] ?? "").matchAll(/["']([^"']+)["']/g)].map((m) => m[1]);
+  const excluded = new Set(list("exclude").flatMap((p) => expandPattern(tree, p)));
+  return [...new Set(list("members").flatMap((p) => expandPattern(tree, p)))].filter((d) => d !== "." && !excluded.has(d) && exists(join(tree, d, "pyproject.toml"))).sort();
+}
+
+// The folders whose package.json or .yarnrc.yml decide a component's Yarn: its own, then the root's.
+function yarnDirs(dir: string): string[] {
+  return dir === "." ? ["."] : [dir, "."];
+}
+
+function yarnPath(tree: string, dir: string): string | null {
+  for (const d of yarnDirs(dir)) {
+    const f = join(tree, d, ".yarnrc.yml");
+    const path = exists(f) ? readText(f).match(/^yarnPath:\s*["']?([^"'\s#]+)/m)?.[1] : undefined;
+    if (path) return d === "." ? ".yarnrc.yml" : `${d}/.yarnrc.yml`;
+  }
+  return null;
+}
+
 // Yarn 2 and later: a packageManager pin of yarn@2 or above, a .yarnrc.yml, or a Berry lockfile.
-function yarnBerry(tree: string, dir: string): boolean {
-  for (const d of dir === "." ? ["."] : [dir, "."]) {
+export function yarnBerry(tree: string, dir: string): boolean {
+  for (const d of yarnDirs(dir)) {
     const major = Number(readPackageJson(join(tree, d))?.packageManager?.match(/^yarn@(\d+)/)?.[1] ?? 0);
     if (major >= 2 || exists(join(tree, d, ".yarnrc.yml"))) return true;
     if (exists(join(tree, d, "yarn.lock")) && /^__metadata:/m.test(readText(join(tree, d, "yarn.lock")))) return true;
@@ -58,18 +84,24 @@ function yarnBerry(tree: string, dir: string): boolean {
   return false;
 }
 
-const PACKAGE_STACKS = ["npm", "npm-workspaces", "pnpm", "yarn", "yarn-berry", "bun", "pip", "uv", "uv-workspace", "poetry"] as const;
+// Corepack runs the Yarn a packageManager pin names, and Yarn 1 hands over to a yarnPath release.
+// With neither, Corepack would run Yarn 1 against a Berry project.
+function yarnPinned(tree: string, dir: string): boolean {
+  return yarnDirs(dir).some((d) => /^yarn@/.test(readPackageJson(join(tree, d))?.packageManager ?? "")) || yarnPath(tree, dir) !== null;
+}
+
+const PACKAGE_STACKS = ["npm", "npm-workspaces", "pnpm", "yarn", "yarn-berry", "yarn-berry-unpinned", "bun", "pip", "uv", "uv-workspace", "poetry"] as const;
 
 // The support entry a Node or Python component falls under, from its own package manager or the root's.
 function stackOf(tree: string, c: Component, rootPm: PackageManager | null, workspaceMember: boolean): (typeof PACKAGE_STACKS)[number] {
   const pm = c.packageManager ?? rootPm;
   if (c.language === "py") {
     if (pm === "poetry") return "poetry";
-    if (/^\[tool\.uv\.workspace\]/m.test(pyproject(tree)) || /^\[tool\.uv\.workspace\]/m.test(pyproject(join(tree, c.path)))) return "uv-workspace";
+    if ((UV_WORKSPACE.test(pyproject(tree)) && (c.path === "." || workspaceMember)) || UV_WORKSPACE.test(pyproject(join(tree, c.path)))) return "uv-workspace";
     return pm === "uv" ? "uv" : "pip";
   }
   if (pm === "bun") return "bun";
-  if (pm === "yarn") return yarnBerry(tree, c.path) ? "yarn-berry" : "yarn";
+  if (pm === "yarn") return !yarnBerry(tree, c.path) ? "yarn" : yarnPinned(tree, c.path) ? "yarn-berry" : "yarn-berry-unpinned";
   if (pm === "pnpm") return "pnpm";
   return workspaceMember ? "npm-workspaces" : "npm";
 }
@@ -326,6 +358,14 @@ export function discoverLayout(tree: string, files: string[], repoName = basenam
     const manifest = exists(join(tree, "pyproject.toml")) ? "pyproject.toml" : exists(join(tree, "setup.py")) ? "setup.py" : "requirements.txt";
     const pyName = exists(join(tree, "pyproject.toml")) ? readText(join(tree, "pyproject.toml")).match(/^name\s*=\s*["']([^"']+)["']/m)?.[1] : undefined;
     comps.push({ id: sanitizeId(pyName ?? "app"), path: ".", language: "py", manifest, scripts: {}, changes: 0, changeShare: 0, assessed: false });
+    const uvMembers = uvWorkspaceMembers(tree);
+    // A workspace root with no [project] of its own is virtual: only its members are projects.
+    if (uvMembers.length && !/^\[project\]/m.test(pyproject(tree))) comps.pop();
+    for (const dir of uvMembers) {
+      members.add(dir);
+      const name = pyproject(join(tree, dir)).match(/^name\s*=\s*["']([^"']+)["']/m)?.[1];
+      comps.push({ id: sanitizeId(name ?? basename(dir)), path: dir, language: "py", manifest: `${dir}/pyproject.toml`, scripts: {}, changes: 0, changeShare: 0, assessed: false });
+    }
   }
   const hasRoot = comps.some((c) => c.path === ".");
   if (exists(join(tree, "package.json"))) {
@@ -473,13 +513,24 @@ export function computeChangeShares(repo: string, comps: Component[], rubric: Ru
 function nodePins(tree: string, dir: string, pm: PackageManager | null, label: string, found: string[], missing: string[]): void {
   const pkg = readPackageJson(join(tree, dir));
   const prefix = dir === "." ? "" : `${dir}/`;
+  // A Bun project runs on Bun, so the Bun version is the pin that matters.
+  if (pm === "bun") {
+    const bunPin = [".bun-version", ".tool-versions"].find((f) => exists(join(tree, dir, f)) || exists(join(tree, f)));
+    if (/^bun@/.test(pkg?.packageManager ?? "")) found.push(`${prefix}package.json packageManager`);
+    else if (pkg?.engines?.bun) found.push(`${prefix}package.json engines.bun`);
+    else if (bunPin) found.push(exists(join(tree, dir, bunPin)) ? `${prefix}${bunPin}` : bunPin);
+    else missing.push(`the Bun version${label} (packageManager or engines.bun in package.json)`);
+    return;
+  }
   const nodePin = [".nvmrc", ".node-version", ".tool-versions"].find((f) => exists(join(tree, dir, f)) || exists(join(tree, f)));
   if (nodePin) found.push(exists(join(tree, dir, nodePin)) ? `${prefix}${nodePin}` : nodePin);
   else if (pkg?.engines?.node) found.push(`${prefix}package.json engines.node`);
   else if (pkg?.volta?.node) found.push(`${prefix}package.json volta`);
   else missing.push(`the Node version${label} (.nvmrc or engines.node)`);
   if (pm === "pnpm" || pm === "yarn") {
+    const path = pm === "yarn" ? yarnPath(tree, dir) : null;
     if (pkg?.packageManager) found.push(`${prefix}package.json packageManager`);
+    else if (path) found.push(`${path} yarnPath`);
     else missing.push(`the ${pm} version${label} (packageManager in package.json)`);
   }
 }
@@ -541,6 +592,10 @@ export function instructionFiles(files: string[]): string[] {
   return files.filter((f) => INSTRUCTION_PATTERNS.some((p) => p.test(f)) && !f.startsWith(".cursor/skills/agent-readiness/"));
 }
 
+// Lockfiles of package managers supported after a rubric's list was written. A frozen install has
+// to reproduce them too; the rubric's list still decides which commits count toward shares.
+const LATER_LOCKFILES = ["bun.lock", "bun.lockb"];
+
 export function buildProfile(repo: string, tree: string, rubric: Rubric, commit = "HEAD"): Profile {
   const files = listFiles(tree, { includeHidden: true });
   const pm = detectPackageManager(tree);
@@ -567,7 +622,7 @@ export function buildProfile(repo: string, tree: string, rubric: Rubric, commit 
     repoType: components.filter((c) => c.manifest).length > 1 ? "monorepo" : "single",
     packageManager: pm,
     manifests: files.filter((f) => /(^|\/)(package\.json|pyproject\.toml|setup\.py|requirements[^/]*\.txt|go\.mod|Cargo\.toml|pom\.xml|build\.gradle(\.kts)?|Gemfile|composer\.json|Package\.swift|pubspec\.yaml|[^/]+\.(csproj|fsproj|vbproj|sln))$/.test(f) && !f.split("/").slice(0, -1).some((s) => SKIP_SEGMENT.test(s))),
-    lockfiles: files.filter((f) => rubric.components.lockfiles.includes(basename(f)) && (dirname(f) === "." || components.some((c) => c.packageManager && c.path === dirname(f)))),
+    lockfiles: files.filter((f) => [...rubric.components.lockfiles, ...LATER_LOCKFILES].includes(basename(f)) && (dirname(f) === "." || components.some((c) => c.packageManager && c.path === dirname(f)))),
     ciFiles: files.filter((f) => /^\.github\/workflows\/.+\.ya?ml$/.test(f) || f === ".gitlab-ci.yml" || f === ".circleci/config.yml" || f.startsWith(".buildkite/")),
     instructionFiles: instructionFiles(files),
     toolchain: toolchain(tree, files, pm, components, environmentJson?.build?.dockerfile),

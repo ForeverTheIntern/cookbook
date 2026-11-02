@@ -2,7 +2,7 @@ import { cpSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:f
 import { tmpdir } from "node:os";
 import { dirname, join, resolve, sep } from "node:path";
 import { ContainerSession, buildImage, detectRuntime } from "./container.ts";
-import { containerImage } from "./contract.ts";
+import { containerImage, toolSetup } from "./contract.ts";
 import { diagnose, testCounts } from "./diagnose.ts";
 import { addEvidence } from "./evidence.ts";
 import { applySite, chooseSites } from "./mutate.ts";
@@ -13,6 +13,7 @@ import type { RunOutcome } from "./run.ts";
 import type { Audit, CommandKind, CondId, ContractCommand, Diagnosis, Evidence, Mutant, Profile, Strength, Where } from "./types.ts";
 import { containedPath, exists, fail, listFiles, randomHex, readJson, readText, sha256, writeJson } from "./util.ts";
 import { commandsFor } from "./score.ts";
+import { BUDGET_OUT, CUT_OFF } from "./scope.ts";
 import { SUPPORTED_DOC, notSupportedReason } from "./support.ts";
 import { realSeed, refreshTree } from "./workspace.ts";
 
@@ -143,6 +144,8 @@ export function environmentLimit(ex: Pick<Executor, "where" | "image" | "imageSo
     if (ex.imageSource !== "repo") return `${d.detail} in the audit's image (${ex.image})`;
   }
   if (d.cause === "network" && ONLINE_KINDS.has(cmd.kind)) return `the ${cmd.kind} hit ${d.detail}`;
+  // A large repo's install can outlast the audit's limit on a slow machine or disk driver.
+  if (d.cause === "timeout" && cmd.kind === "install") return `the install ran past the audit's ${Math.max(1, Math.round(cmd.timeoutSec / 60))}-minute limit on this machine`;
   if (d.cause === "missing_module") {
     const mod = d.detail.replace(/^module /, "").replace(/ is missing$/, "");
     const sibling = packages.find((p) => p.path !== cmd.cwd && p.path !== "." && (mod === p.name || mod.startsWith(`${p.name}/`) || mod.includes(`/node_modules/${p.name}/`) || mod.includes(`/${p.path}/`)));
@@ -165,6 +168,20 @@ export function newBudget(componentMinutes: number, totalMinutes: number): Budge
 function overBudget(b: Budget, component: string): boolean {
   if (Date.now() - b.startedAt > b.totalMs) return true;
   return component !== "*" && (b.used.get(component) ?? 0) > b.componentMs;
+}
+
+// Seconds of budget left for a component, the whole audit's for "*". A command gets no longer than
+// this, so a large repo's install or test run stops at the budget instead of running past it.
+export function budgetLeftSec(b: Budget, component: string): number {
+  const total = b.totalMs - (Date.now() - b.startedAt);
+  const mine = component === "*" ? total : Math.min(total, b.componentMs - (b.used.get(component) ?? 0));
+  return Math.max(0, Math.floor(mine / 1000));
+}
+
+// The timeout to run with, and whether the budget, not the command's own limit, set it.
+function capped(b: Budget, component: string, timeoutSec: number): { sec: number; byBudget: boolean } {
+  const left = budgetLeftSec(b, component);
+  return left < timeoutSec ? { sec: Math.max(1, left), byBudget: true } : { sec: timeoutSec, byBudget: false };
 }
 
 function charge(b: Budget, component: string, ms: number): void {
@@ -216,7 +233,15 @@ export async function runContract(
   };
   const attempt = async (cmd: ContractCommand): Promise<PhaseResult | null> => {
     if (cmd.fallbackFor && !blockedIds.has(cmd.fallbackFor)) return null;
-    if (overBudget(opts.budget, cmd.component)) return { cmd, status: "not_run", outcome: null, diagnosis: null, note: "cut off by the time budget" };
+    const cutOff = (): PhaseResult => {
+      if (cmd.kind === "install") {
+        failedInstalls.add(cmd.component);
+        blockedInstalls.add(cmd.component);
+        blockedIds.add(cmd.id);
+      }
+      return { cmd, status: "not_run", outcome: null, diagnosis: null, note: "cut off by the time budget", blocked: BUDGET_OUT };
+    };
+    if (overBudget(opts.budget, cmd.component)) return cutOff();
     if (gated(cmd)) {
       const blocked = blockedInstalls.has(cmd.component) || (blockedInstalls.has("*") && !failedInstalls.has(cmd.component));
       return { cmd, status: "not_run", outcome: null, diagnosis: null, note: blocked ? INSTALL_BLOCKED : "not run because the install failed", blocked: blocked ? "the install was blocked on this machine" : undefined };
@@ -230,8 +255,10 @@ export async function runContract(
       return { cmd, status: "not_run", outcome: null, diagnosis: null, note: SUDO_REFUSED, blocked: `the ${cmd.kind} command uses sudo, which the audit never runs on the host` };
     }
     const watched = cmd.kind === "lint" || cmd.kind === "typecheck" ? snapshot(ex.root, opts.tree ?? ex.root, cmd.cwd) : null;
-    const out = await ex.exec(cmd.command, cmd.cwd, cmd.timeoutSec, { imageUser: cmd.source.startsWith(".cursor/environment.json") });
+    const limit = capped(opts.budget, cmd.component, cmd.timeoutSec);
+    const out = await ex.exec(cmd.command, cmd.cwd, limit.sec, { imageUser: cmd.source.startsWith(".cursor/environment.json") });
     charge(opts.budget, cmd.component, out.durationMs);
+    if (out.timedOut && limit.byBudget) return cutOff();
     // A check that changes the code it checks has to fail, and the code goes back for the steps after it.
     const changed = watched ? rewritten(ex.root, watched) : [];
     if (changed.length && opts.tree) for (const rel of changed) if (exists(join(opts.tree, rel))) cpSync(join(opts.tree, rel), join(ex.root, rel));
@@ -337,6 +364,8 @@ export interface ReplayOptions {
   log: (line: string) => void;
 }
 
+const FROZEN = /(\bci\b|--frozen|--immutable|--frozen-lockfile|\bpoetry (sync\b|install\b.*--sync))/;
+
 function lockfileEvidence(audit: Audit, ex: Executor, profile: Profile, copyDir: string, before: Map<string, string>, installCmds: ContractCommand[]): void {
   const pm = profile.packageManager;
   let result: "pass" | "fail" = "pass";
@@ -355,7 +384,7 @@ function lockfileEvidence(audit: Audit, ex: Executor, profile: Profile, copyDir:
   } else if (profile.lockfiles.length === 0) {
     result = "fail";
     summary = "no lockfile is committed";
-  } else if (installCmds.some((c) => c.source === "readiness" && !/(\bci\b|--frozen|--immutable|--frozen-lockfile|^poetry install\b.*--sync)/.test(c.command))) {
+  } else if (installCmds.some((c) => c.source === "readiness" && !FROZEN.test(c.command))) {
     result = "fail";
     summary = "the install isn't frozen";
   } else {
@@ -381,9 +410,11 @@ async function plantFaults(audit: Audit, repo: string, tree: string, ex: Executo
   }
   const mutants: Mutant[] = [];
   let n = audit.mutants.filter((m) => m.component === comp.id).length + 1;
+  let cut = 0;
   for (const site of sites) {
     const id = `mut-${comp.id}-${n++}`;
-    if (overBudget(budget, comp.id)) {
+    if (overBudget(budget, comp.id) || budgetLeftSec(budget, comp.id) < 1) {
+      cut++;
       mutants.push({ id, component: comp.id, file: site.file, line: site.line, operator: site.operator, before: redact(site.before), after: redact(site.after), result: "not_run", exitCodes: [] });
       continue;
     }
@@ -394,10 +425,12 @@ async function plantFaults(audit: Audit, repo: string, tree: string, ex: Executo
     let result: Mutant["result"] = "survived";
     try {
       for (let run = 0; run < rubric.mutation.flakeRuns; run++) {
-        const out = await ex.exec(testCmd.command, testCmd.cwd, rubric.mutation.runTimeoutSec);
+        const limit = capped(budget, comp.id, rubric.mutation.runTimeoutSec);
+        const out = await ex.exec(testCmd.command, testCmd.cwd, limit.sec);
         charge(budget, comp.id, out.durationMs);
         codes.push(out.exitCode ?? -1);
         if (out.timedOut) {
+          if (limit.byBudget) cut++;
           result = "not_run";
           break;
         }
@@ -424,18 +457,21 @@ async function plantFaults(audit: Audit, repo: string, tree: string, ex: Executo
   const missed = mutants.filter((m) => m.result === "survived").map((m) => m.id);
   let result: "pass" | "fail" | "not_run";
   let summary: string;
+  const cutNote = cut ? `; the time budget cut off ${cut} of ${sites.length}` : "";
   if (counted.length < rubric.mutation.minForPass) {
     result = "not_run";
-    summary = `only ${counted.length} planted faults gave a clear result; at least ${rubric.mutation.minForPass} are needed`;
+    summary = `only ${counted.length} planted faults gave a clear result; at least ${rubric.mutation.minForPass} are needed${cutNote}`;
   } else if (caught === counted.length) {
     result = "pass";
-    summary = `caught ${caught} of ${counted.length} planted faults (tried: ${operators})`;
+    summary = `caught ${caught} of ${counted.length} planted faults (tried: ${operators})${cutNote}`;
   } else {
     result = "fail";
-    summary = `caught ${caught} of ${counted.length} planted faults; missed ${missed.length}${MISSED_AFTER_SEAL}`;
+    summary = `caught ${caught} of ${counted.length} planted faults${cutNote}; missed ${missed.length}${MISSED_AFTER_SEAL}`;
   }
   log(`  faults in ${comp.id}: ${summary}`);
-  addEvidence(audit, { checkId: "verify.behavioral_oracle", condition: "faults", component: comp.id, strength: ex.strength, where: ex.where, result, summary, image: ex.image ?? undefined, ...(missed.length ? { missedFaults: missed } : {}) });
+  // Too few results because the budget ran out is the audit's limit, not weak tests.
+  const blocked = cut && result === "not_run" ? { blocked: BUDGET_OUT } : {};
+  addEvidence(audit, { checkId: "verify.behavioral_oracle", condition: "faults", component: comp.id, strength: ex.strength, where: ex.where, result, summary, image: ex.image ?? undefined, ...(missed.length ? { missedFaults: missed } : {}), ...blocked });
 }
 
 const MISSED_AFTER_SEAL = " (the sealed report says where)";
@@ -464,6 +500,8 @@ export function revealMutants(audit: Audit, tree: string): void {
   }
 }
 
+const TOOL_SETUP_MS = 10 * 60 * 1000;
+
 export function makeExecutor(audit: Audit, copyDir: string, runtimePref: string, log: (s: string) => void, imageOverride?: string): Executor {
   const runtime = detectRuntime(runtimePref);
   let image = imageOverride ?? containerImage(audit.profile!, copyDir);
@@ -487,6 +525,15 @@ export function makeExecutor(audit: Audit, copyDir: string, runtimePref: string,
       audit.environment.containerRuntime = runtime.bin;
       audit.environment.image = image;
       log(`Replaying in a clean ${runtime.bin} container (${image}).`);
+      // A tool missing from the repo's own image is the repo's to add, so only the audit's images get one.
+      if (imageSource !== "repo") {
+        for (const t of toolSetup(audit.profile!, copyDir)) {
+          if (session.asImageUser(`command -v ${t.tool}`, 30000).ok) continue;
+          const added = session.asImageUser(t.install, TOOL_SETUP_MS);
+          (audit.environment.tools ??= []).push({ spec: t.spec, added: added.ok });
+          log(added.ok ? `Added ${t.spec} to the image for the frozen install.` : `Couldn't add ${t.spec} to the image, so its install will be blocked: ${tail(added.output, 300)}`);
+        }
+      }
       // Python components next to Node ones run in the Node image, which has python3 but no venv.
       if (image.startsWith("node:") && audit.profile!.components.some((c) => c.assessed && c.language === "py")) {
         const added = session.asImageUser("python3 -m venv /tmp/venv-probe >/dev/null 2>&1 || (apt-get update -qq && DEBIAN_FRONTEND=noninteractive apt-get install -y -qq python3-venv >/dev/null)", 600000);
@@ -536,6 +583,11 @@ export async function replay(audit: Audit, repo: string, tree: string, rubric: R
         const declared = declaredImageInstalls(copyDir, profile, tool);
         if (declared) r.blocked += `, though the repo's declared image (${declared}) installs it`;
       }
+      if (r.blocked && r.diagnosis?.cause === "missing_tool" && ex.where === "container") {
+        const tool = r.diagnosis.detail.replace(/ is not installed$/, "");
+        const failed = audit.environment.tools?.find((t) => !t.added && t.spec.split(/[@=]/)[0] === tool);
+        if (failed) r.blocked += `: the audit couldn't add ${failed.spec} to it on this machine`;
+      }
       const ev = evidenceFromPhase(audit, ex, r, registryValues);
       if (r.diagnosis?.cause === "credential" && !audit.safety.some((s) => s.kind === "credential_needed" && s.detail.includes(r.diagnosis!.detail))) {
         audit.safety.push({ id: `saf-${String(audit.safety.length + 1).padStart(3, "0")}`, kind: "credential_needed", file: ev.id, detail: `tests ${r.diagnosis.detail}`, blocking: true });
@@ -563,7 +615,13 @@ export async function replay(audit: Audit, repo: string, tree: string, rubric: R
           addEvidence(audit, { checkId: "verify.behavioral_oracle", condition: "faults", component: comp, strength: ex.strength, where: ex.where, result: "not_run", summary: "faults weren't planted: the network couldn't be switched off for the test phase", blocked: NETWORK_ON });
           continue;
         }
-        const second = await ex.exec(testRes.cmd.command, testRes.cmd.cwd, testRes.cmd.timeoutSec);
+        const limit = capped(budget, comp, testRes.cmd.timeoutSec);
+        const second = overBudget(budget, comp) || budgetLeftSec(budget, comp) < 1 ? null : await ex.exec(testRes.cmd.command, testRes.cmd.cwd, limit.sec);
+        if (second) charge(budget, comp, second.durationMs);
+        if (!second || (second.timedOut && limit.byBudget)) {
+          addEvidence(audit, { checkId: "verify.behavioral_oracle", condition: "faults", component: comp, strength: ex.strength, where: ex.where, result: "not_run", summary: "faults weren't planted: the time budget ran out first", blocked: BUDGET_OUT });
+          continue;
+        }
         if (second.exitCode !== 0 || (testCounts(second.output)?.failed ?? 0) > 0) {
           addEvidence(audit, { checkId: "verify.behavioral_oracle", condition: "faults", component: comp, strength: ex.strength, where: ex.where, result: "not_run", summary: "tests passed once and failed on a second run, so faults weren't planted (possible flaky tests)" });
           continue;
@@ -595,7 +653,7 @@ export async function replay(audit: Audit, repo: string, tree: string, rubric: R
 }
 
 export const INSTRUCTION_TIMEOUT_SEC = 300;
-export const CUT_OFF = "not replayed: cut off by the time budget (--budget-total)";
+export { CUT_OFF };
 
 // Documented commands run one by one in the replay copy, inside the audit's overall time budget:
 // each gets what is left of it, and none starts once it is spent.

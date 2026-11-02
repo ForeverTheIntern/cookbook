@@ -1,7 +1,7 @@
 import { join } from "node:path";
 import { ghJson } from "./gh.ts";
 import { ELEVATED } from "./static.ts";
-import type { Asset, InstructionItem } from "./types.ts";
+import type { Asset, InstructionItem, ScanBound } from "./types.ts";
 import { addDays, git, listFiles, readText, today } from "./util.ts";
 
 const KINDS: { re: RegExp; kind: Asset["kind"] }[] = [
@@ -21,8 +21,9 @@ export function frontmatterOk(text: string): boolean {
   return /^name:\s*\S/m.test(m[1]) && /^description:\s*\S/m.test(m[1]);
 }
 
-function authors(repo: string, path: string): { name: string; commits: number }[] {
-  const r = git(["log", "--format=%an", "--follow", "--", path], repo);
+function authors(repo: string, path: string, timeoutMs?: number): { name: string; commits: number }[] | null {
+  const r = git(["log", "--format=%an", "--follow", "--", path], repo, timeoutMs);
+  if (!r.ok) return timeoutMs ? null : [];
   const counts = new Map<string, number>();
   for (const name of r.stdout.split("\n").map((s) => s.trim()).filter(Boolean)) counts.set(name, (counts.get(name) ?? 0) + 1);
   return [...counts.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0])).map(([name, commits]) => ({ name, commits }));
@@ -61,7 +62,9 @@ export function refreshAssetStatus(assets: Asset[], items: InstructionItem[]): v
   for (const a of assets) Object.assign(a, statusFor(a, items));
 }
 
-export function inventory(repo: string, tree: string, items: InstructionItem[]): Asset[] {
+// Each asset's authors and last change come from git history, which `--follow` makes slow on a
+// large repo. Past the scan's time bound an asset is still listed and checked, without its history.
+export function inventory(repo: string, tree: string, items: InstructionItem[], bound?: ScanBound): Asset[] {
   const files = listFiles(tree, { includeHidden: true }).filter((f) => !f.startsWith(".cursor/skills/agent-readiness/"));
   const assets: Asset[] = [];
   for (const file of files) {
@@ -70,8 +73,14 @@ export function inventory(repo: string, tree: string, items: InstructionItem[]):
     const fm = hit.kind === "skill" ? frontmatterOk(readText(join(tree, file))) : undefined;
     const elevated = hit.kind === "environment" ? elevatedSetup(join(tree, file)) : undefined;
     const { status, ok } = statusFor({ kind: hit.kind, path: file, frontmatterOk: fm, elevated }, items);
-    const last = git(["log", "-1", "--format=%cI", "--", file], repo).stdout.trim();
-    assets.push({ kind: hit.kind, path: file, authors: authors(repo, file), lastChanged: last ? last.slice(0, 10) : null, status, ok, frontmatterOk: fm, ...(elevated ? { elevated } : {}) });
+    const left = bound ? bound.until - Date.now() : undefined;
+    const who = left === undefined || left > 0 ? authors(repo, file, left) : null;
+    const last = who ? git(["log", "-1", "--format=%cI", "--", file], repo, bound ? Math.max(1000, bound.until - Date.now()) : undefined).stdout.trim() : "";
+    if (bound) {
+      bound.scope.assetHistory.total++;
+      if (who) bound.scope.assetHistory.read++;
+    }
+    assets.push({ kind: hit.kind, path: file, authors: who ?? [], lastChanged: last ? last.slice(0, 10) : null, status, ok, frontmatterOk: fm, ...(elevated ? { elevated } : {}) });
   }
   return assets;
 }

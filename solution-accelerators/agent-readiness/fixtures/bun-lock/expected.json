@@ -1,24 +1,22 @@
 {
-  "purpose": "A Bun project with bun.lock and bun test. The audit has no Bun install yet, so it says Bun isn't supported yet, links the support list and gives no level, instead of a non-frozen npm install and a Level 0 for a missing bun.",
+  "purpose": "A Bun project with bun.lock, a local file: dependency so the lockfile isn't empty, and bun test. The audit adds the pinned Bun (bun@1.2.19, from npm) to its Node image, runs bun install --frozen-lockfile, and the package reaches Level 2.",
   "runs": [
     {
       "name": "default",
-      "level": 0,
-      "levels": {},
-      "top": [],
-      "startNow": null,
-      "noBlocker": false,
-      "safety": "pass",
-      "outcome": "not_assessed",
-      "notAssessed": [
-        "bun-lock"
-      ],
-      "shares": {
-        "bun-lock": 1
+      "level": 2,
+      "levels": {
+        "bun-lock": 2
       },
-      "unassessed": {
-        "share": 1,
-        "supportLink": true
+      "top": [
+        "targets"
+      ],
+      "startNow": "delegate:bun-lock",
+      "noBlocker": true,
+      "safety": "pass",
+      "outcome": "proven",
+      "contract": {
+        "cmd-repo-install": "bun install --frozen-lockfile",
+        "cmd-bun-lock-test": "bun run test"
       }
     }
   ]

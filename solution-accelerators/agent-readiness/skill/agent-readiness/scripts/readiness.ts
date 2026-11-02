@@ -11,13 +11,14 @@ import { buildProfile } from "./lib/profile.ts";
 import { redact } from "./lib/redact.ts";
 import { evidenceFromPhase, hostExecutor, newBudget, registryValuesOf, replay, runContract } from "./lib/replay.ts";
 import { latestRubricVersion, loadRubric } from "./lib/rubric.ts";
+import { SCAN_BOUND_MINUTES, sampledScope } from "./lib/scope.ts";
 import { validateAgainst } from "./lib/schema.ts";
 import { blockedBy, componentStates } from "./lib/score.ts";
 import { buildSealedReport, recheck, seal, verifySeal } from "./lib/seal.ts";
 import { renderEnvFiles, renderVerifySkill, serviceKey, writeFiles } from "./lib/skill.ts";
 import { staticSignals } from "./lib/signals.ts";
 import { instructionItems, safetyScan } from "./lib/static.ts";
-import type { Audit, CommandKind, Narration, Result, Roadmap, ScenarioId, ScenarioSpec, Strength, Tier } from "./lib/types.ts";
+import type { Audit, CommandKind, Narration, Result, Roadmap, ScanBound, ScenarioId, ScenarioSpec, Strength, Tier } from "./lib/types.ts";
 import { addDays, exists, fail, git, nowIso, randomHex, readJson, readText, sha256, today, writeJson } from "./lib/util.ts";
 import { commitReader, initAudit, loadDraft, paths, refreshTree, releaseManifest, resolveRepo, saveDraft, scratchTree } from "./lib/workspace.ts";
 
@@ -116,19 +117,28 @@ function cmdScan(a: Args): void {
   const repo = repoOf(a);
   const { audit, local, paths: p } = loadDraft(repo);
   const rubric = loadRubric(audit.rubric);
+  const boundMinutes = Number(str(a, "budget-scan", String(SCAN_BOUND_MINUTES)));
+  if (!(boundMinutes > 0)) fail("--budget-scan takes the scan's time bound in minutes, more than 0.");
+  const bound: ScanBound = { until: Date.now() + boundMinutes * 60000, scope: { boundMinutes, files: 0, fileCap: null, secrets: { scanned: 0, total: 0 }, assetHistory: { read: 0, total: 0 } } };
   refreshTree(repo, audit.repo.commit, local.tree);
   const profile = buildProfile(repo, local.tree, rubric, audit.repo.commit);
+  profile.scope = bound.scope;
   audit.profile = profile;
-  audit.safety = safetyScan(local.tree, profile);
+  audit.safety = safetyScan(local.tree, profile, bound);
   audit.instructions = instructionItems(local.tree, profile);
   for (const item of audit.instructions.filter((i) => i.staticResult === "fail")) {
     const ev = addEvidence(audit, { checkId: "context.instructions_verified", condition: "instructions", strength: "static", where: "static", result: "fail", summary: `${item.source}:${item.line} \`${item.text}\`: ${item.staticReason}` });
     item.evidenceId = ev.id;
   }
   const blocking = audit.safety.filter((s) => s.blocking);
-  addEvidence(audit, { checkId: "safety.execution_boundary", condition: "safety", strength: "static", where: "static", result: blocking.length ? "fail" : "pass", summary: blocking.length ? blocking.map((b) => `${b.file}${b.line ? ":" + b.line : ""} ${b.detail}`).join("; ") : `no blocking findings; ${audit.safety.length} ${audit.safety.length === 1 ? "item" : "items"} listed for review` });
+  const { scanned, total } = bound.scope.secrets;
+  // A secret scan the bound cut short can't show the repo is clean, only that it found none so far.
+  const cutShort = !blocking.length && scanned < total ? `the secret scan read ${scanned} of ${total} files before the scan's ${boundMinutes}-minute bound (--budget-scan)` : undefined;
+  addEvidence(audit, { checkId: "safety.execution_boundary", condition: "safety", strength: "static", where: "static", result: blocking.length ? "fail" : cutShort ? "not_run" : "pass", summary: blocking.length ? blocking.map((b) => `${b.file}${b.line ? ":" + b.line : ""} ${b.detail}`).join("; ") : cutShort ? `no blocking findings in the files read; ${cutShort}` : `no blocking findings; ${audit.safety.length} ${audit.safety.length === 1 ? "item" : "items"} listed for review`, ...(cutShort ? { blocked: cutShort } : {}) });
   if (profile.components.some((c) => c.assessed)) addEvidence(audit, { checkId: "bootstrap.cold_replay", condition: "toolchain", component: "*", strength: "static", where: "static", result: profile.toolchain.pinned ? "pass" : "fail", summary: profile.toolchain.pinned ? `toolchain pinned in ${profile.toolchain.files.join(", ")}` : `missing ${profile.toolchain.missing.join(" and ")}` });
-  audit.assets = inventory(repo, local.tree, audit.instructions);
+  audit.assets = inventory(repo, local.tree, audit.instructions, bound);
+  const sampled = sampledScope(audit);
+  if (sampled) log(`Sampled: ${sampled}.`);
   const assessedIds = new Set(profile.components.filter((c) => c.assessed).map((c) => c.id));
   const agentCmds = audit.contract.filter((c) => c.source !== "readiness" && !c.source.includes("scripts.") && !c.source.startsWith(".cursor/environment.json"));
   for (const c of agentCmds.filter((x) => x.component !== "*" && !assessedIds.has(x.component))) log(`Dropped ${c.id} (${c.command}): ${c.component} isn't an assessed component after this scan.`);
@@ -583,7 +593,7 @@ const HELP = `readiness <command> [options]
 
 Audit
   init --tier <read-only|local-exec|external-systems> [--scenario first_pr,bug_fixes,features,repo_wide] [--registry-env A,B] [--force]
-  scan [--strict]               profile, agent assets, static checks and the verification contract; --strict exits 1 on wrong instructions or blocking safety findings
+  scan [--strict] [--budget-scan M]   profile, agent assets, static checks and the verification contract; --strict exits 1 on wrong instructions or blocking safety findings; past M minutes (default ${SCAN_BOUND_MINUTES}) the secret scan and asset history are sampled
   contract [list|add --kind K --component C --cmd "..." --reason "..." [--cwd D] [--source file:line]]
   scenario [list|add <id> [--components a,b]|remove <id>]   optional breakdowns reported under the components they name
   replay [--component C] [--no-mutants] [--runtime auto|docker|podman|none] [--image ref] [--budget-component M] [--budget-total M]
@@ -593,7 +603,7 @@ Audit
   narrate [--file narration.json] [--headline "..."] [--ask "..."] [--gap id=text] [--title id=text]
   status [--json]
   seal
-  audit --tier T [--scenario S] [--outcomes-input f] [--narration f]   init, scan, replay, outcomes and seal in one go
+  audit --tier T [--scenario S] [--outcomes-input f] [--narration f] [--budget-scan M] [--budget-total M]   init, scan, replay, outcomes and seal in one go
 
 After an audit
   verify-seal [audit-id|latest] [--release-repo owner/repo --release-ref tag --tier external-systems] [--allow-eval] [--allow-unkeyed]   with SA_READINESS_SEAL_KEY set, only keyed seals pass unless --allow-unkeyed

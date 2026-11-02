@@ -76,6 +76,124 @@ function scriptOf(command: string): string | null {
   return ["install", "ci", "add", "exec", "dlx", "x"].includes(m[2]) ? null : m[2];
 }
 
+// Lint and format commands that rewrite files when asked to: `biome check --write`, `eslint --fix`,
+// `prettier --write`, `ruff format`. A check has to leave the code as it found it, or it rewrites
+// the copy that faults are planted in and passes because it fixed what it should have reported.
+const WRITE_FLAG = /^(--fix|--write|--unsafe-fixes|--apply|--apply-unsafe|--fix-type(=.*)?)$/;
+const LAUNCHERS = new Set(["npx", "bunx", "pnpx"]);
+const LAUNCHER_PAIRS = /^(pnpm|yarn|npm|bun) (exec|dlx|x)$|^(uv|poetry|pdm|hatch|pipenv) run$|^python3? -m$/;
+const SEPARATOR = /(\s*(?:&&|\|\||;|\|)\s*)/;
+const MAX_SCRIPT_DEPTH = 4;
+
+export interface CheckOnly {
+  command: string;
+  // What changed, for the reason: "without --write", "ruff format with --check".
+  changes: string[];
+}
+
+function toolAt(words: string[]): number {
+  let i = 0;
+  while (i < words.length) {
+    if (/^[A-Za-z_]\w*=/.test(words[i]) || LAUNCHERS.has(words[i])) i++;
+    else if (i + 1 < words.length && LAUNCHER_PAIRS.test(`${words[i]} ${words[i + 1]}`)) i += 2;
+    else if (i > 0 && (words[i].startsWith("-") || words[i] === "--")) i++;
+    else break;
+  }
+  return i;
+}
+
+function toolName(word: string | undefined): string {
+  return (word ?? "").replace(/^@biomejs\//, "").split("/").pop()!.replace(/@[^@]*$/, "");
+}
+
+// One command with its write flags removed, or switched to the tool's check mode.
+function checkOnlySegment(segment: string, changes: string[]): string {
+  const words = segment.trim().split(/\s+/).filter(Boolean);
+  const at = toolAt(words);
+  const tool = toolName(words[at]);
+  const has = (...flags: string[]) => words.some((w) => flags.includes(w));
+  const out: string[] = [];
+  for (let i = 0; i < words.length; i++) {
+    const w = words[i];
+    if (i <= at) {
+      out.push(w);
+      continue;
+    }
+    if (WRITE_FLAG.test(w) || (tool === "biome" && w === "--unsafe") || (tool === "prettier" && w === "-w")) {
+      if (tool === "prettier" && !has("--check", "-c", "--list-different", "-l") && !out.includes("--check")) {
+        out.push("--check");
+        changes.push("prettier with --check");
+      }
+      changes.push(`without ${w}`);
+      if (w === "--fix-type") i++;
+      continue;
+    }
+    out.push(w);
+  }
+  const sub = out[at + 1];
+  const insert = (flag: string, after: number) => {
+    if (has("--version", "-V", "--help", "-h")) return;
+    out.splice(after + 1, 0, flag);
+    changes.push(`${words.slice(at, after + 1).join(" ")} with ${flag}`);
+  };
+  const rename = (to: string) => {
+    changes.push(`${tool} ${to} instead of ${tool} ${sub}`);
+    out[at + 1] = to;
+  };
+  if (tool === "ruff" && sub === "format" && !has("--check", "--diff")) insert("--check", at + 1);
+  if (tool === "black" && !has("--check", "--diff")) insert("--check", at);
+  if (tool === "isort" && !has("--check", "--check-only", "-c", "--diff")) insert("--check-only", at);
+  if (tool === "dprint" && sub === "fmt") rename("check");
+  if (tool === "sqlfluff" && sub === "fix") rename("lint");
+  return out.join(" ");
+}
+
+// Inlines calls to the package's own scripts, so a flag behind `npm run lint:fix` is seen too.
+function expandScripts(body: string, scripts: Record<string, string>, depth: number): string {
+  if (depth > MAX_SCRIPT_DEPTH) return body;
+  const parts = body.split(SEPARATOR);
+  return parts
+    .map((part, i) => {
+      if (i % 2 === 1) return part;
+      const script = scriptOf(part);
+      if (!script || !(script in scripts)) return part;
+      const rest = part.trim().replace(/^corepack\s+/, "").split(/\s+/);
+      const extra = rest.slice(rest.indexOf(script) + 1).filter((w, j) => !(j === 0 && w === "--"));
+      const inner = expandScripts([scripts[script], ...extra].join(" "), scripts, depth + 1);
+      return parts.length > 1 && SEPARATOR.test(inner) ? `(${inner})` : inner;
+    })
+    .join("");
+}
+
+function execIn(pm: string | null, body: string): string {
+  const quoted = `'${body.replace(/'/g, `'\\''`)}'`;
+  if (pm === "pnpm") return `corepack pnpm exec sh -c ${quoted}`;
+  if (pm === "yarn") return `corepack yarn exec sh -c ${quoted}`;
+  return `npm exec -c ${quoted}`;
+}
+
+// The same check with every write flag removed. A script call is inlined and run with the
+// package's binaries on PATH, as `npm run` would; anything else is rewritten in place. The command
+// comes back unchanged when nothing in it writes.
+export function checkOnly(command: string, scripts: Record<string, string>, pm: string | null): CheckOnly {
+  const changes: string[] = [];
+  const viaScript = scriptOf(command) !== null;
+  const body = viaScript ? expandScripts(command, scripts, 0) : command;
+  const rewritten = body
+    .split(SEPARATOR)
+    .map((part, i) => (i % 2 === 1 ? part : part.replace(/^(\s*\(*)(.*?)(\)*\s*)$/, (_m, open: string, inner: string, close: string) => open + checkOnlySegment(inner, changes) + close)))
+    .join("");
+  if (changes.length === 0) return { command, changes };
+  return { command: viaScript ? execIn(pm, rewritten) : rewritten, changes: [...new Set(changes)] };
+}
+
+export function checkOnlyCommand(cmd: ContractCommand, scripts: Record<string, string>, pm: string | null): ContractCommand {
+  if (cmd.kind !== "lint" && cmd.kind !== "typecheck") return cmd;
+  const safe = checkOnly(cmd.command, scripts, pm);
+  if (safe.changes.length === 0) return cmd;
+  return { ...cmd, command: safe.command, declared: cmd.command, reason: `${cmd.reason}; run check-only (${safe.changes.join(", ")}) so it can't rewrite the code` };
+}
+
 export function hasNetworkPipedHook(findings: SafetyFinding[]): boolean {
   return findings.some((f) => f.kind === "network_piped" && f.file.endsWith("package.json"));
 }
@@ -115,7 +233,8 @@ export function discoverContract(profile: Profile, tree: string, rubric: Rubric,
     for (const kind of ["build", "lint", "typecheck", "test"] as const) {
       const script = SCRIPT_ALIASES[kind].find((s) => c.scripts[s] && !(kind === "test" && PLACEHOLDER_TEST.test(c.scripts[s])));
       if (!script) continue;
-      cmds.push({ id: `cmd-${c.id}-${kind}`, kind, component: c.id, cwd: c.path, command: runScript(c.packageManager ?? pm, script), source: `${c.manifest} scripts.${script}`, reason: `discovered ${kind} script`, timeoutSec: timeout });
+      const cmd: ContractCommand = { id: `cmd-${c.id}-${kind}`, kind, component: c.id, cwd: c.path, command: runScript(c.packageManager ?? pm, script), source: `${c.manifest} scripts.${script}`, reason: `discovered ${kind} script`, timeoutSec: timeout };
+      cmds.push(checkOnlyCommand(cmd, c.scripts, c.packageManager ?? pm));
     }
   }
   return cmds;
@@ -210,7 +329,8 @@ export function addContractCommand(cmds: ContractCommand[], input: { kind: Comma
   let id = base;
   let i = 2;
   while (cmds.some((c) => c.id === id)) id = `${base}-${i++}`;
-  const cmd: ContractCommand = { id, timeoutSec: input.timeoutSec ?? 600, ...input };
+  const comp = profile?.components.find((c) => c.id === input.component) ?? profile?.components.find((c) => dir(c.path) === dir(input.cwd));
+  const cmd = checkOnlyCommand({ id, timeoutSec: input.timeoutSec ?? 600, ...input }, comp?.scripts ?? {}, comp?.packageManager ?? profile?.packageManager ?? null);
   cmds.push(cmd);
   return cmd;
 }

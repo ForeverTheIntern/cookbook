@@ -1,0 +1,25 @@
+{
+  "purpose": "A Poetry library with poetry.lock and pytest in a Poetry dev group. The audit's Python image has no Poetry, so it says Poetry isn't supported yet, links the support list and gives no level, instead of a Level 0 for a missing poetry.",
+  "runs": [
+    {
+      "name": "default",
+      "level": 0,
+      "levels": {},
+      "top": [],
+      "startNow": null,
+      "noBlocker": false,
+      "safety": "pass",
+      "outcome": "not_assessed",
+      "notAssessed": [
+        "poetry-only"
+      ],
+      "shares": {
+        "poetry-only": 1
+      },
+      "unassessed": {
+        "share": 1,
+        "supportLink": true
+      }
+    }
+  ]
+}

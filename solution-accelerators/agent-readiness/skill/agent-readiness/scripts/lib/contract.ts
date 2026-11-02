@@ -25,6 +25,8 @@ function frozenInstall(pm: Profile["packageManager"], dir: string, ignoreScripts
       return { command: `corepack pnpm install --frozen-lockfile${flag}`, reason: "frozen install from pnpm-lock.yaml" };
     case "yarn":
       return { command: `corepack yarn install --frozen-lockfile${flag}`, reason: "frozen install from yarn.lock" };
+    case "bun":
+      return { command: `bun install --frozen-lockfile${flag}`, reason: "frozen install from bun.lock" };
     case "uv":
       return { command: "uv sync --frozen", reason: "frozen install from uv.lock" };
     case "poetry":
@@ -43,6 +45,7 @@ function frozenInstall(pm: Profile["packageManager"], dir: string, ignoreScripts
 function runScript(pm: string | null, script: string): string {
   if (pm === "pnpm") return `corepack pnpm run ${script}`;
   if (pm === "yarn") return `corepack yarn run ${script}`;
+  if (pm === "bun") return `bun run ${script}`;
   return `npm run ${script}`;
 }
 
@@ -60,6 +63,7 @@ function doctorCommand(profile: Profile): string {
   const pms = new Set(profile.components.filter((c) => c.assessed).map((c) => c.packageManager ?? profile.packageManager).filter((x): x is NonNullable<Profile["packageManager"]> => Boolean(x)));
   const parts: string[] = [];
   if ([...pms].some((p) => p === "npm" || p === "pnpm" || p === "yarn")) parts.push("node --version");
+  if (pms.has("bun")) parts.push("bun --version");
   if (pms.has("npm")) parts.push("npm --version");
   if (pms.has("pnpm")) parts.push("corepack pnpm --version");
   if (pms.has("yarn")) parts.push("corepack yarn --version");

@@ -1,8 +1,8 @@
 import { createHmac } from "node:crypto";
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, realpathSync, rmSync } from "node:fs";
 import { refreshAssetStatus } from "./assets.ts";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { isAbsolute, join, relative, sep } from "node:path";
 import { weakening, weakeningText } from "./diff.ts";
 import { ghJson } from "./gh.ts";
 import { appendHistory, loadSealedAudit, readHistory, readRoadmap, readSealedFile, storeAudit, storeRecheck, writeLatest, writeRoadmap } from "./history.ts";
@@ -18,7 +18,8 @@ import { validateAgainst } from "./schema.ts";
 import type { CompStates } from "./score.ts";
 import { componentStates, noRealResults } from "./score.ts";
 import type { Audit, CondId, CondState, HistoryLine, Level, OutcomeStats, ReportJson, Roadmap, ScenarioId, Targets } from "./types.ts";
-import { exists, fail, fmtShortDate, gitOrThrow, nowIso, randomHex, readText, sha256, stableStringify, today } from "./util.ts";
+import { SUPPORTED_DOC } from "./support.ts";
+import { SKILL_ROOT, exists, fail, fmtShortDate, gitOrThrow, nowIso, randomHex, readText, sha256, stableStringify, today } from "./util.ts";
 import type { LocalInfo, Paths } from "./workspace.ts";
 import { clearCurrent, exportTree, realSeed, releaseManifest, skillDigest } from "./workspace.ts";
 
@@ -96,6 +97,12 @@ export interface SealedReport {
   line: HistoryLine;
 }
 
+// references/supported.md relative to the repo root, or null when the skill runs from elsewhere.
+export function supportDocIn(repo: string): string | null {
+  const rel = relative(realpathSync(repo), realpathSync(join(SKILL_ROOT, SUPPORTED_DOC)));
+  return rel.startsWith("..") || isAbsolute(rel) ? null : rel.split(sep).join("/");
+}
+
 export function buildSealedReport(audit: Audit, rubric: Rubric, history: HistoryLine[], prevRoadmap: Roadmap | null, repo: string, storedAt: string): SealedReport {
   if (!audit.profile) fail("Run `readiness scan` before sealing.");
   refreshAssetStatus(audit.assets, audit.instructions);
@@ -152,6 +159,7 @@ export function buildSealedReport(audit: Audit, rubric: Rubric, history: History
     storedAt,
     partial: partialCoverage(rubric, audit.profile.components),
     noResults,
+    supportDoc: supportDocIn(repo),
   });
   return { report, roadmap: rm.roadmap, line };
 }

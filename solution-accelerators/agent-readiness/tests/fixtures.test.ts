@@ -45,6 +45,14 @@ describe("fixtures match expected.json", { concurrency: 3, skip: runtime ? false
         if (run.listed) assert.deepEqual([...new Set(a.audit.safety.filter((s: { blocking: boolean }) => !s.blocking).map((s: { kind: string }) => s.kind))].sort(), [...run.listed].sort(), "safety findings listed for review");
         if (run.signals) assert.deepEqual(Object.fromEntries(r.details.signals.filter((s: { id: string }) => s.id in run.signals!).map((s: { id: string; found: boolean | null }) => [s.id, s.found])), run.signals, "informational signals");
         if (run.coverage) assert.match(r.executive.coverage, new RegExp(run.coverage), "coverage line");
+        if (run.unassessed !== undefined) {
+          const u = r.executive.unassessed;
+          assert.deepEqual(u ? { share: u.share, supportLink: u.supportDoc !== null } : null, run.unassessed, "part 1 says what isn't assessed");
+          if (run.unassessed?.supportLink) assert.match(a.markdown, /\*\*Not assessed:\*\* .*What the audit supports/, "part 1 links the support list");
+        }
+        for (const value of run.absent ?? []) {
+          for (const [what, text] of [["report.md", a.markdown], ["report.json", JSON.stringify(r)], ["audit.json", JSON.stringify(a.audit)]]) assert.ok(!text.includes(value), `${what} doesn't echo ${value.slice(0, 6)}…`);
+        }
       });
     }
   }

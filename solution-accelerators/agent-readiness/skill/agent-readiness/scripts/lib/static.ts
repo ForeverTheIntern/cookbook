@@ -214,17 +214,30 @@ function isText(path: string): boolean {
   return !/\.(png|jpe?g|gif|webp|ico|pdf|zip|gz|tgz|woff2?|ttf|eot|mp4|mov|wasm|so|dylib|exe|jar)$/i.test(path);
 }
 
+// Tests, fixtures, docs, examples and generated code are full of dummy keys, so a hit there is
+// listed for review instead of holding every component below Level 2.
+const NOT_SHIPPED: { re: RegExp; where: string }[] = [
+  { re: /(^|\/)(tests?|__tests__|specs?|e2e|fixtures?|__fixtures__|testdata|__mocks__|mocks?)\/|\.(test|spec)\.[\w]+$|_test\.\w+$|(^|\/)test_[^/]+$|(^|\/)conftest\.py$/, where: "test" },
+  { re: /(^|\/)(generated|__generated__|dist|build|coverage)\/|\.generated\.|\.min\.js$/, where: "generated" },
+  { re: /(^|\/)(docs?|examples?|samples?)\/|\.(md|mdx|rst|adoc)$|(^|\/)\.env\.(example|sample|template)$|\.example$/, where: "docs or example" },
+];
+
+export function notShipped(file: string): string | null {
+  return NOT_SHIPPED.find((n) => n.re.test(file))?.where ?? null;
+}
+
 export function safetyScan(tree: string, profile: Profile): SafetyFinding[] {
   const findings: SafetyFinding[] = [];
   let n = 1;
   const add = (f: Omit<SafetyFinding, "id">) => findings.push({ id: `saf-${String(n++).padStart(3, "0")}`, ...f });
   const files = listFiles(tree, { includeHidden: true });
   for (const file of files) {
-    if (/(^|\/)(package-lock\.json|pnpm-lock\.yaml|yarn\.lock|uv\.lock|poetry\.lock)$/.test(file)) continue;
+    if (/(^|\/)(package-lock\.json|pnpm-lock\.yaml|yarn\.lock|uv\.lock|poetry\.lock|bun\.lock)$/.test(file)) continue;
     const full = join(tree, file);
     if (!isText(full)) continue;
     const text = readText(full);
-    for (const hit of scanText(text)) add({ kind: "secret", file, line: hit.line, detail: hit.type, blocking: true });
+    const where = notShipped(file);
+    for (const hit of scanText(text)) add({ kind: "secret", file, line: hit.line, detail: where ? `${hit.type} in a ${where} file, listed for review` : hit.type, blocking: !where });
     if (/(\.test\.|\.spec\.|(^|\/)tests?\/|(^|\/)test_)/.test(file)) {
       const lines = text.split("\n");
       lines.forEach((l, i) => {

@@ -49,7 +49,7 @@ describe("CLI", { concurrency: 4 }, () => {
     assert.match(unknown.out, /No component named storefront\. Use \* for a repo-wide command or one of: admin-web, buyer-web\./);
     const skipped = add("commerce-core");
     assert.notEqual(skipped.code, 0);
-    assert.match(skipped.out, /commerce-core isn't assessed \(\.NET isn't supported by this rubric\), so replay wouldn't run its commands/);
+    assert.match(skipped.out, /commerce-core isn't assessed \(\.NET isn't supported yet\), so replay wouldn't run its commands/);
     assert.equal(add("buyer-web").code, 0);
     const run = readiness(repo, ["run", "--component", "storefront"]);
     assert.notEqual(run.code, 0);
@@ -66,7 +66,7 @@ describe("CLI", { concurrency: 4 }, () => {
     assert.doesNotMatch(json, /blocked: blocked:/);
     const scenario = readiness(repo, ["scenario", "add", "bug_fixes", "--components", "commerce-core"]);
     assert.notEqual(scenario.code, 0);
-    assert.match(scenario.out, /commerce-core isn't assessed \(\.NET isn't supported by this rubric\), so it has no level for a scenario to break down\. Use one of: admin-web, buyer-web\./);
+    assert.match(scenario.out, /commerce-core isn't assessed \(\.NET isn't supported yet\), so it has no level for a scenario to break down\. Use one of: admin-web, buyer-web\./);
     assert.doesNotMatch(scenario.out, /replay/);
   });
 

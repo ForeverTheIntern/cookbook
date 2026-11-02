@@ -1,4 +1,6 @@
 import { spawnSync } from "node:child_process";
+import { existsSync } from "node:fs";
+import { isAbsolute } from "node:path";
 import { runCommand } from "./run.ts";
 import type { RunOutcome } from "./run.ts";
 import { fail } from "./util.ts";
@@ -27,9 +29,20 @@ export function buildImage(runtime: Runtime, contextDir: string, dockerfile: str
   return { ok: r.status === 0, output: (r.stdout ?? "") + (r.stderr ?? "") };
 }
 
-export function startArgs(name: string, image: string, hostDir: string, registryEnv: string[]): string[] {
+// Behind a proxy or TLS inspection, installs need the same settings the host has. A CA variable
+// names a host path, so that file is mounted read-only at the same path.
+export const NETWORK_ENV = ["HTTP_PROXY", "HTTPS_PROXY", "NO_PROXY", "http_proxy", "https_proxy", "no_proxy"];
+export const CA_ENV = ["NODE_EXTRA_CA_CERTS", "SSL_CERT_FILE", "SSL_CERT_DIR", "REQUESTS_CA_BUNDLE", "PIP_CERT"];
+
+export function startArgs(name: string, image: string, hostDir: string, registryEnv: string[], env: Record<string, string | undefined> = process.env, pathExists: (p: string) => boolean = existsSync): string[] {
   const args = ["run", "-d", "--name", name, "-v", `${hostDir}:/work`, "-w", "/work", "-e", "CI=1", "-e", "HOME=/tmp/home"];
   for (const key of registryEnv) args.push("-e", key);
+  for (const key of NETWORK_ENV) if (env[key]) args.push("-e", key);
+  for (const key of CA_ENV) {
+    const path = env[key];
+    if (!path || !isAbsolute(path) || !pathExists(path)) continue;
+    args.push("-e", key, "-v", `${path}:${path}:ro`);
+  }
   args.push(image, "sleep", "infinity");
   return args;
 }

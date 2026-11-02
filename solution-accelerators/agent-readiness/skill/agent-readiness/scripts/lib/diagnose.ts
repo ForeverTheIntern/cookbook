@@ -45,6 +45,19 @@ export function testCounts(output: string): { passed: number; failed: number; to
   return null;
 }
 
+// TLS interception, proxies and resets show up as these, not only as DNS failures. Returns what
+// failed in plain words, or null.
+const NETWORK: { re: RegExp; detail: string }[] = [
+  { re: /ProxyError|407 Proxy Authentication|tunneling socket could not be established|proxy[^\n]{0,40}(refused|error|failed)/i, detail: "a proxy error on the network" },
+  { re: /CERT_|certificate verify failed|unable to (get|verify) (the )?(local issuer|first) certificate|self[- ]signed certificate|SSLError|SSL: [A-Z_]+|ERR_SSL|SSL routines|tlsv1 alert|TLS handshake|Client network socket disconnected before secure TLS/i, detail: "a TLS or certificate error on the network" },
+  { re: /ENOTFOUND|EAI_AGAIN|getaddrinfo|Temporary failure in name resolution|Could not resolve host/, detail: "it tried to reach the network" },
+  { re: /ECONNRESET|ETIMEDOUT|ENETUNREACH|EHOSTUNREACH|Network is unreachable|socket hang up|\bfetch failed\b|Connection reset by peer|Failed to connect to|Max retries exceeded with url|NewConnectionError|ReadTimeoutError|request to https?:\/\/\S+ failed|ECONNREFUSED (?!127\.0\.0\.1|::1|localhost)[\d.]+:\d+/, detail: "a network connection failed" },
+];
+
+export function networkFailure(output: string): string | null {
+  return NETWORK.find((n) => n.re.test(output))?.detail ?? null;
+}
+
 export function diagnose(output: string, timedOut: boolean, phase: string): Diagnosis {
   if (timedOut) return { cause: "timeout", detail: `the ${phase} step ran out of time` };
   const refused = output.match(/ECONNREFUSED (?:127\.0\.0\.1|::1|localhost|\[::1\]):(\d+)|connect(?:ion)? refused[^\n]*?:(\d{2,5})/i);
@@ -61,13 +74,13 @@ export function diagnose(output: string, timedOut: boolean, phase: string): Diag
   if ((phase === "install" || phase === "doctor") && (/\b(E?401|Unauthorized|authentication required|no auth token)\b/i.test(output) || /Failed to replace env in config: \$\{[A-Z_]+\}/.test(output))) {
     return { cause: "registry", detail: "registry credentials not provided" };
   }
+  if (/ensurepip is not available|No module named venv\b/.test(output)) return { cause: "missing_tool", detail: "python3-venv is not installed" };
   const tool = output.match(/(?:^|\n)(?:[^\n:]*: line \d+: |[^\n:]*: \d+: |(?:ba)?sh: )?([\w.+-]+): (?:command )?not found/);
   if (tool) return { cause: "missing_tool", detail: `${tool[1]} is not installed` };
-  const mod = output.match(/Cannot find module '([^']+)'|ModuleNotFoundError: No module named '([^']+)'|ERR_MODULE_NOT_FOUND[^\n]*'([^']+)'/);
+  const mod = output.match(/Cannot find (?:module|package) '([^'\n]+)'|ModuleNotFoundError: No module named '([^'\n]+)'|ERR_MODULE_NOT_FOUND[^\n']*'([^'\n]+)'/);
   if (mod) return { cause: "missing_module", detail: `module ${mod[1] ?? mod[2] ?? mod[3]} is missing` };
-  if (/ENOTFOUND|EAI_AGAIN|getaddrinfo|Network is unreachable|Temporary failure in name resolution/.test(output)) {
-    return { cause: "network", detail: "it tried to reach the network" };
-  }
+  const network = networkFailure(output);
+  if (network) return { cause: "network", detail: network };
   if (/SyntaxError|error TS\d{4}|IndentationError/.test(output)) return { cause: "compile", detail: "the code doesn't compile" };
   const lines = output.split("\n").map((l) => l.trim()).filter(Boolean);
   const noise = /^(npm (error|ERR!|warn)|ELIFECYCLE|error Command failed|>\s|\$ |command failed|at |# )/i;

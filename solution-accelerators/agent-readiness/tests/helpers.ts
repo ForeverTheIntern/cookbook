@@ -65,7 +65,7 @@ export function makeAudit(spec: AuditSpec): Audit {
     if (c.faults) add({ checkId: "verify.behavioral_oracle", condition: "faults", component: c.id, strength, where, result: c.faults, summary: c.faults === "pass" ? "caught 5 of 5 planted faults" : c.faults === "fail" ? "caught 0 of 5 planted faults" : "tests must pass before faults can be planted" });
   }
   if (spec.lockfile) add({ checkId: "bootstrap.cold_replay", condition: "lockfile", component: "*", strength: "clean_replay", where: "container", result: spec.lockfile, summary: `lockfile ${spec.lockfile}` });
-  const components: Component[] = spec.components.map((c) => ({ id: c.id, path: c.id, language: "js", manifest: `${c.id}/package.json`, scripts: {}, changes: Math.round(c.share * 100), changeShare: c.share, assessed: c.assessed ?? true, notAssessedReason: c.assessed === false ? "Terraform isn't supported by this rubric" : undefined }));
+  const components: Component[] = spec.components.map((c) => ({ id: c.id, path: c.id, language: "js", manifest: `${c.id}/package.json`, scripts: {}, changes: Math.round(c.share * 100), changeShare: c.share, assessed: c.assessed ?? true, notAssessedReason: c.assessed === false ? "Terraform isn't supported yet" : undefined }));
   return {
     schema: "agent-readiness/audit@1",
     id: spec.id ?? "aud-2026-10-27-abc1234-0001",

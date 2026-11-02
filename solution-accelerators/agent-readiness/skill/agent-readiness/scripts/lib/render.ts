@@ -5,6 +5,7 @@ import type { Rubric } from "./rubric.ts";
 import type { CompStates } from "./score.ts";
 import { blockedBy, checkCounts } from "./score.ts";
 import type { ComponentResult } from "./seal.ts";
+import { NOT_SUPPORTED, SUPPORTED_DOC } from "./support.ts";
 import type { Asset, Audit, CondId, Component, ComponentLevel, HistoryLine, Level, OutcomeStats, OutcomesSnapshot, ReportAction, ReportJson, Roadmap, RoadmapItem, ScenarioId } from "./types.ts";
 import { fmtDate, fmtShortDate, pct, wordCount } from "./util.ts";
 
@@ -30,6 +31,8 @@ export interface RenderInput {
   partial: { partial: boolean; unassessedShare: number };
   // Why the audit has no real check results to give a level from, or null when it has some.
   noResults?: string | null;
+  // references/supported.md as a repo-relative path when the skill is installed in the repo.
+  supportDoc?: string | null;
 }
 
 const STATUS_TEXT: Record<RoadmapItem["status"], string> = { done: "done", in_progress: "in progress", next: "next", start_now: "can start now", waiting: "waiting", later: "later" };
@@ -181,11 +184,23 @@ function blockedCauses(input: RenderInput): string[] {
   return [...new Set(input.audit.evidence.filter((e) => e.kind !== "start" && e.kind !== "doctor").map(blockedBy).filter((b): b is string => Boolean(b) && b !== "the install was blocked on this machine").map((b) => b.replace(/, though the repo's declared image .*$/, "")))];
 }
 
+// Each is a clause that follows "it" in the headline.
 function whyNoneAssessed(input: RenderInput): string[] {
   const skipped = input.components.filter((c) => !c.assessed).sort((a, b) => b.changeShare - a.changeShare);
-  if (skipped.length === 0) return ["the audit found no package it supports"];
-  const detailed = list(skipped.map((c) => `${c.id} (${pct(c.changeShare, 1)}% of changes) because ${c.notAssessedReason ?? "it isn't supported"}`));
-  return [detailed, `${skipped.length} ${skipped.length === 1 ? "component uses a toolchain" : "components use toolchains"} this rubric doesn't support`];
+  if (skipped.length === 0) return ["found no package it supports"];
+  const detailed = `skipped ${list(skipped.map((c) => `${c.id} (${pct(c.changeShare, 1)}% of changes) because ${c.notAssessedReason ?? "it isn't supported"}`))}`;
+  return [detailed, `skipped ${skipped.length} ${skipped.length === 1 ? "component whose toolchain" : "components whose toolchains"} the audit doesn't support yet`];
+}
+
+// What would let a rerun give the level, for the cause this audit hit; null when only support for
+// the stack would, which the part 1 support line covers.
+function rerunAdvice(input: RenderInput, causes: string[], verb: "give one" | "prove it"): string | null {
+  if (input.audit.tier === "read-only") return `A local-exec audit can ${verb}.`;
+  if (!input.audit.environment.containerRuntime) return `A rerun where Docker or Podman is available, such as CI, can ${verb}.`;
+  if (causes.some((c) => NOT_SUPPORTED.test(c))) return null;
+  if (causes.some((c) => / hit .*network/.test(c))) return `A rerun with open network access can ${verb}.`;
+  if (causes.some((c) => /in the audit's image/.test(c))) return `A rerun with an image that has the tool, passed with --image, can ${verb}.`;
+  return `A rerun where these checks can run can ${verb}.`;
 }
 
 function headlineFor(input: RenderInput, ready: string[], setByShare: number): string {
@@ -194,23 +209,27 @@ function headlineFor(input: RenderInput, ready: string[], setByShare: number): s
   const active = [...input.active];
   const fit = (...c: string[]) => c.find((x) => wordCount(x) <= rubric.part1.maxHeadlineWords) ?? c[c.length - 1];
   if (noneAssessed(input)) {
-    return fit(...whyNoneAssessed(input).map((why) => `No component could be assessed, so this audit can't give a level yet: it skipped ${why}.`), "No component could be assessed, so this audit can't give a level yet.");
+    return fit(...whyNoneAssessed(input).map((why) => `No component could be assessed, so this audit can't give a level yet: it ${why}.`), "No component could be assessed, so this audit can't give a level yet.");
   }
   if (input.noResults) {
     if (input.audit.tier === "read-only") return "This read-only audit ran no repo code, so it gives no level yet. A local-exec audit can give one.";
     const causes = blockedCauses(input);
-    const rerun = "A rerun where Docker or Podman is available, such as CI, can give one.";
-    return fit(...(causes.length ? [`Nothing could be checked on this machine, so this audit gives no level: ${list(causes)}. ${rerun}`] : []), `Nothing could be checked on this machine, so this audit gives no level. ${rerun}`);
+    const rerun = rerunAdvice(input, causes, "give one");
+    const where = input.audit.environment.containerRuntime ? "in the audit's container" : "on this machine";
+    const tail = rerun ? ` ${rerun}` : "";
+    return fit(...(causes.length ? [`Nothing could be checked ${where}, so this audit gives no level: ${list(causes)}.${tail}`] : []), `Nothing could be checked ${where}, so this audit gives no level.${tail}`);
   }
   if (unproven(input)) {
-    const where = active.length <= 3 ? list(active) : `all ${active.length} active components`;
+    const held = capComps(input);
+    const where = held.length <= 3 ? list(held) : `all ${held.length} ${held.length === active.length ? "active " : ""}components`;
     const readOnly = input.audit.tier === "read-only";
     const causes = blockedCauses(input);
     const why = readOnly ? "the read-only tier runs no repo code" : !input.audit.environment.containerRuntime ? list(["this machine has no container runtime", ...causes]) : causes.length ? list(causes) : "a check that decides it couldn't run here";
-    const rerun = readOnly ? "A local-exec audit" : "A rerun where Docker or Podman is available, such as CI,";
+    const rerun = rerunAdvice(input, causes, "prove it");
+    const tail = rerun ? ` ${rerun}` : "";
     const other = notMachineCause(input);
     if (other) return fit(`Level ${rollup.level + 1} couldn't be proved for ${where}: ${other}.`, `Level ${rollup.level + 1} couldn't be proved for ${where}.`);
-    return fit(`Level ${rollup.level + 1} couldn't be proved for ${where} because ${why}. ${rerun} can prove it.`, `Level ${rollup.level + 1} couldn't be proved for ${where} on this machine. ${rerun} can prove it.`);
+    return fit(`Level ${rollup.level + 1} couldn't be proved for ${where} because ${why}.${tail}`, `Level ${rollup.level + 1} couldn't be proved for ${where} on this machine.${tail}`);
   }
   if (top.length === 0 || top.every((t) => t.kind !== "fix")) {
     if (rollup.level >= 3) return "Agent PRs meet your Level 3 targets. Keep the weekly recheck running and widen the work agents take.";
@@ -252,7 +271,7 @@ function headlineFor(input: RenderInput, ready: string[], setByShare: number): s
     commands: failingKinds.length ? `${their} ${list(failingKinds)} ${failingKinds.length > 1 ? "commands fail" : "command fails"}` : `${their} checks don't all pass`,
     faults: `${their} tests can't yet catch wrong changes`,
     instructions: `${their} agent instructions don't match the repo`,
-    safety: "normal work needs production access",
+    safety: input.audit.safety.filter((s) => s.blocking).every((s) => s.kind === "secret") ? "a secret is committed to the repo" : "normal work needs production access",
   };
   const failing = rubric.level2.filter((c) => why[c] && rollup.setBy.some((id) => input.states.get(id)?.[c].state !== "met")).map((c) => why[c]!);
   return fit(`Agents can build and test ${names}, but ${failing.length ? list(failing) : `${their} checks can't yet catch wrong changes`}${share}.${readyLine}`, `Agents can build and test ${names}, but ${failing.length ? list(failing) : `${their} checks can't yet catch wrong changes`}${share}.`);
@@ -405,6 +424,23 @@ function nextLine(input: RenderInput): string {
     if (stuck.length) blocked.push(name(stuck));
   }
   return `Next: Level ${L + 1}, ${next.plain}. ${met.length ? `Met: ${list(met)}. ` : ""}${unmet.length ? `Not yet: ${list(unmet)}.` : ""}${unmet.length && blocked.length ? " " : ""}${blocked.length ? `Blocked on this machine: ${list(blocked)}.` : ""}`.trim();
+}
+
+// Part 1's own line for what the level doesn't cover, so an unassessed app or a stack the audit
+// doesn't support yet is never only in the coverage footnote.
+function unassessedOf(input: RenderInput): ReportJson["executive"]["unassessed"] {
+  const skipped = input.components.filter((c) => !c.assessed && c.changeShare > 0).sort((a, b) => b.changeShare - a.changeShare);
+  // A step the audit can't run yet, such as a build that needs a sibling package built first.
+  const held = input.audit.evidence.filter((e) => e.kind !== "start" && e.kind !== "doctor" && NOT_SUPPORTED.test(blockedBy(e) ?? ""));
+  const unsupported = held.length > 0 || input.components.some((c) => !c.assessed && NOT_SUPPORTED.test(c.notAssessedReason ?? ""));
+  if (!skipped.length && !unsupported) return null;
+  const share = skipped.reduce((s, c) => s + c.changeShare, 0);
+  const shown = skipped.slice(0, 3).map((c) => `${c.id} (${pct(c.changeShare, 1)}%), because ${c.notAssessedReason ?? "it isn't assessed"}`);
+  const more = skipped.length > 3 ? `; and ${skipped.length - 3} more` : "";
+  const heldIds = [...new Set(held.map((e) => (e.component && e.component !== "*" ? e.component : "the repo")))];
+  const heldText = held.length ? `${list(heldIds)} ${heldIds.length > 1 ? "have" : "has"} no proven level, because ${blockedBy(held[0])}` : "";
+  const text = [skipped.length ? `${pct(share, 1)}% of recent changes aren't assessed: ${shown.join("; ")}${more}` : "", heldText].filter(Boolean).join(". ");
+  return { share: Math.round(share * 1000) / 1000, text, supportDoc: unsupported ? (input.supportDoc ?? SUPPORTED_DOC) : null };
 }
 
 function coverageLine(input: RenderInput): string {
@@ -638,6 +674,7 @@ export function buildReport(input: RenderInput): ReportJson {
       ask,
       coverage: coverageLine(input),
       noBlocker,
+      unassessed: unassessedOf(input),
     },
     actions,
     matrix: { quadrants: rubric.matrixQuadrants, points },
@@ -787,6 +824,7 @@ export function validatePart1(report: ReportJson, rubric: Rubric, narratedAllowe
     ["nextLine", ex.nextLine],
     ["ask", ex.ask],
     ["coverage", ex.coverage],
+    ...(ex.unassessed ? [["not assessed line", ex.unassessed.text] as [string, string]] : []),
     ...ex.gaps.map((g) => ["gap", g.text] as [string, string]),
     ...ex.numbers.flatMap((n) => [["number label", n.label], ["number", n.value], ["comparison", n.comparison]] as [string, string][]),
   ];
@@ -835,6 +873,7 @@ export function allowedNumbers(report: ReportJson): Set<string> {
     numbers: ex.numbers,
     nextLine: ex.nextLine,
     coverage: ex.coverage,
+    unassessed: ex.unassessed,
     maturity: report.maturity,
     components: report.components,
     actions: report.actions.map(({ title: _title, ...rest }) => rest),
@@ -871,6 +910,11 @@ export function renderMarkdown(r: ReportJson, rubric: Rubric): string {
   const conf = r.maturity.confidence;
   out.push(`## 1. Where you stand: ${ex.heading}`, "", `Audited ${fmtDate(r.audit.date)} at ${r.audit.commit}. Confidence: ${conf.level} (${conf.reasons.join("; ")}).`, "", `**${ex.headline}**`, "");
   for (const n of ex.numbers) out.push(`- **${n.label}:** ${n.value}. ${n.comparison}.`);
+  if (ex.unassessed) {
+    const doc = ex.unassessed.supportDoc;
+    const link = !doc ? "" : doc.startsWith("references/") ? ` What the audit supports: ${doc} in the agent-readiness skill.` : ` What the audit supports: [supported.md](/${doc}).`;
+    out.push(`- **Not assessed:** ${ex.unassessed.text}.${link}`);
+  }
   out.push("");
   out.push(scaleLine(r), "", ex.nextLine, "");
   if (ex.gaps.length) {

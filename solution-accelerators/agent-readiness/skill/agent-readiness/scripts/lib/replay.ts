@@ -13,12 +13,15 @@ import type { RunOutcome } from "./run.ts";
 import type { Audit, CommandKind, CondId, ContractCommand, Diagnosis, Evidence, Mutant, Profile, Strength, Where } from "./types.ts";
 import { containedPath, exists, fail, randomHex, readJson, readText, sha256, writeJson } from "./util.ts";
 import { commandsFor } from "./score.ts";
+import { SUPPORTED_DOC, notSupportedReason } from "./support.ts";
 import { realSeed, refreshTree } from "./workspace.ts";
 
 export interface Executor {
   where: Where;
   strength: Strength;
   image: string | null;
+  // Who picked the image: a tool missing from one the repo declared is the repo's to add.
+  imageSource: "audit" | "override" | "repo" | null;
   root: string;
   // imageUser: the repo's declared setup, run as its image's own user rather than an ordinary one.
   exec(command: string, cwd: string, timeoutSec: number, opts?: { imageUser?: boolean }): Promise<RunOutcome>;
@@ -47,12 +50,20 @@ export function insideTree(root: string, ...parts: string[]): string {
   return containedPath(root, parts, ".cursor/environment.json");
 }
 
+// The host fallback runs bash, joins PATH with ":" and writes bash shims, none of which native
+// Windows has.
+export function assertHostFallbackSupported(platform: string = process.platform): void {
+  if (platform === "win32") fail(`This machine has no Docker or Podman, and the audit can't run repo commands on Windows without one: ${notSupportedReason("windows")}. See ${SUPPORTED_DOC} in the skill.`);
+}
+
 export function hostExecutor(root: string, registryEnv: string[], inheritEnv: boolean, where: Where = "fresh_copy"): Executor {
+  assertHostFallbackSupported();
   const env = scrubbedEnv({ registryEnv, inheritEnv });
   return {
     where,
     strength: "executed",
     image: null,
+    imageSource: null,
     root,
     exec: (command, cwd, timeoutSec) => (SUDO.test(command) ? Promise.resolve({ exitCode: null, timedOut: false, durationMs: 0, output: `readiness: ${SUDO_REFUSED}` }) : runCommand(command, join(root, cwd), env, timeoutSec)),
     offline: () => false,
@@ -61,11 +72,12 @@ export function hostExecutor(root: string, registryEnv: string[], inheritEnv: bo
   };
 }
 
-export function containerExecutor(session: ContainerSession, root: string): Executor {
+export function containerExecutor(session: ContainerSession, root: string, imageSource: Executor["imageSource"] = "audit"): Executor {
   const ex: Executor = {
     where: "container",
     strength: "clean_replay",
     image: session.image,
+    imageSource,
     root,
     exec: (command, cwd, timeoutSec, opts) => session.exec(command, cwd, timeoutSec, opts),
     offline: () => (ex.networkOff = session.disconnectNetwork()),
@@ -96,6 +108,49 @@ export interface PhaseResult {
 
 export const INSTALL_BLOCKED = "not run because the install was blocked on this machine";
 
+export interface WorkspacePackage {
+  name: string;
+  path: string;
+}
+
+// Every workspace package's name and folder, assessed or not, so a missing sibling is recognised.
+export function workspacePackages(root: string, profile: Profile): WorkspacePackage[] {
+  const dirs = [...profile.components.map((c) => c.path), ...profile.satellites.filter((s) => s.toolchain === "Node").map((s) => s.path)];
+  return [...new Set(dirs)].flatMap((path) => {
+    const f = join(root, path, "package.json");
+    if (!exists(f)) return [];
+    try {
+      const name = readJson<{ name?: string }>(f).name;
+      return name ? [{ name, path }] : [];
+    } catch {
+      return [];
+    }
+  });
+}
+
+const ONLINE_KINDS = new Set<CommandKind>(["doctor", "install", "build", "start"]);
+
+// Support entries the replay reports as blocked, rather than the scan as not assessed.
+export const REPLAY_STACKS = ["task-graph"];
+
+// A failure that comes from the audit's own environment, not the repo: a tool missing from an image
+// the audit picked, a network, TLS or proxy error while the network is on, or a sibling workspace
+// package the audit didn't build first. Returns the blocked reason, or undefined for a repo failure.
+export function environmentLimit(ex: Pick<Executor, "where" | "image" | "imageSource">, cmd: ContractCommand, d: Diagnosis | null, packages: WorkspacePackage[]): string | undefined {
+  if (!d) return undefined;
+  if (d.cause === "missing_tool") {
+    if (ex.where !== "container") return `${d.detail} on this machine`;
+    if (ex.imageSource !== "repo") return `${d.detail} in the audit's image (${ex.image})`;
+  }
+  if (d.cause === "network" && ONLINE_KINDS.has(cmd.kind)) return `the ${cmd.kind} hit ${d.detail}`;
+  if (d.cause === "missing_module") {
+    const mod = d.detail.replace(/^module /, "").replace(/ is missing$/, "");
+    const sibling = packages.find((p) => p.path !== cmd.cwd && p.path !== "." && (mod === p.name || mod.startsWith(`${p.name}/`) || mod.includes(`/node_modules/${p.name}/`) || mod.includes(`/${p.path}/`)));
+    if (sibling) return `${sibling.name} is a sibling package the audit didn't build first, which isn't supported yet`;
+  }
+  return undefined;
+}
+
 export interface Budget {
   componentMs: number;
   totalMs: number;
@@ -119,7 +174,7 @@ function charge(b: Budget, component: string, ms: number): void {
 export async function runContract(
   ex: Executor,
   contract: ContractCommand[],
-  opts: { components: Set<string>; budget: Budget; registryValues: string[]; onResult?: (r: PhaseResult) => void },
+  opts: { components: Set<string>; budget: Budget; registryValues: string[]; onResult?: (r: PhaseResult) => void; workspacePackages?: WorkspacePackage[] },
 ): Promise<PhaseResult[]> {
   const results: PhaseResult[] = [];
   const push = (r: PhaseResult) => {
@@ -167,7 +222,7 @@ export async function runContract(
     const ok = out.exitCode === 0 && !out.timedOut && reportedFailures === 0;
     const diagnosis = ok ? null : reportedFailures > 0 ? { cause: "unknown" as const, detail: `the runner reported ${reportedFailures} failing tests but exited 0` } : diagnose(out.output, out.timedOut, cmd.kind);
     const sudoRefused = !ok && ex.where !== "container" && out.output.includes(SUDO_SHIM_MARK);
-    const blocked = sudoRefused ? `the ${cmd.kind} command uses sudo, which the audit never runs on the host` : !ok && ex.where !== "container" && diagnosis?.cause === "missing_tool" ? `${diagnosis.detail} on this machine` : undefined;
+    const blocked = sudoRefused ? `the ${cmd.kind} command uses sudo, which the audit never runs on the host` : ok ? undefined : environmentLimit(ex, cmd, diagnosis, opts.workspacePackages ?? []);
     if (!ok && cmd.kind === "install") {
       failedInstalls.add(cmd.component);
       if (blocked) {
@@ -373,6 +428,7 @@ export function revealMutants(audit: Audit, tree: string): void {
 export function makeExecutor(audit: Audit, copyDir: string, runtimePref: string, log: (s: string) => void, imageOverride?: string): Executor {
   const runtime = detectRuntime(runtimePref);
   let image = imageOverride ?? containerImage(audit.profile!, copyDir);
+  let imageSource: Executor["imageSource"] = imageOverride ? "override" : "audit";
   const declared = audit.profile?.environmentJson?.build;
   if (runtime && declared && !imageOverride) {
     const dockerfile = insideTree(copyDir, ".cursor", declared.dockerfile);
@@ -382,6 +438,7 @@ export function makeExecutor(audit: Audit, copyDir: string, runtimePref: string,
     const built = buildImage(runtime, context, dockerfile, tag);
     if (!built.ok) fail(`The declared environment image didn't build:\n${tail(built.output, 2000)}`);
     image = tag;
+    imageSource = "repo";
   }
   if (runtime) {
     const session = new ContainerSession(runtime, `readiness-${audit.id}-${randomHex(3)}`, image, copyDir, audit.environment.registryEnv);
@@ -396,7 +453,7 @@ export function makeExecutor(audit: Audit, copyDir: string, runtimePref: string,
         const added = session.asImageUser("python3 -m venv /tmp/venv-probe >/dev/null 2>&1 || (apt-get update -qq && DEBIAN_FRONTEND=noninteractive apt-get install -y -qq python3-venv >/dev/null)", 600000);
         log(added.ok ? "Added python3-venv to the Node image for the Python components." : `Couldn't add python3-venv for the Python components: ${tail(added.output, 300)}`);
       }
-      return containerExecutor(session, copyDir);
+      return containerExecutor(session, copyDir, imageSource);
     }
     log(`Could not start a container: ${started.output.trim().split("\n").pop()}`);
   }
@@ -430,10 +487,11 @@ export async function replay(audit: Audit, repo: string, tree: string, rubric: R
       components,
       budget,
       registryValues,
-      onResult: (r) => opts.log(`  ${r.cmd.kind.padEnd(9)} ${r.cmd.component.padEnd(12)} ${r.status}${r.diagnosis ? ` (${r.diagnosis.detail})` : r.note ? ` (${r.note})` : ""}`),
+      workspacePackages: workspacePackages(copyDir, profile),
+      onResult: (r) => opts.log(`  ${r.cmd.kind.padEnd(9)} ${r.cmd.component.padEnd(12)} ${r.blocked ? "blocked" : r.status}${r.blocked ? ` (${r.blocked})` : r.diagnosis ? ` (${r.diagnosis.detail})` : r.note ? ` (${r.note})` : ""}`),
     });
     for (const r of results) {
-      if (r.blocked && r.diagnosis?.cause === "missing_tool") {
+      if (r.blocked && r.diagnosis?.cause === "missing_tool" && ex.where !== "container") {
         const tool = r.diagnosis.detail.replace(/ is not installed$/, "");
         const declared = declaredImageInstalls(copyDir, profile, tool);
         if (declared) r.blocked += `, though the repo's declared image (${declared}) installs it`;
@@ -506,10 +564,11 @@ export async function replay(audit: Audit, repo: string, tree: string, rubric: R
           item.blocked = "it uses sudo, which the audit never runs on the host";
           continue;
         }
-        if (why?.cause === "missing_tool" && ex.where !== "container") {
+        if (why?.cause === "missing_tool" && (ex.where !== "container" || ex.imageSource !== "repo")) {
+          const where = ex.where === "container" ? `in the audit's image (${ex.image})` : "on this machine";
           item.result = "not_run";
-          item.reason = `not replayed: ${why.detail} on this machine, an environment limit rather than a repo defect`;
-          item.blocked = `${why.detail} on this machine`;
+          item.reason = `not replayed: ${why.detail} ${where}, an environment limit rather than a repo defect`;
+          item.blocked = `${why.detail} ${where}`;
           continue;
         }
         if (why && (why.cause === "credential" || why.cause === "network" || why.cause === "service" || why.cause === "registry")) {

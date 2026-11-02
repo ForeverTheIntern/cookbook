@@ -1,9 +1,10 @@
-import { statSync } from "node:fs";
+import { realpathSync, statSync } from "node:fs";
 import { dirname, join, normalize } from "node:path";
+import { checkOnly } from "./contract.ts";
 import { readPackageJson } from "./profile.ts";
 import { scanText } from "./redact.ts";
 import type { InstructionItem, Profile, SafetyFinding } from "./types.ts";
-import { exists, listFiles, readText } from "./util.ts";
+import { exists, listFiles, readText, sha256 } from "./util.ts";
 
 const COMMAND_START = /^(npm|pnpm|yarn|npx|corepack|make|python3?|pip3?|pytest|uv|poetry|node|bun|cargo|go|tsc|eslint|ruff|\.\/[\w./-]+)(\s|$)/;
 const SHELL_LANGS = new Set(["", "sh", "bash", "shell", "console", "zsh", "terminal"]);
@@ -151,14 +152,83 @@ function categorize(cmd: string): InstructionItem["category"] {
 
 const FUTURE = /\b(will (be )?(add|creat|live|hold|contain)\w*|(to be|not yet) (added|created|written)|(added|created|written|coming) (later|as|when|once)|later on|planned|upcoming|in the future|doesn't exist yet|does not exist yet|TODO)\b/i;
 
+// Commands an instruction shows as a template, asks questions, or changes the dependencies with.
+// None of them can be replayed as written, so they are listed as skipped instead.
+const PLACEHOLDER = /<[A-Za-z][\w.:/-]*>|\{\{[^}]+\}\}/;
+const RUNNER = String.raw`(npx|bunx|pnpx|(corepack\s+)?(pnpm|yarn)\s+dlx)\s+(-\S+\s+)*`;
+const INTERACTIVE = new RegExp(String.raw`^(corepack\s+)?(npm|pnpm|yarn|bun)\s+(init|create|login|adduser)\b|^${RUNNER}(create-[\w-]+|\S+\s+init)\b|(^|\s)(auth\s+)?login(\s|$)|\s(-i|--interactive)(\s|$)|^(node|python3?)\s*$`);
+const ADDS_PACKAGES = new RegExp(String.raw`^(corepack\s+)?(pnpm|yarn|bun)\s+(add|remove|rm|uninstall)\b|^npm\s+(i|install|add|uninstall|rm|remove)\b(\s+-\S+)*\s+[^-\s]|^(python3?\s+-m\s+)?pip3?\s+install\s+(?!.*(\s|^)(-r|-e|--requirement|--editable|\.)(\s|$))|^(uv|poetry|pdm)\s+(add|remove)\b|^${RUNNER}\S+\s+add\b`);
+
+function skippedReason(cmd: string): string | null {
+  if (PLACEHOLDER.test(cmd)) return "not replayed: it has a placeholder to fill in";
+  if (INTERACTIVE.test(cmd)) return "not replayed: it asks questions as it runs";
+  if (ADDS_PACKAGES.test(cmd)) return "not replayed: it adds or removes packages";
+  return null;
+}
+
+// A documented lint or format command that rewrites files, directly or through the script it calls.
+// The commands check runs its check-only form; replaying it as written would rewrite the copy.
+function writesFiles(cmd: string, tree: string, fileDir: string, profile: Profile): string | null {
+  const scripts = (scriptsAt(tree, fileDir) ?? scriptsAt(tree, "."))?.scripts ?? {};
+  const { changes } = checkOnly(cmd, scripts, profile.packageManager);
+  return changes.length ? `not replayed: it rewrites files as written; the commands check runs it check-only (${changes.join(", ")})` : null;
+}
+
+const SKILL_FILE = /^\.(cursor|claude|agents)\/skills\/([^/]+)\/SKILL\.md$/;
+
+// A third-party skill copied into the repo documents its own tool, not this repo, so its commands
+// aren't replayed. It is vendored when skills-lock.json lists it, a license ships with it, or its
+// frontmatter names where it came from.
+export function vendoredSkills(tree: string, files: string[]): Map<string, string> {
+  const out = new Map<string, string>();
+  let lock: Record<string, { source?: string }> = {};
+  try {
+    lock = exists(join(tree, "skills-lock.json")) ? ((JSON.parse(readText(join(tree, "skills-lock.json"))) as { skills?: typeof lock }).skills ?? {}) : {};
+  } catch {
+    lock = {};
+  }
+  for (const file of files) {
+    const m = file.match(SKILL_FILE);
+    if (!m) continue;
+    const name = m[2];
+    const dir = join(tree, dirname(file));
+    const front = readText(join(tree, file)).match(/^---\n([\s\S]*?)\n---/)?.[1] ?? "";
+    const from = front.match(/^(source|repository|upstream):\s*(.+)$/m)?.[2]?.trim();
+    if (name in lock) out.set(file, `${lock[name].source ? `${lock[name].source}, ` : ""}listed in skills-lock.json`);
+    else if (from) out.set(file, `from ${from}`);
+    else if (/^license:/m.test(front) || listFiles(dir).some((f) => /^LICEN[CS]E(\.\w+)?$/i.test(f))) out.set(file, "it ships its own license");
+  }
+  return out;
+}
+
+// The same instruction file reached twice, through a symlink or as an identical copy, is checked once.
+function duplicateOf(tree: string, file: string, seen: Map<string, string>): string | null {
+  let key: string;
+  try {
+    key = `${realpathSync(join(tree, file))}`;
+  } catch {
+    return null;
+  }
+  const digest = `sha:${sha256(readText(join(tree, file)))}`;
+  const first = seen.get(key) ?? (SKILL_FILE.test(file) ? seen.get(digest) : undefined);
+  if (first) return first;
+  seen.set(key, file);
+  if (SKILL_FILE.test(file)) seen.set(digest, file);
+  return null;
+}
+
 export function instructionItems(tree: string, profile: Profile): InstructionItem[] {
   const items: InstructionItem[] = [];
   let n = 1;
   let basenames: Set<string> | null = null;
+  const vendored = vendoredSkills(tree, profile.instructionFiles);
+  const seen = new Map<string, string>();
   for (const file of profile.instructionFiles) {
+    if (duplicateOf(tree, file, seen)) continue;
     const fileDir = dirname(file) === "" ? "." : dirname(file);
     const text = readText(join(tree, file));
     const lines = text.split("\n");
+    const thirdParty = vendored.get(file);
     for (const e of extractFromMarkdown(text)) {
       // A path the docs say comes later isn't drift: it can't mislead an agent into using it now.
       if (e.kind === "path" && FUTURE.test(lines[e.line - 1] ?? "")) {
@@ -181,13 +251,24 @@ export function instructionItems(tree: string, profile: Profile): InstructionIte
         items.push({ id, source: file, line: e.line, kind: "path", text: e.text, category: "path", staticResult: ok ? "pass" : "fail", staticReason: ok ? undefined : `${e.text} doesn't exist`, result: ok ? "pass" : "fail", reason: ok ? undefined : `${e.text} doesn't exist` });
         continue;
       }
-      const category = categorize(e.text);
+      // A template or a third-party skill's command isn't checked against this repo at all; a real
+      // command that asks questions or adds packages still is, statically, before it's skipped.
+      const early = thirdParty ? `not replayed: it comes from a vendored skill (${thirdParty}), so it documents that tool, not this repo` : PLACEHOLDER.test(e.text) ? skippedReason(e.text) : null;
+      if (early) {
+        items.push({ id, source: file, line: e.line, kind: "command", text: e.text, category: "skipped", staticResult: "pass", result: "not_run", reason: early });
+        continue;
+      }
+      const skip = isRisky(e.text) ? null : (skippedReason(e.text) ?? writesFiles(e.text, tree, fileDir, profile));
+      const category = skip ? "skipped" : categorize(e.text);
       const s = staticCheckCommand(e.text, tree, profile, fileDir);
       let result: InstructionItem["result"];
       let reason: string | undefined;
       if (s.result === "fail") {
         result = "fail";
         reason = s.reason;
+      } else if (skip) {
+        result = "not_run";
+        reason = skip;
       } else if (category === "install") {
         result = "pass";
         reason = "install commands are checked statically; the clean replay runs the frozen install";

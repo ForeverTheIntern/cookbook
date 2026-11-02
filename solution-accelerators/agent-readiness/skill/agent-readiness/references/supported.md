@@ -1,12 +1,12 @@
 # What the audit supports
 
-A running list of the stacks and machines the audit has been checked on. Every entry sits in one tier and names the fixture (under `fixtures/` in the accelerator) or the pinned public repo that shows how the audit behaves on it. `scripts/lib/support.ts` holds the same list, and a test fails when the two drift apart.
+A running list of the stacks and machines the audit has been checked on, and of what the scripts do with tools and files they recognize. The checks themselves are described in [checks.md](checks.md). Every entry sits in one tier and names the fixture (under `fixtures/` in the accelerator) or the pinned public repo that shows how the audit behaves on it. `scripts/lib/support.ts` holds the same list, and a test fails when the two drift apart.
 
 - **Supported:** the audit installs, builds and tests it, and gives a level.
 - **Not yet supported:** the scan recognises it and gives no level for it, because a specific piece is missing. The report says "isn't supported yet" with the reason, and links here.
 - **Not assessed:** the scan lists it by name with its share of recent changes, and gives no level. The audit has no install, test or planted-fault support for it. For a machine, nothing has proved how the audit behaves on it.
 
-A component outside the supported tier never sets the repo level. When it holds a share of recent changes, part 1 of the report says how much. Anything not listed here hasn't been tried: the scan may not recognise it, so check part 4 of the report for what it found.
+A component outside the supported tier never sets the repo level. When it holds a share of recent changes, part 1 of the report says how much. The two sections after the tiers say how supported tools and agent assets are handled: lint and format tools run check-only, and vendored skills are skipped. Anything not listed here hasn't been tried: the scan may not recognise it, so check part 4 of the report for what it found.
 
 ## Supported
 
@@ -53,6 +53,33 @@ A Python, PHP or Ruby app next to a root `package.json` is listed with its own s
 A .NET repo with several root solutions is named after the solution that matches the repo's name, or after the repo, never after whichever solution sorts first.
 
 Folders named `examples`, `samples`, `tests`, `bench`, `tooling` and the like, and packaging or platform folders such as `HomebrewFormula`, `pkg`, `packaging`, `android` and `ios`, are satellites: part 4 lists them, and they never become components while the repo has anything else to assess.
+
+## Lint and format tools run check-only
+
+Lint and type-check commands run without their write flags, so they report problems instead of rewriting the copy the audit plants faults in. A script call such as `npm run lint` is inlined, including the package scripts it calls, and run with the package's binaries on `PATH` (`npm exec -c`, `pnpm exec`, `yarn exec`).
+
+| Tool | What the audit runs instead |
+|---|---|
+| any tool | removes `--fix`, `--write`, `--fix-type`, `--unsafe-fixes`, `--apply` and `--apply-unsafe` |
+| Biome | also removes `--unsafe` |
+| Prettier | `--check` in place of `--write` or `-w` |
+| Ruff | `ruff format --check` in place of `ruff format` |
+| Black | `black --check` |
+| isort | `isort --check-only` |
+| dprint | `dprint check` in place of `dprint fmt` |
+| SQLFluff | `sqlfluff lint` in place of `sqlfluff fix` |
+
+Anything else that still changes the repo's files fails the commands condition ("it changed N files, so it rewrites code instead of checking it"), and the files are put back before faults are planted. A tool that only writes through a config file setting, such as a formatter configured to fix on run, is caught this way rather than by name.
+
+## Vendored agent skills
+
+Commands in a third-party skill copied into `.agents/skills`, `.claude/skills` or `.cursor/skills` are listed as skipped and never run, because they document that tool, not this repo. A skill counts as vendored when:
+
+- `skills-lock.json` at the repo root lists it, as the `skills` CLI writes;
+- a `LICENSE` file ships in its folder, or its frontmatter has a `license` field; or
+- its frontmatter names a `source`, `repository` or `upstream`.
+
+A first-party skill has none of these, and its commands are checked and replayed like any other instruction. The same skill reached twice, through a symlink or as an identical copy, is checked once.
 
 ## Adding an entry
 

@@ -1,4 +1,4 @@
-import { cpSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { cpSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve, sep } from "node:path";
 import { ContainerSession, buildImage, detectRuntime } from "./container.ts";
@@ -11,7 +11,7 @@ import type { Rubric } from "./rubric.ts";
 import { SUDO_SHIM_MARK, runCommand, scrubbedEnv } from "./run.ts";
 import type { RunOutcome } from "./run.ts";
 import type { Audit, CommandKind, CondId, ContractCommand, Diagnosis, Evidence, Mutant, Profile, Strength, Where } from "./types.ts";
-import { containedPath, exists, fail, randomHex, readJson, readText, sha256, writeJson } from "./util.ts";
+import { containedPath, exists, fail, listFiles, randomHex, readJson, readText, sha256, writeJson } from "./util.ts";
 import { commandsFor } from "./score.ts";
 import { SUPPORTED_DOC, notSupportedReason } from "./support.ts";
 import { realSeed, refreshTree } from "./workspace.ts";
@@ -171,10 +171,28 @@ function charge(b: Budget, component: string, ms: number): void {
   b.used.set(component, (b.used.get(component) ?? 0) + ms);
 }
 
+// Digests of the files a check could rewrite: what the audited commit has under its folder.
+function snapshot(root: string, listFrom: string, cwd: string): Map<string, string> {
+  const digests = new Map<string, string>();
+  for (const f of listFiles(join(listFrom, cwd), { includeHidden: true })) {
+    const rel = join(cwd, f);
+    const full = join(root, rel);
+    if (exists(full)) digests.set(rel, sha256(readFileSync(full)));
+  }
+  return digests;
+}
+
+function rewritten(root: string, before: Map<string, string>): string[] {
+  return [...before].filter(([rel, digest]) => !exists(join(root, rel)) || sha256(readFileSync(join(root, rel))) !== digest).map(([rel]) => rel);
+}
+
+export const REWROTE = "so it rewrites code instead of checking it";
+
 export async function runContract(
   ex: Executor,
   contract: ContractCommand[],
-  opts: { components: Set<string>; budget: Budget; registryValues: string[]; onResult?: (r: PhaseResult) => void; workspacePackages?: WorkspacePackage[] },
+  // tree: the audited commit, to list the files a check must leave alone and put them back from.
+  opts: { components: Set<string>; budget: Budget; registryValues: string[]; tree?: string; onResult?: (r: PhaseResult) => void; workspacePackages?: WorkspacePackage[] },
 ): Promise<PhaseResult[]> {
   const results: PhaseResult[] = [];
   const push = (r: PhaseResult) => {
@@ -182,7 +200,8 @@ export async function runContract(
     opts.onResult?.(r);
   };
   const wanted = (c: ContractCommand) => c.component === "*" || opts.components.has(c.component);
-  const order: CommandKind[] = ["doctor", "install", "build", "start"];
+  // Lint runs before the build, so it never reads the build's output.
+  const order: CommandKind[] = ["doctor", "install", "lint", "build", "start"];
   const online = contract.filter((c) => order.includes(c.kind) && wanted(c)).sort((a, b) => order.indexOf(a.kind) - order.indexOf(b.kind));
   const offlineCmds = contract.filter((c) => !order.includes(c.kind) && wanted(c));
   const failedInstalls = new Set<string>();
@@ -195,16 +214,12 @@ export async function runContract(
     if (failedInstalls.has(cmd.component) && !rescued.has(cmd.component)) return true;
     return failedInstalls.has("*") && !rescued.has(cmd.component) && !rescued.has("*");
   };
-  const run = async (cmd: ContractCommand) => {
-    if (cmd.fallbackFor && !blockedIds.has(cmd.fallbackFor)) return;
-    if (overBudget(opts.budget, cmd.component)) {
-      push({ cmd, status: "not_run", outcome: null, diagnosis: null, note: "cut off by the time budget" });
-      return;
-    }
+  const attempt = async (cmd: ContractCommand): Promise<PhaseResult | null> => {
+    if (cmd.fallbackFor && !blockedIds.has(cmd.fallbackFor)) return null;
+    if (overBudget(opts.budget, cmd.component)) return { cmd, status: "not_run", outcome: null, diagnosis: null, note: "cut off by the time budget" };
     if (gated(cmd)) {
       const blocked = blockedInstalls.has(cmd.component) || (blockedInstalls.has("*") && !failedInstalls.has(cmd.component));
-      push({ cmd, status: "not_run", outcome: null, diagnosis: null, note: blocked ? INSTALL_BLOCKED : "not run because the install failed", blocked: blocked ? "the install was blocked on this machine" : undefined });
-      return;
+      return { cmd, status: "not_run", outcome: null, diagnosis: null, note: blocked ? INSTALL_BLOCKED : "not run because the install failed", blocked: blocked ? "the install was blocked on this machine" : undefined };
     }
     if (ex.where !== "container" && SUDO.test(cmd.command)) {
       if (cmd.kind === "install") {
@@ -212,15 +227,19 @@ export async function runContract(
         blockedInstalls.add(cmd.component);
         blockedIds.add(cmd.id);
       }
-      push({ cmd, status: "not_run", outcome: null, diagnosis: null, note: SUDO_REFUSED, blocked: `the ${cmd.kind} command uses sudo, which the audit never runs on the host` });
-      return;
+      return { cmd, status: "not_run", outcome: null, diagnosis: null, note: SUDO_REFUSED, blocked: `the ${cmd.kind} command uses sudo, which the audit never runs on the host` };
     }
+    const watched = cmd.kind === "lint" || cmd.kind === "typecheck" ? snapshot(ex.root, opts.tree ?? ex.root, cmd.cwd) : null;
     const out = await ex.exec(cmd.command, cmd.cwd, cmd.timeoutSec, { imageUser: cmd.source.startsWith(".cursor/environment.json") });
     charge(opts.budget, cmd.component, out.durationMs);
+    // A check that changes the code it checks has to fail, and the code goes back for the steps after it.
+    const changed = watched ? rewritten(ex.root, watched) : [];
+    if (changed.length && opts.tree) for (const rel of changed) if (exists(join(opts.tree, rel))) cpSync(join(opts.tree, rel), join(ex.root, rel));
     // A runner that prints failures and still exits 0 hasn't passed.
     const reportedFailures = cmd.kind === "test" && out.exitCode === 0 ? (testCounts(out.output)?.failed ?? 0) : 0;
-    const ok = out.exitCode === 0 && !out.timedOut && reportedFailures === 0;
-    const diagnosis = ok ? null : reportedFailures > 0 ? { cause: "unknown" as const, detail: `the runner reported ${reportedFailures} failing tests but exited 0` } : diagnose(out.output, out.timedOut, cmd.kind);
+    const ok = out.exitCode === 0 && !out.timedOut && reportedFailures === 0 && changed.length === 0;
+    const rewroteDetail = `it changed ${changed.length} ${changed.length === 1 ? "file" : "files"} (${changed.slice(0, 3).join(", ")}${changed.length > 3 ? ", …" : ""}), ${REWROTE}`;
+    const diagnosis = ok ? null : changed.length ? { cause: "unknown" as const, detail: rewroteDetail } : reportedFailures > 0 ? { cause: "unknown" as const, detail: `the runner reported ${reportedFailures} failing tests but exited 0` } : diagnose(out.output, out.timedOut, cmd.kind);
     const sudoRefused = !ok && ex.where !== "container" && out.output.includes(SUDO_SHIM_MARK);
     const blocked = sudoRefused ? `the ${cmd.kind} command uses sudo, which the audit never runs on the host` : ok ? undefined : environmentLimit(ex, cmd, diagnosis, opts.workspacePackages ?? []);
     if (!ok && cmd.kind === "install") {
@@ -231,11 +250,30 @@ export async function runContract(
       }
     }
     if (ok && cmd.kind === "install" && cmd.fallbackFor) rescued.add(cmd.component);
-    push({ cmd, status: ok ? "pass" : "fail", outcome: out, diagnosis, note: cmd.fallbackFor && ok ? "ran on its own because the shared install was blocked on this machine" : "", blocked });
+    return { cmd, status: ok ? "pass" : "fail", outcome: out, diagnosis, note: cmd.fallbackFor && ok ? "ran on its own because the shared install was blocked on this machine" : "", blocked };
   };
-  for (const cmd of online) await run(cmd);
+  const run = async (cmd: ContractCommand) => {
+    const r = await attempt(cmd);
+    if (r) push(r);
+  };
+  // A lint that fails before the build may need what the build makes, such as a workspace
+  // package's types, so it gets one more run after a build that passed.
+  const builtFor = (comp: string) => online.some((c) => c.kind === "build" && (c.component === comp || c.component === "*" || comp === "*"));
+  const beforeBuild = new Map<string, PhaseResult>();
+  for (const cmd of online) {
+    const r = await attempt(cmd);
+    if (!r) continue;
+    if (cmd.kind === "lint" && r.status === "fail" && !r.blocked && !r.diagnosis?.detail.endsWith(REWROTE) && builtFor(cmd.component)) beforeBuild.set(cmd.id, r);
+    else push(r);
+  }
   const firstOffline = results.length;
   const wentOffline = ex.offline();
+  for (const first of beforeBuild.values()) {
+    const built = results.filter((r) => r.cmd.kind === "build" && (r.cmd.component === first.cmd.component || r.cmd.component === "*" || first.cmd.component === "*"));
+    const again = built.length && built.every((r) => r.status === "pass") ? await attempt(first.cmd) : null;
+    if (again?.status === "pass") push({ ...again, note: "failed before the build and passed after it" });
+    else push({ ...first, note: again ? "failed before the build and again after it" : first.note });
+  }
   for (const cmd of offlineCmds) await run(cmd);
   if (ex.where === "container" && !wentOffline) {
     for (const r of results.slice(firstOffline)) {
@@ -255,6 +293,7 @@ export function evidenceFromPhase(audit: Audit, ex: Executor, r: PhaseResult, re
   else if (r.status === "not_run") summary = r.note.startsWith("not run") ? `${r.cmd.kind} ${r.note}` : `${r.cmd.kind} not run: ${r.note}`;
   else summary = `${r.cmd.kind} failed: ${r.diagnosis?.detail ?? "non-zero exit"}${counts && counts.failed ? ` (${counts.failed} of ${counts.total} tests failed)` : ""}`;
   if (r.status === "fail" && r.diagnosis?.cause === "registry" && audit.environment.registryEnv.length === 0) summary = `${r.cmd.kind} failed: registry credentials not provided (pass them with --registry-env)`;
+  if (r.cmd.declared && r.status !== "not_run") summary += `; ran check-only, without the write flags in \`${r.cmd.declared}\``;
   return addEvidence(audit, {
     checkId: map.check,
     condition: map.condition,
@@ -487,6 +526,7 @@ export async function replay(audit: Audit, repo: string, tree: string, rubric: R
       components,
       budget,
       registryValues,
+      tree,
       workspacePackages: workspacePackages(copyDir, profile),
       onResult: (r) => opts.log(`  ${r.cmd.kind.padEnd(9)} ${r.cmd.component.padEnd(12)} ${r.blocked ? "blocked" : r.status}${r.blocked ? ` (${r.blocked})` : r.diagnosis ? ` (${r.diagnosis.detail})` : r.note ? ` (${r.note})` : ""}`),
     });
@@ -545,61 +585,83 @@ export async function replay(audit: Audit, repo: string, tree: string, rubric: R
       for (const comp of components) addEvidence(audit, { checkId: "verify.behavioral_oracle", condition: "faults", component: comp, strength: ex.strength, where: ex.where, result: "not_run", summary: NO_MUTANTS, skipped: "--no-mutants" });
     }
     if (opts.instructions) {
-      for (const item of audit.instructions.filter((i) => i.category === "replay" && i.staticResult === "pass")) {
-        if (!installed) {
-          const blocked = installs.find((r) => r.blocked)?.blocked;
-          item.result = "not_run";
-          item.reason = blocked ? "not replayed because the install was blocked on this machine" : "not replayed because the install failed";
-          item.blocked = blocked;
-          continue;
-        }
-        const cwd = dirname(item.source) === "" ? "." : dirname(item.source);
-        const out = await ex.exec(item.text, exists(join(copyDir, cwd)) ? cwd : ".", 300);
-        const ok = out.exitCode === 0 && !out.timedOut;
-        const redacted = redact(out.output, registryValues);
-        const why = ok ? null : diagnose(out.output, out.timedOut, "instruction");
-        if (!ok && ex.where !== "container" && out.output.includes(SUDO_SHIM_MARK)) {
-          item.result = "not_run";
-          item.reason = "not replayed: it uses sudo, which the audit never runs on the host";
-          item.blocked = "it uses sudo, which the audit never runs on the host";
-          continue;
-        }
-        if (why?.cause === "missing_tool" && (ex.where !== "container" || ex.imageSource !== "repo")) {
-          const where = ex.where === "container" ? `in the audit's image (${ex.image})` : "on this machine";
-          item.result = "not_run";
-          item.reason = `not replayed: ${why.detail} ${where}, an environment limit rather than a repo defect`;
-          item.blocked = `${why.detail} ${where}`;
-          continue;
-        }
-        if (why && (why.cause === "credential" || why.cause === "network" || why.cause === "service" || why.cause === "registry")) {
-          item.category = "needs_access";
-          item.result = "not_run";
-          item.reason = `not replayed: it ${why.cause === "network" ? "needs the network" : why.detail}, which the replay doesn't provide`;
-          continue;
-        }
-        const ev = addEvidence(audit, {
-          checkId: "context.instructions_verified",
-          condition: "instructions",
-          strength: ex.strength,
-          where: ex.where,
-          result: ok ? "pass" : "fail",
-          command: item.text,
-          cwd,
-          image: ex.image ?? undefined,
-          exitCode: out.exitCode,
-          timedOut: out.timedOut,
-          durationMs: out.durationMs,
-          outputTail: tail(redacted, 1500),
-          outputDigest: sha256(redacted),
-          summary: `${item.source}:${item.line} \`${item.text}\` ${ok ? "replays" : "fails: " + diagnose(out.output, out.timedOut, "instruction").detail}`,
-        });
-        item.result = ok ? "pass" : "fail";
-        item.reason = ok ? undefined : diagnose(out.output, out.timedOut, "instruction").detail;
-        item.evidenceId = ev.id;
-      }
+      const blocked = installs.find((r) => r.blocked)?.blocked;
+      await replayInstructions(audit, ex, copyDir, budget, registryValues, installed ? null : { blocked });
     }
   } finally {
     ex.close();
     rmSync(dirname(copyDir), { recursive: true, force: true });
+  }
+}
+
+export const INSTRUCTION_TIMEOUT_SEC = 300;
+export const CUT_OFF = "not replayed: cut off by the time budget (--budget-total)";
+
+// Documented commands run one by one in the replay copy, inside the audit's overall time budget:
+// each gets what is left of it, and none starts once it is spent.
+export async function replayInstructions(audit: Audit, ex: Executor, copyDir: string, budget: Budget, registryValues: string[], notInstalled: { blocked?: string } | null): Promise<void> {
+  for (const item of audit.instructions.filter((i) => i.category === "replay" && i.staticResult === "pass")) {
+    if (notInstalled) {
+      item.result = "not_run";
+      item.reason = notInstalled.blocked ? "not replayed because the install was blocked on this machine" : "not replayed because the install failed";
+      item.blocked = notInstalled.blocked;
+      continue;
+    }
+    const leftSec = Math.floor((budget.totalMs - (Date.now() - budget.startedAt)) / 1000);
+    if (overBudget(budget, "*") || leftSec < 1) {
+      item.result = "not_run";
+      item.reason = CUT_OFF;
+      continue;
+    }
+    const cwd = dirname(item.source) === "" ? "." : dirname(item.source);
+    const out = await ex.exec(item.text, exists(join(copyDir, cwd)) ? cwd : ".", Math.min(INSTRUCTION_TIMEOUT_SEC, leftSec));
+    charge(budget, "*", out.durationMs);
+    const ok = out.exitCode === 0 && !out.timedOut;
+    const redacted = redact(out.output, registryValues);
+    const why = ok ? null : diagnose(out.output, out.timedOut, "instruction");
+    if (!ok && ex.where !== "container" && out.output.includes(SUDO_SHIM_MARK)) {
+      item.result = "not_run";
+      item.reason = "not replayed: it uses sudo, which the audit never runs on the host";
+      item.blocked = "it uses sudo, which the audit never runs on the host";
+      continue;
+    }
+    if (why?.cause === "missing_tool" && (ex.where !== "container" || ex.imageSource !== "repo")) {
+      const where = ex.where === "container" ? `in the audit's image (${ex.image})` : "on this machine";
+      item.result = "not_run";
+      item.reason = `not replayed: ${why.detail} ${where}, an environment limit rather than a repo defect`;
+      item.blocked = `${why.detail} ${where}`;
+      continue;
+    }
+    if (why && (why.cause === "credential" || why.cause === "network" || why.cause === "service" || why.cause === "registry")) {
+      item.category = "needs_access";
+      item.result = "not_run";
+      item.reason = `not replayed: it ${why.cause === "network" ? "needs the network" : why.detail}, which the replay doesn't provide`;
+      continue;
+    }
+    // A timeout the budget forced is the audit's limit, not a slow instruction.
+    if (out.timedOut && overBudget(budget, "*")) {
+      item.result = "not_run";
+      item.reason = CUT_OFF;
+      continue;
+    }
+    const ev = addEvidence(audit, {
+      checkId: "context.instructions_verified",
+      condition: "instructions",
+      strength: ex.strength,
+      where: ex.where,
+      result: ok ? "pass" : "fail",
+      command: item.text,
+      cwd,
+      image: ex.image ?? undefined,
+      exitCode: out.exitCode,
+      timedOut: out.timedOut,
+      durationMs: out.durationMs,
+      outputTail: tail(redacted, 1500),
+      outputDigest: sha256(redacted),
+      summary: `${item.source}:${item.line} \`${item.text}\` ${ok ? "replays" : "fails: " + why!.detail}`,
+    });
+    item.result = ok ? "pass" : "fail";
+    item.reason = ok ? undefined : why!.detail;
+    item.evidenceId = ev.id;
   }
 }

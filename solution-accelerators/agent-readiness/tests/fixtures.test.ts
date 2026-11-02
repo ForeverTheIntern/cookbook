@@ -45,6 +45,12 @@ describe("fixtures match expected.json", { concurrency: 3, skip: runtime ? false
         if (run.listed) assert.deepEqual([...new Set(a.audit.safety.filter((s: { blocking: boolean }) => !s.blocking).map((s: { kind: string }) => s.kind))].sort(), [...run.listed].sort(), "safety findings listed for review");
         if (run.signals) assert.deepEqual(Object.fromEntries(r.details.signals.filter((s: { id: string }) => s.id in run.signals!).map((s: { id: string; found: boolean | null }) => [s.id, s.found])), run.signals, "informational signals");
         if (run.coverage) assert.match(r.executive.coverage, new RegExp(run.coverage), "coverage line");
+        if (run.contract) for (const [id, command] of Object.entries(run.contract)) assert.equal(a.audit.contract.find((c: { id: string }) => c.id === id)?.command, command, `${id} runs check-only`);
+        if (run.neverRan) {
+          const ran = a.audit.evidence.map((e: { command?: string }) => e.command ?? "").filter(Boolean);
+          for (const text of run.neverRan) assert.deepEqual(ran.filter((c: string) => c.includes(text)), [], `no command the audit ran contains ${text}`);
+        }
+        if (run.skipped !== undefined) assert.equal(a.audit.instructions.filter((i: { category: string }) => i.category === "skipped").length, run.skipped, "instruction commands listed as skipped");
         if (run.unassessed !== undefined) {
           const u = r.executive.unassessed;
           assert.deepEqual(u ? { share: u.share, supportLink: u.supportDoc !== null } : null, run.unassessed, "part 1 says what isn't assessed");

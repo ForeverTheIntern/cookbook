@@ -132,6 +132,12 @@ export interface ExpectedRun {
   notAssessed?: string[];
   waiting?: string[];
   diagnosis?: string;
+  // The command the audit runs for each contract id, where it differs from the one the repo declares.
+  contract?: Record<string, string>;
+  // Text no command the audit ran may contain, such as a write flag.
+  neverRan?: string[];
+  // How many instruction commands are listed as skipped.
+  skipped?: number;
   // Values, such as a committed secret, that must appear nowhere in the report or the sealed audit.
   absent?: string[];
   // Part 1's line for what the level doesn't cover: its share, and whether it links the support list.

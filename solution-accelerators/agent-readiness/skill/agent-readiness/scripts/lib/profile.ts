@@ -442,6 +442,8 @@ export function computeChangeShares(repo: string, comps: Component[], rubric: Ru
     const lockOnly = commitFiles.length > 0 && commitFiles.every((f) => rubric.components.lockfiles.includes(basename(f)));
     if (!isBot && !lockOnly) {
       for (const f of commitFiles) {
+        // Installing this skill, or committing its records, isn't work in the repo's components.
+        if (f.startsWith(".cursor/skills/agent-readiness/") || f.startsWith(".agent-readiness/")) continue;
         if (rubric.components.generatedPatterns.some((g) => f.includes(g))) continue;
         if (rubric.components.lockfiles.includes(basename(f))) continue;
         const owner = owningComponent(f, comps);

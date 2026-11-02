@@ -99,7 +99,8 @@ function targetedSignal(profile: Profile, contract: ContractCommand[]): Signal {
 }
 
 export function staticSignals(tree: string, profile: Profile, contract: ContractCommand[]): Signal[] {
-  const files = listFiles(tree, { includeHidden: true });
+  // The installed copy of this skill reads its own SA_READINESS_* settings; that is not the repo's code.
+  const files = listFiles(tree, { includeHidden: true }).filter((f) => !f.startsWith(".cursor/skills/agent-readiness/"));
   const ci: Signal = profile.ciFiles.length
     ? { id: "ci", label: "CI config", found: true, detail: `${profile.ciFiles.slice(0, 3).join(", ")}${profile.ciFiles.length > 3 ? ` and ${profile.ciFiles.length - 3} more` : ""}${profile.ciFiles.some((f) => /\b(test|pytest)\b/.test(readText(join(tree, f)))) ? ", and it runs tests" : ", though none of it mentions tests"}` }
     : { id: "ci", label: "CI config", found: false, detail: "no GitHub Actions, GitLab CI, CircleCI or Buildkite config" };

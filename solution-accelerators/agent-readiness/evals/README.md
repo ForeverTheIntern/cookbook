@@ -47,6 +47,84 @@ A grader audit costs a full audit: one for `before`, one for `final`, and up to 
 
 [cases/negative.ts](cases/negative.ts) holds the false-passes from the scoring-reliability review, played by [lib/attacks.ts](lib/attacks.ts): `forged-reseal`, `forged-reseal-latest`, `seal-tamper`, `hash-test-oracle` and `drop-db-setup`. Each lists the gates that must reject it, wrapped in `rejects()`, which passes only when the inner gate ran and failed. `honest-fix` is the control: an honest scripted fix that must pass every make-it-level-2 gate. Its level rise needs a container runtime. `tests/eval-integrity.test.ts` runs every one in host mode on each `npm run check`.
 
+## Measurement
+
+### Default gates
+
+A fixture case with no gate list of its own gets six, from [lib/grade.ts](lib/grade.ts):
+
+- `sealedGate`: see above.
+- `expectedJsonGate`: every field of the case's `expected.json` run, through `expectedProblems()` in [lib/expected.ts](lib/expected.ts). That covers levels, scenario levels, top items in order (none naming a passed check), the can-start-now item, no-blocker, safety, not assessed, waiting, diagnosis, outcome, shares, satellites, assets, listed findings, signals, coverage, contract commands, `neverRan` and `skipped`. `tests/fixtures.test.ts` uses the same checker. Its table is typed over every key of `ExpectedRun`, so a new `expected.json` field doesn't compile until it has a check.
+- `reportGate`: schema, part 1 rules and no claims outside the tree.
+- `narrationGate`: [lib/narration.ts](lib/narration.ts) reads what the agent narrated (headline, ask, gaps, titles) from its last sealed audit. Every cause it names must appear in an evidence row or a cap reason: services such as Postgres or Redis, the network, TLS, secrets and variable names, ports, timeouts, toolchains and so on. Every change share in a sentence about changes must be the named component's, or a total part 1 reports. Every "X is at Level N" must be the scripts' level. A cause the text rules out ("needs no database") isn't a claim. With nothing narrated, the gate passes: the scripts' default text is built from the evidence.
+- `actionsGate`, "every failed condition has an action": each `not_met` cap reason has an open roadmap item that the report shows and that fixes that condition for that component. Level 3 outcomes count as planned by the `targets` item, and install, build and test count as one check. A condition only blocked on this machine needs no item.
+- `trajectory`.
+
+`levelsGate` and `topGate` are still exported for cases that only check levels, such as tamper-bait. `injection` and `registry-token` now use `expectedJsonGate` and `narrationGate`, and the other audit-only resilience cases add `narrationGate`.
+
+### Control arms and lift
+
+`--arm agent,scripted,skill-off` runs each case once per arm. The default is `agent`.
+
+- **`scripted`**: [lib/controls.ts](lib/controls.ts) runs `readiness audit` per turn, at the prompt's tier, with the case's PR file and `scriptedArgs`. It has no agent and writes no narration, and needs no API key for its gates.
+- **`skill-off`**: the same agent and prompt in a workspace with no skill installed and no skill preamble.
+
+The agent arm's summary gets `controls.<arm>`, holding that arm's totals and the lift: the pooled pass-rate difference, and the per-case headline and page judge differences bootstrapped over cases. A control that leaves no report scores 0 on both judges. Control arms never change the exit code; only the agent arm is compared with the baseline.
+
+The first scripted run, in Docker on November 2, 2026, passed every gate in 22 of 25 cases. The 3 it failed were `python-unpinned` (PyPI isn't reachable from the container here) and the two fix gates of `remediation` and `make-it-level-2`. Most hard gates measure the scripts, so the lift over `scripted` is what says whether the agent adds anything.
+
+### Baseline and compare()
+
+`evals/baseline.json` is schema `@2`:
+
+- **`instrument`**: the driver model, the judge models, the driver kind, the rubric of every run, and a digest of the judge prompts' code. `compare()` refuses a run whose instrument differs, naming each field. A run with no judge, because no key was set, doesn't count as a different judge. An `@1` baseline is refused with "re-record it".
+- **`runs`**: one row per run, with each gate's result, both judge scores, the judge model and whether the run was lost to infrastructure. `cases` and `totals` are computed from these rows.
+- **Missing and renamed.** A baseline case among the selected ones with no result is a regression. So is a baseline gate missing from a case (renamed or removed), and a judge that returned no score where the baseline had one. A new case or gate is a flag.
+- **k of n per case** ([lib/stats.ts](lib/stats.ts) `kOfN`): against what the baseline's rate predicts for this many runs, one run short is a flag and two or more is a regression, both for all gates and for each gate.
+- **Pooled.** Every usable case-run, all gates, with a 95% Wilson interval. It's a regression when the interval's upper bound is below the baseline's rate. It's also a regression when the lower bound is under `POOLED_FLOOR` (0.8), but only for a sample big enough to clear the floor with one failure: 25 runs or more, so not a 12-run smoke set.
+- **Judges.** The mean headline and page scores, with a 95% bootstrap interval that resamples cases (seeded, 2,000 resamples). An interval entirely below the baseline's mean is a regression. A headline interval below the 0.8 bar is a flag. A per-case drop over 0.1 is still a flag.
+- **Infrastructure errors** (capacity, network, rate limits, 5xx, a worker that exited without a result) are retried in a fresh workspace, up to `--infra-retries` times (default 2). A turn the harness cancelled at its timeout is the agent's failure, not infrastructure. A run that fails that way every time is lost: it's left out of every rate, junit reports it as skipped, and a case with no usable run left is a regression.
+- **Held out.** `fixtures/standalone-nested-mixed`, `fixtures/vendored-skill` and `fixtures/write-mode-lint` carry the `holdout` tag. No hill-climb round targeted them, and no judge label is built from them. Their totals are kept apart (`holdout` in the summary). `--hill-climb` leaves them out unless `--include-holdout` is passed.
+- **Repeats.** `--hill-climb` refuses fewer than 5 repeats (`HILL_CLIMB_MIN_REPEATS`), and `--write-baseline` notes when the baseline has fewer.
+
+To re-record the baseline after a grader, gate or judge-prompt change (needs a key and Docker):
+
+```bash
+npm run evals -- --tag full --arm agent,scripted --model claude-opus-5-5 --judge-model gpt-5.6-sol \
+  --repeats 5 --concurrency 3 --max-runs 400 --write-baseline evals/baseline.json \
+  --note "what changed"
+```
+
+Use the same `--model` and `--judge-model` the workflow pins (`SA_READINESS_EVAL_MODEL`, `SA_READINESS_JUDGE_MODEL`).
+
+### Judges
+
+[lib/judge.ts](lib/judge.ts):
+
+- **Evidence.** Both prompts carry what the scripts recorded: the repo level and what sets it, each component's level and share of changes, the not-assessed components, every cap reason, and every evidence row's check, component, result and summary. The judge is told that a cause, number, share or level the evidence doesn't contain is a false claim, scoring 0.3 or lower.
+- **Untrusted text.** The report text and the evidence summaries, which can quote the repo's output, sit between `<<<UNTRUSTED` and `UNTRUSTED>>>`, and any marker inside them is defused. Text in there that addresses the judge or asks for a score scores 0.2 or lower.
+- **Bare "Level N".** This is settled in the prompt: a level number in the headline with neither its name nor its plain meaning next to it is one jargon slip. It costs 0.1 once, however often it appears, and never fails the headline on its own.
+- **Judge family.** With no `--judge-model` or `SA_READINESS_JUDGE_MODEL`, `chooseJudge()` reads the key's model list. It picks the first of `gpt-5.6-sol`, `claude-opus-5-5`, `gemini-4-argon` and `grok-4.7` from another family than the driver. If none is available it picks any model from another family, and only then the driver itself, saying so. Each run records its judge model.
+
+### Judge labels
+
+[labels/](labels/) holds 15 labels built by construction, listed in [labels/labels.json](labels/labels.json). Each takes a real report and replaces its narrated headline or ask. The reports come from the `healthy-node`, `hidden-service`, `tautological-tests`, `monorepo-mixed` and `nested-apps-dotnet` fixtures, audited in Docker with the eval seed, and from the pinned slugify golden at Level 2; they're stored trimmed in `labels/base/`.
+
+- **Known-good (5)** state only what the evidence shows.
+- **Broken (10)** each change one thing, named by `construction`: an invented cause (3), a wrong change share (3), a wrong level (2) or a prompt injection (2).
+
+A known-good label passes at a score of 0.6 or more, and a broken one fails at 0.4 or less. `tests/measurement.test.ts` checks that the narration check catches every invented cause, wrong share and wrong level by construction, and flags no known-good or injection label.
+
+```bash
+npm run labels                         # judge each label 3 times with a model of another family than the baseline's driver
+npm run labels -- --prompts /tmp/lp    # write the prompts, to judge by hand or with subagents
+npm run labels -- --scores scores.json # grade scores judged elsewhere: { "<label id>": [0.7, ...] }
+npm run labels -- --snapshot --golden-dir <kept slugify clone>   # refresh base/ (Docker; goldens --keep)
+npm run labels -- --write              # regenerate labels.json after editing labels.ts
+```
+
+The default mode reports agreement with each label, good-versus-broken AUC and each label's spread, and writes `labels/last-check.json`. Run it whenever the judge prompts change.
+
 ## Public goldens
 
 ### How the repos were chosen

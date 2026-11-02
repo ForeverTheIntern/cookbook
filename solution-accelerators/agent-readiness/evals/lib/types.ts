@@ -58,7 +58,10 @@ export interface EvalCase {
   id: string;
   fixture: string;
   // negative: a scripted attack replaces the agent, and the case passes only if its gates reject it.
-  tags: ("smoke" | "full" | "negative")[];
+  // holdout: never used to decide a hill-climb round; reported separately.
+  tags: ("smoke" | "full" | "negative" | "holdout")[];
+  // Extra `readiness audit` flags for the scripted control arm, which reads no prompt.
+  scriptedArgs?: string[];
   expectedRun?: string;
   turns: Turn[];
   setup?: (ws: Workspace) => void;
@@ -71,12 +74,23 @@ export interface EvalCase {
   description: string;
 }
 
+// agent: the agent with the skill, the arm the baseline measures. skill-off: the same agent with
+// the skill removed. scripted: `readiness audit` with no agent and no narration. The two controls
+// show what the agent and the skill add over the scripts alone.
+export type Arm = "agent" | "skill-off" | "scripted";
+
 export interface CaseRun {
   id: string;
   repeat: number;
   model: string;
   driver: Driver;
+  arm?: Arm;
+  judgeModel?: string | null;
+  rubric?: string | null;
   workspace: string;
   grade: Grade;
   error: string | null;
+  // Set when the run was retried for an infrastructure error (capacity, network, a crashed
+  // worker). lost: every attempt failed that way, so the run says nothing about the agent.
+  infra?: { attempts: number; errors: string[]; lost: boolean } | null;
 }

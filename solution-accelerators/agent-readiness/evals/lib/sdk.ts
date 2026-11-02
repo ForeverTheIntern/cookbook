@@ -1,9 +1,10 @@
 import { Agent } from "@cursor/sdk";
 import { protectedDigest } from "./protected.ts";
 import type { EvalCase, Snapshot, ToolCall, Trajectory, Workspace } from "./types.ts";
-import { applyTurnHook, caseEnv, fillPrompt, skillPreamble } from "./workspace.ts";
+import { applyTurnHook, caseEnv, fillPrompt, repoPreamble, skillPreamble } from "./workspace.ts";
 
-export async function runWithSdk(ws: Workspace, c: EvalCase, model: string, apiKey: string, timeoutMs: number): Promise<Trajectory> {
+// skill: false runs the skill-off control arm: no skill preamble, and prepare() installed no skill.
+export async function runWithSdk(ws: Workspace, c: EvalCase, model: string, apiKey: string, timeoutMs: number, opts: { skill?: boolean } = {}): Promise<Trajectory> {
   const env = caseEnv(c);
   const saved: Record<string, string | undefined> = {};
   for (const [k, v] of Object.entries(env)) {
@@ -20,7 +21,7 @@ export async function runWithSdk(ws: Workspace, c: EvalCase, model: string, apiK
   try {
     for (const [i, turn] of c.turns.entries()) {
       applyTurnHook(ws, turn);
-      const prompt = (i === 0 ? skillPreamble(ws.dir) : "") + fillPrompt(turn.prompt, ws);
+      const prompt = (i === 0 ? (opts.skill === false ? repoPreamble(ws.dir) : skillPreamble(ws.dir)) : "") + fillPrompt(turn.prompt, ws);
       const run = await agent.send(prompt);
       const timer = setTimeout(() => {
         if (run.supports("cancel")) void run.cancel();

@@ -137,11 +137,11 @@ Six pinned public repos, from a well-tested npm package down to a monorepo with 
 - With no container runtime, the replay runs repo code on the host in a scrubbed copy. It is disclosed in the report and can't prove Level 1, but it is still repo code on your machine; use a container where that matters.
 - The seed and planted-fault sites sit in the temp folder next to the audit tree until the seal. An agent on the same machine could read them; the skill evals fail any run that does, and the seal is the production control only when it is keyed in CI.
 - Planted faults follow relative imports only: path aliases and barrel re-exports aren't followed, and compiled TypeScript isn't rebuilt between faults.
-- A narrated headline is checked for length, banned terms and numbers, not against the level.
+- A narrated headline is checked for length, banned terms, numbers and false "ready" claims for below-Level-2 components, not for overall quality. Bare Level N restatements and "nothing blocks" when Level 1 is unproven still score poorly with the headline judge (hill-climb round 9 deferred).
 - A command that times out in a container is killed on the host; the process in the container keeps running until the container is removed.
 - Two components with the same folder name get path-based ids, so adding the second renames the first.
 - A failing declared `start` or `doctor` command doesn't set a level on its own.
-- Follow-ups outside this folder: the cookbook index row, a docs page, a blog post, and running the recheck from a Cursor automation.
+- Follow-ups outside this folder: a docs page, a blog post, and running the recheck from a Cursor automation.
 
 ## Design notes
 

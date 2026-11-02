@@ -391,3 +391,11 @@ The two columns use different drivers and judges, so read them as two baselines,
   - Re-audit loses on headlines that say "Level 2" without its meaning, or pair a level change with an outcome.
   - No-container-runtime loses on "nothing in the repo blocks agents" when Level 1 isn't proven.
 - **Next failure mode:** narrated headlines on unproven or multi-audit reports.
+
+### Round 9 (attempted, deferred for MVP): narrated headlines on unproven or multi-audit reports
+
+- **Fixture:** re-audit, no-container-runtime, nested-apps-dotnet (SDK, Claude Opus 5.5, 3 repeats).
+- **Failure mode:** restating bare "Level N", pairing a level change with an outcome, or saying "nothing blocks" when Level 1 is unproven (ship-pass lows: re-audit 0.58, nested-apps-dotnet 0.65, no-container-runtime 0.65).
+- **Lever tried:** script check (lever 3). `validatePart1` refused narrated headlines that restated `Level N` without plain meaning, or that said nothing blocks / start delegating while Level 1 was unproven. Deterministic test added.
+- **Remeasure:** not a clear keep. Headline scores on the three cases averaged 0.65 (was ~0.63); no-container-runtime fell 0.65 → 0.45; hard gates passed in only 1 of 3 cases (nested-apps and re-audit sealed at Level 0, with one worker crash / capacity error). Not enough signal that the lever improves the target without regressing gates.
+- **Verdict:** deferred. Reverted the script change for the MVP ship. Left under Still open / Known gaps; retry when the eval environment is stable and the change can be measured without capacity noise.

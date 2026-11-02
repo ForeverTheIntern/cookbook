@@ -221,15 +221,13 @@ Four models (Claude Opus 5.5, GPT-5.6 Sol, Gemini 4 Argon, Grok 4.7) reviewed th
 
 ### Still open
 
-From the four-model review. The ship pass at the end of this log closed the first four items and the matrix item; the rest stay open.
+From the four-model review. The ship pass closed anti-gaming measurement (SDK driver + tool-call gates; planted faults off the working tree; keyed seal in CI), Level 3/4 rule gaps (`level4.consecutiveWindows` and the stated 10-PR floor), and the effort/impact matrix hiding the top action. What remains:
 
-- **Anti-gaming that the evals can't see yet.** Every eval run used the external driver, which has no tool-call stream, so the gates for running repo commands outside `readiness` or reading planted-fault details were never exercised. Planted-fault details sit in `audit.json` in the working tree, and the seal is an unkeyed digest. The SDK driver in CI is the next measurement; signing seals or keeping mutants off the working tree is a design change.
-- **Level 3 and 4 rules.** `level4.consecutiveWindows` isn't consumed, and the 10-PR absolute floor under the 20-PR minimum needs to be stated wherever the 20 is. Both are level-rule changes, so they go through the governance rule with a rubric bump.
 - **Part 1 comparisons.** "Last audit" can be a proving audit the reader never saw; comparing with the first audit as well, and keeping the third number's definition fixed across audits, would show movement better.
 - **The canvas** renders a projection of `report.json` copied in by hand; generating its data from `npm run sample` would keep every field, including citations and per-component outcomes.
-- **The effort and impact matrix** can put the only recommended action in "Later", because impact is an absolute share and medium effort sits past the midpoint.
-- The page judge sits at 0.70. Its top remaining complaints are the unmeasured pull-request number and rubric condition labels such as "lockfile" and "clean container" (a rubric bump).
-- The model matrix (two more models on `full`) needs the SDK driver and a key.
+- The page judge sits at 0.65 on the SDK baseline (was 0.70 on the external-driver final run). Its top remaining complaints are the unmeasured pull-request number and rubric condition labels such as "lockfile" and "clean container" (a rubric bump).
+- The model matrix (two more models on `full`) still needs a CI key.
+- **Next failure mode (round 9):** narrated headlines on unproven or multi-audit reports (lowest SDK headline scores: re-audit 0.58, nested-apps-dotnet 0.65, no-container-runtime 0.65).
 
 ## Field run: a brownfield repo (October 29, 2026)
 

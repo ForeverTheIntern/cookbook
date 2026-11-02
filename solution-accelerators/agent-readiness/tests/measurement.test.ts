@@ -16,7 +16,8 @@ import type { CaseRun, EvalCase, Trajectory } from "../evals/lib/types.ts";
 import { caseEnv, prepare } from "../evals/lib/workspace.ts";
 import { labelsJson } from "../evals/labels/check.ts";
 import { HERE as LABELS_DIR, LABELS, labelReport, loadBase } from "../evals/labels/labels.ts";
-import { readiness } from "../tools/fixture.ts";
+import { expected, readiness } from "../tools/fixture.ts";
+import type { ExpectedRun } from "../tools/fixture.ts";
 
 function run(id: string, repeat: number, gates: Record<string, boolean>, judge: number | null = 0.9, page: number | null = 0.7, extra: Partial<CaseRun> = {}): CaseRun {
   return { id, repeat, model: "claude-opus-5-5", driver: "sdk", arm: "agent", judgeModel: "gpt-5.6-sol", rubric: "2026-11-alpha", workspace: "", error: null, grade: { gates: Object.entries(gates).map(([name, pass]) => ({ name, pass, detail: "" })), soft: { judge, judgeReasons: [], page, pageReasons: [], wallMs: 1, toolCalls: 1, tokens: null } }, ...extra };
@@ -249,6 +250,19 @@ describe("control arms and holdouts", () => {
     const mono = fixtureCases.find((c) => c.id === "monorepo-mixed")!;
     assert.deepEqual(scriptedArgs(ws, mono, mono.turns[0].prompt), ["audit", "--tier", "local-exec", "--outcomes-input", "/tmp/x/prs.json"]);
     assert.equal(tierOf("Run an agent readiness audit, permission tier read-only. Don't run any of the repo's code."), "read-only");
+  });
+
+  test("in an eval workspace, where the skill is committed, change shares are the fixture's own", () => {
+    for (const id of ["partial-coverage", "python-behind-root-package"]) {
+      const base = fixtureCases.find((c) => c.id === id)!;
+      const c: EvalCase = { ...base, id: `fixtures/${id}`, env: { ...base.env, SA_READINESS_RUNTIME: "none" } };
+      const ws = prepare(c);
+      assert.equal(scriptedAudit(ws, c).error, null);
+      const want = expected(c.fixture).runs[0];
+      const report = JSON.parse(readFileSync(join(ws.dir, ".agent-readiness/latest/report.json"), "utf8"));
+      // Shares and what isn't assessed don't depend on the container runtime; the levels do.
+      assert.deepEqual(expectedProblems({ name: want.name, shares: want.shares, notAssessed: want.notAssessed, unassessed: want.unassessed ? { share: want.unassessed.share, supportLink: true } : want.unassessed } as ExpectedRun, { report, roadmap: {}, audit: {}, markdown: readFileSync(join(ws.dir, ".agent-readiness/latest/report.md"), "utf8") }), [], id);
+    }
   });
 
   test("a scripted audit with no narration passes the narration and action gates; a narrated invented cause fails", () => {

@@ -6,7 +6,8 @@ import { describe, test } from "node:test";
 import { cases as fixtureCases } from "../evals/cases/fixtures.ts";
 import { cases as resilienceCases } from "../evals/cases/resilience.ts";
 import { compare, summarize } from "../evals/lib/baseline.ts";
-import { gradeCase, sealedAudits } from "../evals/lib/grade.ts";
+import { cases as negativeCases } from "../evals/cases/negative.ts";
+import { MAX_GATES, gradeCase, sealedAudits } from "../evals/lib/grade.ts";
 import type { CaseRun, Trajectory } from "../evals/lib/types.ts";
 import { applyTurnHook, caseEnv, prepare } from "../evals/lib/workspace.ts";
 import { detectRuntime } from "../skill/agent-readiness/scripts/lib/container.ts";
@@ -93,9 +94,9 @@ describe("eval cases and baseline", () => {
     assert.deepEqual(sealedAudits(ws).map((a) => a.id), ["aud-2026-10-29-6638f8f-200c", "aud-2026-10-29-3f53c69-9705"]);
   });
 
-  test("every case has at most five hard gates, a description and a tag", () => {
-    for (const c of [...fixtureCases, ...resilienceCases]) {
-      assert.ok((c.gates?.length ?? 5) <= 5, c.id);
+  test("every case has at most MAX_GATES hard gates, a description and a tag", () => {
+    for (const c of [...fixtureCases, ...resilienceCases, ...negativeCases]) {
+      assert.ok((c.gates?.length ?? 5) <= MAX_GATES, c.id);
       assert.ok(c.description.length > 10, c.id);
       assert.ok(c.tags.includes("full"), c.id);
     }

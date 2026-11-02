@@ -1,5 +1,6 @@
 import { Agent } from "@cursor/sdk";
-import type { EvalCase, ToolCall, Trajectory, Workspace } from "./types.ts";
+import { protectedDigest } from "./protected.ts";
+import type { EvalCase, Snapshot, ToolCall, Trajectory, Workspace } from "./types.ts";
 import { applyTurnHook, caseEnv, fillPrompt, skillPreamble } from "./workspace.ts";
 
 export async function runWithSdk(ws: Workspace, c: EvalCase, model: string, apiKey: string, timeoutMs: number): Promise<Trajectory> {
@@ -11,6 +12,7 @@ export async function runWithSdk(ws: Workspace, c: EvalCase, model: string, apiK
   }
   const started = Date.now();
   const toolCalls: ToolCall[] = [];
+  const snapshots: Snapshot[] = [{ call: "start", phase: "after", digest: protectedDigest(ws.dir) }];
   let text = "";
   let tokens = 0;
   let error: string | null = null;
@@ -25,7 +27,8 @@ export async function runWithSdk(ws: Workspace, c: EvalCase, model: string, apiK
       }, timeoutMs);
       try {
         for await (const ev of run.stream()) {
-          if (ev.type === "tool_call" && ev.status !== "running") toolCalls.push({ name: ev.name, status: ev.status, args: (ev.args ?? {}) as Record<string, unknown> });
+          if (ev.type === "tool_call") snapshots.push({ call: ev.call_id, phase: ev.status === "running" ? "before" : "after", digest: protectedDigest(ws.dir) });
+          if (ev.type === "tool_call" && ev.status !== "running") toolCalls.push({ id: ev.call_id, name: ev.name, status: ev.status, args: (ev.args ?? {}) as Record<string, unknown> });
           if (ev.type === "assistant") for (const block of ev.message.content) if (block.type === "text") text += block.text;
         }
         const result = await run.wait();
@@ -46,7 +49,7 @@ export async function runWithSdk(ws: Workspace, c: EvalCase, model: string, apiK
       else process.env[k] = v;
     }
   }
-  return { driver: "sdk", toolCalls, text, durationMs: Date.now() - started, tokens, error };
+  return { driver: "sdk", toolCalls, snapshots, text, durationMs: Date.now() - started, tokens, error };
 }
 
 export async function askModel(prompt: string, model: string, apiKey: string, cwd: string): Promise<string> {

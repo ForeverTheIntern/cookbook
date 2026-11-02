@@ -66,15 +66,26 @@ function externalTrajectory(root: string, wallMs: number): Trajectory {
   return { driver: "external", toolCalls: [], text: existsSync(reply) ? readFileSync(reply, "utf8") : "", durationMs: wallMs, tokens: null, error: null };
 }
 
+function runAttack(ws: ReturnType<typeof prepare>, c: EvalCase): Trajectory {
+  const started = Date.now();
+  try {
+    return c.attack!(ws, c);
+  } catch (e) {
+    return { driver: "scripted", toolCalls: [], snapshots: [], text: "", durationMs: Date.now() - started, tokens: null, error: `the attack script failed: ${(e as Error).message}` };
+  }
+}
+
+const NOT_JUDGED: JudgeResult = { score: null, reasons: ["negative cases aren't judged"] };
+
 async function worker(flags: Record<string, string | true>): Promise<void> {
   const all = await loadCases();
   const c = all.find((x) => x.id === flags.case)!;
   const model = String(flags.model);
   const ws = prepare(c);
-  const t = await runWithSdk(ws, c, model, process.env.CURSOR_API_KEY!, Number(flags["timeout-min"] ?? 30) * 60000);
-  const gates = gradeCase(ws, t, c);
-  const [h, p] = await Promise.all((["headline", "page"] as const).map((k) => judge(k, latestReport(ws), JUDGE_MODEL, process.env.CURSOR_API_KEY)));
-  const run: CaseRun = { id: c.id, repeat: Number(flags.repeat), model, driver: "sdk", workspace: ws.dir, grade: { gates, soft: { judge: h.score, judgeReasons: h.reasons, page: p.score, pageReasons: p.reasons, wallMs: t.durationMs, toolCalls: t.toolCalls.length, tokens: t.tokens } }, error: t.error };
+  const t = c.attack ? runAttack(ws, c) : await runWithSdk(ws, c, model, process.env.CURSOR_API_KEY!, Number(flags["timeout-min"] ?? 30) * 60000);
+  const gates = t.error && c.attack ? [{ name: "the attack ran", pass: false, detail: t.error }] : gradeCase(ws, t, c);
+  const [h, p] = c.attack ? [NOT_JUDGED, NOT_JUDGED] : await Promise.all((["headline", "page"] as const).map((k) => judge(k, latestReport(ws), JUDGE_MODEL, process.env.CURSOR_API_KEY)));
+  const run: CaseRun = { id: c.id, repeat: Number(flags.repeat), model, driver: t.driver, workspace: ws.dir, grade: { gates, soft: { judge: h.score, judgeReasons: h.reasons, page: p.score, pageReasons: p.reasons, wallMs: t.durationMs, toolCalls: t.toolCalls.length, tokens: t.tokens } }, error: t.error };
   writeFileSync(String(flags.out), JSON.stringify({ run, trajectory: t }, null, 2));
 }
 
@@ -195,7 +206,7 @@ async function main(): Promise<void> {
   if (selected.length === 0) throw new Error("No cases match.");
   if (flags.prepare) {
     const manifest = [];
-    for (const c of selected) {
+    for (const c of selected.filter((x) => !x.attack)) {
       for (let r = 1; r <= repeats; r++) {
         const ws = prepare(c);
         manifest.push({ id: c.id, repeat: r, root: dirname(ws.dir), dir: ws.dir, env: c.env ?? {}, prompts: c.turns.map((t, i) => (i === 0 ? externalPreamble(ws.dir) + skillPreamble(ws.dir) : "") + fillPrompt(t.prompt, ws)), turnHooks: c.turns.map((t) => Boolean(t.before)) });
@@ -207,12 +218,15 @@ async function main(): Promise<void> {
     process.stdout.write(`Prepared ${manifest.length} workspaces. Manifest: ${out}\n`);
     return;
   }
-  if (!process.env.CURSOR_API_KEY) {
-    process.stdout.write("CURSOR_API_KEY isn't set, so skill evals are skipped. Add it as a secret to run them.\n");
-    return;
+  const scripted = selected.filter((c) => c.attack);
+  let driven = selected.filter((c) => !c.attack);
+  if (driven.length && !process.env.CURSOR_API_KEY) {
+    process.stdout.write(`CURSOR_API_KEY isn't set, so ${driven.length} agent-driven cases are skipped${scripted.length ? `; running the ${scripted.length} scripted negative cases` : ""}. Add it as a secret to run them.\n`);
+    driven = [];
+    if (!scripted.length) return;
   }
   const maxRuns = Number(flags["max-runs"] ?? 120);
-  const jobs = selected.flatMap((c) => models.flatMap((m) => Array.from({ length: repeats }, (_, i) => ({ c, m, r: i + 1 }))));
+  const jobs = [...driven.flatMap((c) => models.flatMap((m) => Array.from({ length: repeats }, (_, i) => ({ c, m, r: i + 1 })))), ...scripted.flatMap((c) => Array.from({ length: repeats }, (_, i) => ({ c, m: "scripted", r: i + 1 })))];
   if (jobs.length > maxRuns) throw new Error(`${jobs.length} runs exceed --max-runs ${maxRuns}.`);
   const outDir = join(HERE, "runs", new Date().toISOString().replace(/[:.]/g, "-"));
   mkdirSync(outDir, { recursive: true });
@@ -227,7 +241,13 @@ async function main(): Promise<void> {
     }),
   );
   let code = 0;
-  for (const m of models) code = report(collect(outDir).filter((r) => r.model === m), flags, m, "sdk", repeats) || code;
+  for (const m of driven.length ? models : []) code = report(collect(outDir).filter((r) => r.model === m), flags, m, "sdk", repeats) || code;
+  // The baseline is for agent runs; a negative case fails the run by failing its gates.
+  if (scripted.length) {
+    const { "write-baseline": _w, compare: _c, ...rest } = flags;
+    const own = driven.length ? Object.fromEntries(Object.entries(rest).filter(([k]) => k !== "json" && k !== "junit")) : rest;
+    code = report(collect(outDir).filter((r) => r.model === "scripted"), own, "scripted", "scripted", repeats) || code;
+  }
   process.exitCode = code;
 }
 

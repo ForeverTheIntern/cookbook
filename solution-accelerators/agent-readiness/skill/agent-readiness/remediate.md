@@ -20,7 +20,7 @@ For an item about install, build or test setup in a clean checkout, such as "Set
    - `.cursor/environment.json` with only `name`, `install` and `start`. The schema rejects other fields, so add nothing else.
    - With `--dockerfile`, also `.cursor/Dockerfile`, built from the replay's base image plus the system packages, and referenced from `environment.json` as `build`. Write one only when the user wants a custom image. If the repo already uses a devcontainer, extend that instead.
 
-   It picks services from the audit's diagnosis. Pass `--service postgres,redis` when the diagnosis didn't name them.
+   It picks services from the audit's diagnosis and from the images in a root `compose.yml` (or `docker-compose.yml`), and starts them without Docker. When the repo has a `.env.example`, the install script copies it to `.env` if there is none. Pass `--service postgres,redis` when neither names them; `--service` replaces both lists.
 2. Read both scripts. They must start only local services and name no production hosts or credentials.
 3. Commit the files.
 4. Prove it: run a new audit (`readiness init --force --tier <tier>`, with the same `--scenario` as before if any, `readiness scan`, `readiness replay`, `readiness seal`). The item is done only when the new report shows it closed. If the replay still fails, read the failing evidence, fix the scripts, commit, and audit again.

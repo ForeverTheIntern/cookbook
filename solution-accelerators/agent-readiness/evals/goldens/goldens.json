@@ -28,7 +28,10 @@
         "included": [
           "slugify"
         ],
-        "excluded": []
+        "excluded": [],
+        "levels": {
+          "slugify": 2
+        }
       }
     },
     {
@@ -45,7 +48,10 @@
         "included": [
           "express"
         ],
-        "excluded": []
+        "excluded": [],
+        "levels": {
+          "express": 1
+        }
       }
     },
     {
@@ -62,7 +68,10 @@
         "included": [
           "starlette"
         ],
-        "excluded": []
+        "excluded": [],
+        "levels": {
+          "starlette": 2
+        }
       }
     },
     {

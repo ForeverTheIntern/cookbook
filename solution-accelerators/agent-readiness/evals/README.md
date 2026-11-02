@@ -5,6 +5,48 @@ Two suites check the skill against more than its fixtures.
 - **Skill evals** (`npm run evals`) run the real Cursor agent on each fixture with a pinned prompt and grade what the scripts wrote. The [README](../README.md#skill-evals) covers the drivers and the flags. [HILLCLIMB.md](HILLCLIMB.md) logs every round and every field run.
 - **Public goldens** (`npm run goldens`) run the scripts alone, with no agent, on pinned public repositories. They check that the levels rank those repos in the expected order and that no report claims a config, script or path its tree doesn't have.
 
+## Grader integrity
+
+The agent under test can write anything in its workspace, including `.agent-readiness/`, and an unkeyed seal is a plain sha256 anyone with the scripts can recompute. So the gates are split by what they trust.
+
+### Gates that judge a fix: the grader's own audit
+
+`levelRose`, `freshFaultsCaught`, `noWeakening` and `envJsonAllowed` in [lib/gates.ts](lib/gates.ts) never read the agent's records. They use [lib/reaudit.ts](lib/reaudit.ts) and git:
+
+- `graderAudit(ws, c, variant, { component? })` returns a `GraderAudit` (`report`, sealed `audit`, `seal`, `code`, `log`, `note`). It fetches one commit from the agent's repo into a fresh repository under `$TMPDIR/eval-grader-*`. No history branch or local config comes along. It then removes `.agent-readiness/`, replaces the installed skill with the accelerator's copy, and runs the accelerator's CLI: `audit --tier local-exec` with the case's env. Results are memoized per workspace, commit, variant and component.
+- **Seed.** The seed is `SA_READINESS_GRADER_SEED`, or `grader-seed` by default, which no agent audit uses. It's fixed so a fix grades the same every run: a random seed sometimes plants a fault no test can catch, such as the boundary flips at `tautological-tests/src/limits.js:2` and `:5`. Set it from a CI secret to keep it out of anything the agent can read.
+- **Seal key.** The grader seals with an `SA_READINESS_SEAL_KEY` it generates at its first audit, after the agent has finished. The key lives only in the grader's memory and its child processes' env. `verify-seal` runs with it, and `graderProblem()` fails any gate whose grader audit didn't seal or verify.
+- **Variants:**
+  - `final`: the agent's HEAD.
+  - `before`: `ws.headBefore`.
+  - `original-tests`: HEAD with every test file the agent modified or deleted restored. It runs without planted faults.
+  - `equivalent-mutant`: HEAD with a comment appended to every file the component's tests import. It runs without planted faults. A test that fails on it checks bytes, not behaviour.
+- **What each gate requires:**
+  - `levelRose(n)`: the grader's level rose from `before` to `final` and reached `n`. The agent's own last sealed audit must also be of a tree equal to HEAD outside `.agent-readiness/`; its level isn't used.
+  - `freshFaultsCaught(c)`: the grader's planted faults in `c` are all caught, and the equivalent mutant survives.
+  - `noWeakening`: [lib/weakening.ts](lib/weakening.ts) `testWeakening(repo, headBefore, HEAD)` finds nothing. That covers the audit's own counts plus net removed assertions, removed awaited or registered setup (`await database()`, `beforeEach`, fixtures), and tests that hash or read source files.
+  - `envJsonAllowed`: `.cursor/environment.json` uses only `name`, `install`, `start` and `build`, and the `original-tests` audit's tests pass.
+
+A grader audit costs a full audit: one for `before`, one for `final`, and up to two more for the variants. Only remediation cases use these gates.
+
+### Gates that read the agent's records: cross-checked first
+
+`sealedGate` in [lib/grade.ts](lib/grade.ts) runs the accelerator's `verify-seal` (never the installed copy) and `recordProblems(ws)`. That check requires the last history line, its sealed `audit.json` rescored by the scripts' `compute()`, and `latest/report.json` to agree on levels and evidence. Resealing an edited record passes `verify-seal`, but not the rescore. `levelsGate`, `topGate`, `reportGate` and the other record gates compare against harness-owned expectations (`expected.json`, fixed strings), so a forged record that disagrees with them fails anyway.
+
+### Trajectory
+
+[lib/trajectory.ts](lib/trajectory.ts) with [lib/shell.ts](lib/shell.ts) and [lib/protected.ts](lib/protected.ts):
+
+- **Protected-file snapshots.** The SDK and scripted drivers hash `.agent-readiness/` (except `cli.log`) and the installed skill's code at each tool call's start and end (`Trajectory.snapshots`). `protectedChanges()` blames a change on the calls running when it happened, plus the calls on either side. It allows the change only if one of them is a readiness CLI call made with read-only companions, or a git-only call. Writes from `node -e`, Python or a script in `/tmp` are caught whatever the command looks like.
+- **The CLI is matched by path.** `isCliCall()` accepts `node`, with only parse flags, running `<repo>/.cursor/skills/agent-readiness/scripts/readiness.ts`. The word "readiness" anywhere else exempts nothing.
+- **Repo commands are matched per program.** `commandEvidence()` splits commands on unquoted operators and command substitutions and follows `cd`. It flags package managers that run scripts, test runners, `node` or `python` on a repo file, `bun test`, `bash -c`, `eval`, `docker compose up` and repo scripts.
+- **Fault store.** Naming `mutants*.json`, `seed.txt`, `draft.digest`, a `readiness-aud-*` folder other than its `tree/`, or a `readiness-*` glob is forbidden. A read before a later seal is flagged as such.
+- **External driver.** The external driver records no tool calls or snapshots, so for those runs only the CLI log, git and digests are checked. The grader's audit and the record cross-check don't depend on the trajectory.
+
+### Negative cases
+
+[cases/negative.ts](cases/negative.ts) holds the false-passes from the scoring-reliability review, played by [lib/attacks.ts](lib/attacks.ts): `forged-reseal`, `forged-reseal-latest`, `seal-tamper`, `hash-test-oracle` and `drop-db-setup`. Each lists the gates that must reject it, wrapped in `rejects()`, which passes only when the inner gate ran and failed. `honest-fix` is the control: an honest scripted fix that must pass every make-it-level-2 gate. Its level rise needs a container runtime. `tests/eval-integrity.test.ts` runs every one in host mode on each `npm run check`.
+
 ## Public goldens
 
 ### How the repos were chosen

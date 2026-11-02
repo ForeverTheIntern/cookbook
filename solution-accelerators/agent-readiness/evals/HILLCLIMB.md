@@ -227,7 +227,7 @@ From the four-model review. The ship pass closed anti-gaming measurement (SDK dr
 - **The canvas** renders a projection of `report.json` copied in by hand; generating its data from `npm run sample` would keep every field, including citations and per-component outcomes.
 - The page judge sits at 0.65 on the SDK baseline (was 0.70 on the external-driver final run). Its top remaining complaints are the unmeasured pull-request number and rubric condition labels such as "lockfile" and "clean container" (a rubric bump).
 - The model matrix (two more models on `full`) still needs a CI key.
-- **Next failure mode (round 9):** narrated headlines on unproven or multi-audit reports (lowest SDK headline scores: re-audit 0.58, nested-apps-dotnet 0.65, no-container-runtime 0.65).
+- **Narrated headlines on unproven or multi-audit reports** (lowest SDK headline scores: re-audit 0.58, nested-apps-dotnet 0.65, no-container-runtime 0.65). Round 9 tried a seal check and was deferred; see the round log at the end of this file.
 
 ## Field run: a brownfield repo (October 29, 2026)
 

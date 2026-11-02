@@ -570,7 +570,8 @@ function cmdValidate(a: Args): void {
 async function cmdAudit(a: Args): Promise<void> {
   cmdInit(a);
   cmdScan(a);
-  await cmdReplay(a);
+  if (loadDraft(repoOf(a)).audit.tier === "read-only") log("Read-only tier: scanned only. No repo code ran, so the report gives no level; a local-exec audit can prove one.");
+  else await cmdReplay(a);
   if (opt(a, "outcomes-input") || (opt(a, "tier") === "external-systems" && !a.flags["no-outcomes"])) {
     cmdOutcomes({ positional: a.positional, flags: { ...a.flags, ...(opt(a, "outcomes-input") ? { input: str(a, "outcomes-input") } : {}) } });
   }

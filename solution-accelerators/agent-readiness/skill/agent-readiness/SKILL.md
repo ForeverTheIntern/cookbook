@@ -31,7 +31,7 @@ Every audit reports three tiers: one level for the repo, one standard level for 
 Settle the tier, and any scenario the user asks for, from their words or these defaults:
 
 - **Permission tier** (`--tier`):
-  - `read-only`: no repo code runs. Every executed check reads "not run".
+  - `read-only`: no repo code runs. `readiness audit` scans and seals without a replay, and the report gives no level: every executed check reads "not run". Don't run `replay` or `run` at this tier.
   - `local-exec` (default): repo code runs in a clean container, or in a scrubbed throwaway copy when no container runtime exists.
   - `external-systems`: also reads pull requests through `gh` for the outcome numbers, and can check the published release.
 
@@ -63,7 +63,7 @@ For a private registry, ask for the variable names (never values) and pass `--re
 
 ## 4. Execute
 
-1. `readiness replay`. It copies `HEAD` into a clean container, installs and builds with the network on, turns the network off, runs lint, type-check and tests, plants faults the tests should catch, and replays every command in the agent instructions. It takes a few minutes. Let it finish.
+1. `readiness replay`. It copies `HEAD` into a clean container, installs, lints and builds with the network on, turns the network off, runs type-check and tests, plants faults the tests should catch, and replays every command in the agent instructions. It takes a few minutes. Let it finish.
    - Pass `--image <ref>` only when the user names an approved base image, for example an internal mirror.
    - An install that fails with "registry credentials not provided" needs `--registry-env`: start again with `readiness init --force ... --registry-env <NAMES>`. If the variable isn't set in this shell, don't stop to ask for it: narrate and seal the audit as it stands, and in your reply name the variable to set and say a rerun with `--registry-env` will prove the install.
    - Don't pass `--no-mutants` on your own: it skips the planted faults, so no component can reach Level 2, and the report says it was skipped. Use it only when the user asks for a quicker, partial run. If planting faults hits an error, the replay keeps every other result and records the fault check as not run with the error.

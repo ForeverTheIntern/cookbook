@@ -3,6 +3,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { historyLines, latestReport, roadmap, sealedAudits } from "./grade.ts";
 import { cleanRepo, graderAudit, graderEvidence, graderLevel, graderProblem, headOf } from "./reaudit.ts";
+import { cliLog } from "./trajectory.ts";
 import type { Gate, GateResult } from "./types.ts";
 import { testWeakening, weakeningProblems } from "./weakening.ts";
 
@@ -126,6 +127,27 @@ export const notProvable: Gate = (ws) => {
   const r = latestReport(ws);
   const pass = Boolean(r && r.maturity.level === 0 && r.maturity.couldBe === 1 && r.details.record.some((x) => x.value.includes("no container runtime")));
   return { name: "Level 1 reported as not provable here", pass, detail: r ? `Level ${r.maturity.level}, could be ${r.maturity.couldBe}` : "no report" };
+};
+
+// The read-only tier runs no repo code: the sealed audit says read-only, gives no level, and holds
+// no executed or clean-replay evidence.
+export const readOnlyNoLevel: Gate = (ws) => {
+  const name = "read-only audit gives no level and ran no repo code";
+  const r = latestReport(ws);
+  const audit = sealedAudits(ws).at(-1);
+  if (!r || !audit) return { name, pass: false, detail: "no sealed audit" };
+  const ran = (audit.evidence as { strength: string; id: string }[]).filter((e) => e.strength === "executed" || e.strength === "clean_replay").map((e) => e.id);
+  const pass = audit.tier === "read-only" && r.maturity.outcome === "not_assessed" && ran.length === 0;
+  return { name, pass, detail: `tier ${audit.tier}, outcome ${r.maturity.outcome}${ran.length ? `, executed evidence ${ran.join(", ")}` : ""}` };
+};
+
+const RUNS_REPO_CODE = /readiness(\.ts)?["']?\s+(replay|run|recheck)\b/;
+
+export const noReplayOrRun: Gate = (ws, t) => {
+  const fromLog = cliLog(ws).filter((e) => ["replay", "run", "recheck"].includes(e.argv[0])).map((e) => `readiness ${e.argv.join(" ")}`);
+  const fromCalls = t.toolCalls.map((c) => (typeof c.args.command === "string" ? c.args.command : typeof c.args.cmd === "string" ? c.args.cmd : "")).filter((cmd) => RUNS_REPO_CODE.test(cmd));
+  const found = [...new Set([...fromLog, ...fromCalls])];
+  return { name: "no replay or run", pass: found.length === 0, detail: found.length ? found.join("; ") : "neither the CLI log nor the tool calls run repo code" };
 };
 
 const ENV_KEYS = ["name", "install", "start", "build"];

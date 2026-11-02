@@ -137,10 +137,12 @@ export function componentStates(audit: Audit, rubric: Rubric, componentId: strin
 // Says what was checked and what wasn't run, so a list of skipped commands never reads as verified.
 function instructionsMetReason(items: Audit["instructions"]): string {
   if (items.length === 0) return "no agent instructions to check";
-  const notRun = items.filter((i) => i.result === "not_run").length;
-  const checked = items.length - notRun;
-  if (notRun === 0) return `${items.length} instruction items check out`;
-  return `${checked} of ${items.length} instruction items check out; ${notRun} weren't run because they need access, run long or are risky`;
+  const skipped = items.filter((i) => i.result === "not_run" && i.category === "skipped").length;
+  const notRun = items.filter((i) => i.result === "not_run").length - skipped;
+  const checked = items.length - notRun - skipped;
+  if (notRun + skipped === 0) return `${items.length} instruction items check out`;
+  const why = [notRun ? `${notRun} weren't run because they need access, run long or are risky` : "", skipped ? `${skipped} ${skipped === 1 ? "was" : "were"} skipped as vendored-skill, placeholder, interactive or package-adding commands` : ""].filter(Boolean).join("; ");
+  return `${checked} of ${items.length} instruction items check out; ${why}`;
 }
 
 export function repoStates(audit: Audit, rubric: Rubric): Record<"instructions" | "safety" | "toolchain" | "lockfile", CondDetail> {

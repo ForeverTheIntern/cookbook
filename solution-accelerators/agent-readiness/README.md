@@ -77,7 +77,8 @@ Tests added to catch planted faults are proved against a fresh set of faults the
 - **Network:** tests run with networking off after the install.
 - **Base images:** `--image <ref>` replays on an approved internal image. A repo-declared `.cursor/Dockerfile` in `environment.json` is built and used.
 - **No container runtime:** the replay falls back to a fresh copy on the host, and part 1 says Level 1 can't be proved on that machine. A tool the host lacks, and every step behind it, is reported as blocked on this machine, never as a repo defect, and commands that use `sudo` are listed by the safety check and never run on the host. When nothing produced a real result, the report gives no level and says why. The scheduled workflow on a hosted runner can prove Level 1.
-- **Budgets:** `--budget-component` and `--budget-total` (15 and 60 minutes). Anything cut off counts as not run.
+- **Budgets:** `--budget-component` and `--budget-total` (15 and 60 minutes). The total covers the instruction replay too. Anything cut off counts as not run.
+- **Write-mode lint:** lint and type-check run check-only, without `--write` or `--fix`, and lint runs before the build, so the audit doesn't rewrite the copy it plants faults in. See [supported.md](skill/agent-readiness/references/supported.md).
 - **Org skill builders:** `readiness assets --org <owner> --tier external-systems` lists the top 10 skill authors across GitHub-visible repos, capped at 200 repos.
 
 ## Permission tiers

@@ -1,23 +1,24 @@
 import { spawn } from "node:child_process";
-import { existsSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { basename, dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { compare, crashedRun, summarize, writeJunit } from "./lib/baseline.ts";
+import { HILL_CLIMB_MIN_REPEATS, compare, crashedRun, isInfraError, summarize, withControls, writeJunit } from "./lib/baseline.ts";
 import type { Baseline } from "./lib/baseline.ts";
+import { scriptedAudit } from "./lib/controls.ts";
 import { gradeCase, latestReport } from "./lib/grade.ts";
 import { renderMarkdown } from "../skill/agent-readiness/scripts/lib/render.ts";
 import { loadRubric } from "../skill/agent-readiness/scripts/lib/rubric.ts";
 import type { ReportJson } from "../skill/agent-readiness/scripts/lib/types.ts";
-import { PROMPTS, judge } from "./lib/judge.ts";
+import { PROMPTS, availableModels, chooseJudge, judge, judgePromptDigest } from "./lib/judge.ts";
 import type { JudgeResult } from "./lib/judge.ts";
 import { rerenderLatest } from "./lib/rerender.ts";
 import { runWithSdk } from "./lib/sdk.ts";
-import type { CaseRun, EvalCase, Trajectory } from "./lib/types.ts";
+import type { Arm, CaseRun, EvalCase, Trajectory } from "./lib/types.ts";
 import { applyTurnHook, externalPreamble, fillPrompt, loadWorkspace, prepare, skillPreamble } from "./lib/workspace.ts";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const DEFAULT_MODEL = process.env.SA_READINESS_EVAL_MODEL ?? "composer-2";
-const JUDGE_MODEL = process.env.SA_READINESS_JUDGE_MODEL ?? DEFAULT_MODEL;
+const ARMS: Arm[] = ["agent", "skill-off", "scripted"];
 
 function args() {
   const a = process.argv.slice(2);
@@ -50,7 +51,13 @@ async function loadCases(): Promise<EvalCase[]> {
 function select(all: EvalCase[], flags: Record<string, string | true>): EvalCase[] {
   const tag = typeof flags.tag === "string" ? flags.tag : undefined;
   const only = typeof flags.case === "string" ? flags.case.split(",") : undefined;
-  return all.filter((c) => (!tag || c.tags.includes(tag as "smoke" | "full")) && (!only || only.some((o) => c.id === o || c.id.endsWith("/" + o))));
+  // A hill-climb round never sees the held-out cases unless asked to report them.
+  const holdoutOut = Boolean(flags["hill-climb"]) && !flags["include-holdout"];
+  return all.filter((c) => (!tag || c.tags.includes(tag as EvalCase["tags"][number])) && (!only || only.some((o) => c.id === o || c.id.endsWith("/" + o))) && !(holdoutOut && c.tags.includes("holdout")));
+}
+
+function holdoutIds(all: EvalCase[]): Set<string> {
+  return new Set(all.filter((c) => c.tags.includes("holdout")).map((c) => c.id));
 }
 
 function writeJudgePrompts(dir: string, r: ReportJson): void {
@@ -77,29 +84,71 @@ function runAttack(ws: ReturnType<typeof prepare>, c: EvalCase): Trajectory {
 
 const NOT_JUDGED: JudgeResult = { score: null, reasons: ["negative cases aren't judged"] };
 
+async function judgeRun(r: ReportJson | null, arm: Arm, judgeModel: string | null): Promise<[JudgeResult, JudgeResult]> {
+  const key = process.env.CURSOR_API_KEY;
+  // A control arm that left no report has nothing a reader could use: it scores 0, so the agent's lift counts it.
+  if (!r && arm !== "agent" && key && judgeModel) return [{ score: 0, reasons: ["no report: 0 for a control arm"] }, { score: 0, reasons: ["no report: 0 for a control arm"] }];
+  if (!judgeModel) return [{ score: null, reasons: ["no judge model"] }, { score: null, reasons: ["no judge model"] }];
+  const [h, p] = await Promise.all((["headline", "page"] as const).map((k) => judge(k, r, judgeModel, key)));
+  return [h, p];
+}
+
 async function worker(flags: Record<string, string | true>): Promise<void> {
   const all = await loadCases();
   const c = all.find((x) => x.id === flags.case)!;
   const model = String(flags.model);
-  const ws = prepare(c);
-  const t = c.attack ? runAttack(ws, c) : await runWithSdk(ws, c, model, process.env.CURSOR_API_KEY!, Number(flags["timeout-min"] ?? 30) * 60000);
+  const arm = (typeof flags.arm === "string" ? flags.arm : "agent") as Arm;
+  const judgeModel = typeof flags["judge-model"] === "string" ? flags["judge-model"] : null;
+  const ws = prepare(c, { skill: arm !== "skill-off" });
+  const timeoutMs = Number(flags["timeout-min"] ?? 30) * 60000;
+  const t = c.attack ? runAttack(ws, c) : arm === "scripted" ? scriptedAudit(ws, c) : await runWithSdk(ws, c, model, process.env.CURSOR_API_KEY!, timeoutMs, { skill: arm !== "skill-off" });
   const gates = t.error && c.attack ? [{ name: "the attack ran", pass: false, detail: t.error }] : gradeCase(ws, t, c);
-  const [h, p] = c.attack ? [NOT_JUDGED, NOT_JUDGED] : await Promise.all((["headline", "page"] as const).map((k) => judge(k, latestReport(ws), JUDGE_MODEL, process.env.CURSOR_API_KEY)));
-  const run: CaseRun = { id: c.id, repeat: Number(flags.repeat), model, driver: t.driver, workspace: ws.dir, grade: { gates, soft: { judge: h.score, judgeReasons: h.reasons, page: p.score, pageReasons: p.reasons, wallMs: t.durationMs, toolCalls: t.toolCalls.length, tokens: t.tokens } }, error: t.error };
+  const report = latestReport(ws);
+  const [h, p] = c.attack ? [NOT_JUDGED, NOT_JUDGED] : await judgeRun(report, arm, judgeModel);
+  const run: CaseRun = { id: c.id, repeat: Number(flags.repeat), model, driver: t.driver, arm, judgeModel: c.attack ? null : judgeModel, rubric: report?.audit.rubric ?? null, workspace: ws.dir, grade: { gates, soft: { judge: h.score, judgeReasons: h.reasons, page: p.score, pageReasons: p.reasons, wallMs: t.durationMs, toolCalls: t.toolCalls.length, tokens: t.tokens } }, error: t.error };
   writeFileSync(String(flags.out), JSON.stringify({ run, trajectory: t }, null, 2));
 }
 
-function spawnWorker(c: EvalCase, repeat: number, model: string, out: string, timeoutMin: string): Promise<void> {
+interface Job {
+  c: EvalCase;
+  m: string;
+  r: number;
+  arm: Arm;
+}
+
+function spawnOnce(j: Job, out: string, timeoutMin: string, judgeModel: string | null): Promise<void> {
   return new Promise((done) => {
-    const child = spawn(process.execPath, ["--experimental-strip-types", "--no-warnings", fileURLToPath(import.meta.url), "--worker", "--case", c.id, "--repeat", String(repeat), "--model", model, "--out", out, "--timeout-min", timeoutMin], { stdio: ["ignore", "inherit", "inherit"], env: process.env });
+    const argv = [fileURLToPath(import.meta.url), "--worker", "--case", j.c.id, "--repeat", String(j.r), "--model", j.m, "--arm", j.arm, "--out", out, "--timeout-min", timeoutMin, ...(judgeModel ? ["--judge-model", judgeModel] : [])];
+    const child = spawn(process.execPath, ["--experimental-strip-types", "--no-warnings", ...argv], { stdio: ["ignore", "inherit", "inherit"], env: process.env });
     // The worker cancels its own turn at the timeout; this catches a worker that hangs past it.
     const kill = setTimeout(() => child.kill("SIGKILL"), (Number(timeoutMin) + 10) * 60000);
     child.on("close", (code, signal) => {
       clearTimeout(kill);
-      if (!existsSync(out)) writeFileSync(out, JSON.stringify({ run: crashedRun(c, repeat, model, `the worker exited ${signal ? `on ${signal}` : `with code ${code}`} without a result`) }, null, 2));
+      if (!existsSync(out)) writeFileSync(out, JSON.stringify({ run: crashedRun(j.c, j.r, j.m, `the worker exited ${signal ? `on ${signal}` : `with code ${code}`} without a result`, j.arm) }, null, 2));
       done();
     });
   });
+}
+
+// Infrastructure errors (capacity, network, a crashed worker) are retried in a fresh workspace and
+// recorded separately; a run that fails that way every time is lost, not failed.
+async function spawnWorker(j: Job, out: string, timeoutMin: string, judgeModel: string | null, retries: number): Promise<void> {
+  const errors: string[] = [];
+  for (let attempt = 1; ; attempt++) {
+    rmSync(out, { force: true });
+    await spawnOnce(j, out, timeoutMin, judgeModel);
+    const saved = JSON.parse(readFileSync(out, "utf8")) as { run: CaseRun; trajectory?: Trajectory };
+    const infra = isInfraError(saved.run.error);
+    if (infra) errors.push(saved.run.error!);
+    if (!infra || attempt > retries) {
+      if (errors.length) {
+        saved.run.infra = { attempts: attempt, errors, lost: infra };
+        writeFileSync(out, JSON.stringify(saved, null, 2));
+      }
+      return;
+    }
+    process.stdout.write(`retrying ${j.c.id} #${j.r} [${j.arm}] after an infrastructure error: ${saved.run.error}\n`);
+  }
 }
 
 function collect(dir: string): CaseRun[] {
@@ -115,10 +164,26 @@ function collect(dir: string): CaseRun[] {
   return runs;
 }
 
-function report(runs: CaseRun[], flags: Record<string, string | true>, model: string, driver: string, repeats: number): number {
-  const summary = summarize(runs, model, driver, repeats, typeof flags.note === "string" ? flags.note : undefined);
-  for (const [id, s] of Object.entries(summary.cases)) process.stdout.write(`${s.allGatesPass.padStart(5)}  ${id.padEnd(48)} judge ${s.judge ?? "n/a"} page ${s.page ?? "n/a"}  ${Object.entries(s.gates).filter(([, v]) => !v.startsWith(String(s.runs))).map(([g, v]) => `${g} ${v}`).join("; ")}\n`);
-  process.stdout.write(`All gates passed in ${summary.totals.allGatesPass} cases. Headline judge average ${summary.totals.judgeAverage ?? "n/a"}; page judge average ${summary.totals.pageAverage ?? "n/a"}.\n`);
+const fmtCi = (x: { mean: number | null; low: number | null; high: number | null }) => (x.mean === null ? "n/a" : `${x.mean} (95% CI ${x.low} to ${x.high})`);
+
+interface ReportOptions {
+  model: string;
+  driver: string;
+  repeats: number;
+  holdout: Set<string>;
+  selected?: string[];
+  controls?: Partial<Record<Arm, CaseRun[]>>;
+}
+
+function report(runs: CaseRun[], flags: Record<string, string | true>, o: ReportOptions): number {
+  const arm = runs[0]?.arm ?? "agent";
+  let summary = summarize(runs, { model: o.model, driver: o.driver, repeats: o.repeats, note: typeof flags.note === "string" ? flags.note : undefined, arm, holdout: o.holdout, judgePrompt: judgePromptDigest() });
+  if (o.controls) summary = withControls(summary, runs, o.controls, o.holdout);
+  for (const [id, s] of Object.entries(summary.cases)) process.stdout.write(`${s.allGatesPass.padStart(5)}  ${(id + (s.holdout ? " (held out)" : "")).padEnd(60)} judge ${s.judge ?? "n/a"} page ${s.page ?? "n/a"}${s.infraLost ? `  ${s.infraLost} lost to infrastructure` : ""}  ${Object.entries(s.gates).filter(([, v]) => !v.startsWith(String(s.usable))).map(([g, v]) => `${g} ${v}`).join("; ")}\n`);
+  const t = summary.totals;
+  process.stdout.write(`[${arm}] All gates passed in ${t.allGatesPass} cases; pooled ${t.pooled.passed}/${t.pooled.runs} runs (95% CI ${t.pooled.lower ?? "n/a"} to ${t.pooled.upper ?? "n/a"}). Headline judge ${fmtCi(t.judge)}; page judge ${fmtCi(t.page)}.${t.infraLost ? ` ${t.infraLost} runs lost to infrastructure.` : ""}\n`);
+  if (summary.holdout) process.stdout.write(`[${arm}] Held out: ${summary.holdout.allGatesPass} cases; pooled ${summary.holdout.pooled.passed}/${summary.holdout.pooled.runs}; headline judge ${fmtCi(summary.holdout.judge)}.\n`);
+  for (const [c, v] of Object.entries(summary.controls ?? {})) process.stdout.write(`Lift over ${c}: pooled pass rate ${v!.lift.pooled ?? "n/a"} (${c} ${v!.totals.pooled.passed}/${v!.totals.pooled.runs}); headline judge ${fmtCi(v!.lift.judge)}; page judge ${fmtCi(v!.lift.page)}.\n`);
   if (typeof flags.json === "string") {
     mkdirSync(dirname(resolve(flags.json)), { recursive: true });
     writeFileSync(resolve(flags.json), JSON.stringify({ summary, runs }, null, 2));
@@ -127,29 +192,46 @@ function report(runs: CaseRun[], flags: Record<string, string | true>, model: st
     mkdirSync(dirname(resolve(flags.junit)), { recursive: true });
     writeJunit(resolve(flags.junit), runs);
   }
-  if (typeof flags["write-baseline"] === "string") writeFileSync(resolve(flags["write-baseline"]), JSON.stringify(summary, null, 2) + "\n");
+  if (typeof flags["write-baseline"] === "string") {
+    if (o.repeats < HILL_CLIMB_MIN_REPEATS) process.stdout.write(`NOTE the baseline has ${o.repeats} repeats; hill-climb rounds need ${HILL_CLIMB_MIN_REPEATS}.\n`);
+    writeFileSync(resolve(flags["write-baseline"]), JSON.stringify(summary, null, 2) + "\n");
+  }
   let code = 0;
   if (typeof flags.compare === "string" && existsSync(resolve(flags.compare))) {
     const base = JSON.parse(readFileSync(resolve(flags.compare), "utf8")) as Baseline;
-    const { regressions, flags: soft } = compare(summary, base);
+    const { regressions, flags: soft } = compare(summary, base, { selected: o.selected });
     for (const r of regressions) process.stdout.write(`REGRESSION ${r}\n`);
     for (const f of soft) process.stdout.write(`FLAG ${f}\n`);
     if (regressions.length) code = 1;
   }
-  if (runs.some((r) => !r.grade.gates.every((g) => g.pass))) code = code || 2;
+  // Control arms are expected to fail gates; that is what the lift measures.
+  if (arm === "agent" && runs.some((r) => !r.infra?.lost && !r.grade.gates.every((g) => g.pass))) code = code || 2;
   return code;
+}
+
+async function pickJudgeModel(flags: Record<string, string | true>, driverModel: string): Promise<string | null> {
+  const key = process.env.CURSOR_API_KEY;
+  const explicit = typeof flags["judge-model"] === "string" ? flags["judge-model"] : process.env.SA_READINESS_JUDGE_MODEL;
+  if (!key) return explicit ?? null;
+  const choice = chooseJudge(driverModel, explicit ? [] : await availableModels(key), explicit);
+  process.stdout.write(`Judge: ${choice.model} (${choice.why}).\n`);
+  return choice.model;
 }
 
 async function main(): Promise<void> {
   const flags = args();
   if (flags.worker) return worker(flags);
   const all = await loadCases();
+  const holdout = holdoutIds(all);
   if (flags.list) {
     for (const c of all) process.stdout.write(`${c.id.padEnd(48)} [${c.tags.join(",")}] ${c.description}\n`);
     return;
   }
   const repeats = Number(flags.repeats ?? 1);
+  if (flags["hill-climb"] && repeats < HILL_CLIMB_MIN_REPEATS) throw new Error(`--hill-climb needs --repeats ${HILL_CLIMB_MIN_REPEATS} or more; ${repeats} can't tell a change from a flake.`);
   const models = String(flags.model ?? DEFAULT_MODEL).split(",");
+  const arms = String(flags.arm ?? "agent").split(",") as Arm[];
+  for (const a of arms) if (!ARMS.includes(a)) throw new Error(`Unknown --arm ${a}; use ${ARMS.join(", ")}.`);
   if (typeof flags.hook === "string") {
     const { ws, id } = loadWorkspace(resolve(flags.hook));
     const c = all.find((x) => x.id === id)!;
@@ -179,7 +261,8 @@ async function main(): Promise<void> {
     if (report) writeJudgePrompts(root, report);
     const h = readJudge(join(root, "headline.json"));
     const p = readJudge(join(root, "page.json"));
-    const run: CaseRun = { id, repeat: Number(flags.repeat ?? 1), model: String(flags.model ?? "external"), driver: "external", workspace: ws.dir, grade: { gates, soft: { judge: h.score, judgeReasons: h.reasons, page: p.score, pageReasons: p.reasons, wallMs: t.durationMs, toolCalls: 0, tokens: null } }, error: null };
+    const judgeModel = typeof flags["judge-model"] === "string" ? flags["judge-model"] : null;
+    const run: CaseRun = { id, repeat: Number(flags.repeat ?? 1), model: String(flags.model ?? "external"), driver: "external", arm: "agent", judgeModel, rubric: report?.audit.rubric ?? null, workspace: ws.dir, grade: { gates, soft: { judge: h.score, judgeReasons: h.reasons, page: p.score, pageReasons: p.reasons, wallMs: t.durationMs, toolCalls: 0, tokens: null } }, error: null };
     writeFileSync(join(root, "result.json"), JSON.stringify({ run }, null, 2));
     for (const g of gates) process.stdout.write(`${g.pass ? "PASS" : "FAIL"}  ${g.name}: ${g.detail}\n`);
     return;
@@ -195,11 +278,12 @@ async function main(): Promise<void> {
       saved.run.grade.gates = gradeCase(ws, saved.trajectory, c);
       writeFileSync(join(dir, f), JSON.stringify(saved, null, 2));
     }
-    process.exitCode = report(collect(dir), flags, String(flags.model ?? DEFAULT_MODEL), "sdk", repeats);
+    const runs = collect(dir);
+    process.exitCode = report(runs.filter((r) => (r.arm ?? "agent") === "agent"), flags, { model: String(flags.model ?? runs[0]?.model ?? DEFAULT_MODEL), driver: "sdk", repeats, holdout });
     return;
   }
   if (typeof flags.collect === "string") {
-    process.exitCode = report(collect(resolve(flags.collect)), flags, String(flags.model ?? "external"), String(flags.driver ?? "external"), repeats);
+    process.exitCode = report(collect(resolve(flags.collect)), flags, { model: String(flags.model ?? "external"), driver: String(flags.driver ?? "external"), repeats, holdout });
     return;
   }
   const selected = select(all, flags);
@@ -220,33 +304,52 @@ async function main(): Promise<void> {
   }
   const scripted = selected.filter((c) => c.attack);
   let driven = selected.filter((c) => !c.attack);
+  // The scripted control arm needs no key; the agent and skill-off arms do.
+  let drivenArms = arms;
   if (driven.length && !process.env.CURSOR_API_KEY) {
-    process.stdout.write(`CURSOR_API_KEY isn't set, so ${driven.length} agent-driven cases are skipped${scripted.length ? `; running the ${scripted.length} scripted negative cases` : ""}. Add it as a secret to run them.\n`);
-    driven = [];
-    if (!scripted.length) return;
+    drivenArms = arms.filter((a) => a === "scripted");
+    const skipped = arms.filter((a) => a !== "scripted");
+    if (skipped.length) process.stdout.write(`CURSOR_API_KEY isn't set, so the ${skipped.join(" and ")} arm${skipped.length > 1 ? "s" : ""} of ${driven.length} cases ${skipped.length > 1 ? "are" : "is"} skipped${scripted.length ? `; running the ${scripted.length} scripted negative cases` : ""}. Add it as a secret to run them.\n`);
+    if (!drivenArms.length) driven = [];
+    if (!driven.length && !scripted.length) return;
   }
+  const judgeModel = driven.length ? await pickJudgeModel(flags, models[0]) : null;
   const maxRuns = Number(flags["max-runs"] ?? 120);
-  const jobs = [...driven.flatMap((c) => models.flatMap((m) => Array.from({ length: repeats }, (_, i) => ({ c, m, r: i + 1 })))), ...scripted.flatMap((c) => Array.from({ length: repeats }, (_, i) => ({ c, m: "scripted", r: i + 1 })))];
+  const jobs: Job[] = [
+    ...driven.flatMap((c) => drivenArms.flatMap((arm) => (arm === "scripted" ? ["scripted"] : models).flatMap((m) => Array.from({ length: repeats }, (_, i) => ({ c, m, r: i + 1, arm }))))),
+    ...scripted.flatMap((c) => Array.from({ length: repeats }, (_, i) => ({ c, m: "scripted", r: i + 1, arm: "agent" as Arm }))),
+  ];
   if (jobs.length > maxRuns) throw new Error(`${jobs.length} runs exceed --max-runs ${maxRuns}.`);
   const outDir = join(HERE, "runs", new Date().toISOString().replace(/[:.]/g, "-"));
   mkdirSync(outDir, { recursive: true });
   const concurrency = Number(flags.concurrency ?? 2);
+  const retries = Number(flags["infra-retries"] ?? 2);
   let next = 0;
   await Promise.all(
     Array.from({ length: concurrency }, async () => {
       while (next < jobs.length) {
         const j = jobs[next++];
-        await spawnWorker(j.c, j.r, j.m, join(outDir, `${j.c.id.replace(/\//g, "__")}.${j.m}.${j.r}.run.json`), String(flags["timeout-min"] ?? 30));
+        await spawnWorker(j, join(outDir, `${j.c.id.replace(/\//g, "__")}.${j.arm}.${j.m}.${j.r}.run.json`), String(flags["timeout-min"] ?? 30), j.c.attack ? null : judgeModel, retries);
       }
     }),
   );
+  const done = collect(outDir);
+  const drivenIds = new Set(driven.map((c) => c.id));
+  const of = (arm: Arm, m?: string) => done.filter((r) => drivenIds.has(r.id) && (r.arm ?? "agent") === arm && (!m || r.model === m));
   let code = 0;
-  for (const m of driven.length ? models : []) code = report(collect(outDir).filter((r) => r.model === m), flags, m, "sdk", repeats) || code;
+  const controls = { "skill-off": drivenArms.includes("skill-off") ? of("skill-off") : [], scripted: drivenArms.includes("scripted") ? of("scripted") : [] };
+  const selectedIds = driven.map((c) => c.id);
+  for (const m of drivenArms.includes("agent") ? models : []) code = report(of("agent", m), flags, { model: m, driver: "sdk", repeats, holdout, selected: selectedIds, controls: { "skill-off": controls["skill-off"].filter((r) => r.model === m), scripted: controls.scripted } }) || code;
+  // Control arms alone (no agent arm) still print their own summary; the baseline is for the agent.
+  if (!drivenArms.includes("agent")) {
+    const { "write-baseline": _w, compare: _c, ...rest } = flags;
+    for (const arm of drivenArms) code = report(of(arm), rest, { model: arm === "scripted" ? "scripted" : models[0], driver: arm === "scripted" ? "scripted" : "sdk", repeats, holdout }) || code;
+  }
   // The baseline is for agent runs; a negative case fails the run by failing its gates.
   if (scripted.length) {
     const { "write-baseline": _w, compare: _c, ...rest } = flags;
     const own = driven.length ? Object.fromEntries(Object.entries(rest).filter(([k]) => k !== "json" && k !== "junit")) : rest;
-    code = report(collect(outDir).filter((r) => r.model === "scripted"), own, "scripted", "scripted", repeats) || code;
+    code = report(done.filter((r) => !drivenIds.has(r.id)), own, { model: "scripted", driver: "scripted", repeats, holdout }) || code;
   }
   process.exitCode = code;
 }

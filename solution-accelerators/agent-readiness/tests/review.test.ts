@@ -267,7 +267,7 @@ describe("fixes from the independent pre-ship review", () => {
     const run = crashedRun({ id: "fixtures/x" }, 2, "m", "the worker exited with code 1 without a result");
     assert.equal(run.grade.gates[0].pass, false);
     const ok = { ...run, repeat: 1, grade: { ...run.grade, gates: [{ name: "levels", pass: true, detail: "" }] } };
-    const summary = summarize([ok], "m", "sdk", 3);
+    const summary = summarize([ok], { model: "m", driver: "sdk", repeats: 3 });
     assert.match(compare(summary, summary).regressions.join("\n"), /only 1 of 3 repeats left a result/);
   });
 

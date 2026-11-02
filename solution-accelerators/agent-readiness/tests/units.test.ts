@@ -235,6 +235,29 @@ describe("informational signals", () => {
     const again = Object.fromEntries(staticSignals(repo, buildProfile(repo, repo, rubric), []).map((s) => [s.id, s.found]));
     assert.deepEqual([again.env_sample, again.agents_md_length, again.targeted_tests], [true, true, false]);
   });
+
+  test("committing the installed skill or its records isn't a change in any component", () => {
+    // The root package owns files at the root, so without the exclusion it would own the skill's.
+    const repo = gitRepo({ "package.json": JSON.stringify({ name: "shop", scripts: { test: "node --test" } }), "package-lock.json": "{}", "src/a.js": "export const a = 1;\n", "web/package.json": JSON.stringify({ name: "web", scripts: { test: "node --test" } }), "web/package-lock.json": "{}", "web/src/b.js": "export const b = 1;\n" });
+    const shares = () => Object.fromEntries(buildProfile(repo, repo, rubric).components.map((c) => [c.id, [c.changes, c.changeShare]]));
+    const before = shares();
+    for (const dir of [".cursor/skills/agent-readiness/scripts", ".agent-readiness/history"]) {
+      mkdirSync(join(repo, dir), { recursive: true });
+      for (let i = 0; i < 30; i++) writeFileSync(join(repo, dir, `f${i}.json`), "{}\n");
+    }
+    execFileSync("git", ["add", "-A"], { cwd: repo });
+    execFileSync("git", ["-c", "user.name=A", "-c", "user.email=a@example.com", "-c", "commit.gpgsign=false", "commit", "-qm", "Add the agent readiness skill"], { cwd: repo });
+    assert.equal(Object.keys(before).length, 2, JSON.stringify(before));
+    assert.deepEqual(shares(), before);
+  });
+
+  test("the installed skill's own environment reads don't count as the repo's", () => {
+    const repo = gitRepo({ "package.json": JSON.stringify({ name: "shop", scripts: { test: "node --test" } }), "package-lock.json": "{}", "src/a.js": "export const a = 1;\n" });
+    mkdirSync(join(repo, ".cursor/skills/agent-readiness/scripts"), { recursive: true });
+    writeFileSync(join(repo, ".cursor/skills/agent-readiness/scripts/readiness.ts"), "const seed = process.env.SA_READINESS_EVAL_SEED;\n");
+    const env = staticSignals(repo, buildProfile(repo, repo, rubric), []).find((s) => s.id === "env_sample")!;
+    assert.deepEqual([env.found, env.detail], [null, "the code reads no environment variables of its own"]);
+  });
 });
 
 describe("static checks", () => {

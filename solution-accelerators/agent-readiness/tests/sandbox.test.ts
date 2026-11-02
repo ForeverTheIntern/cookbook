@@ -42,6 +42,7 @@ function recordingExecutor(outputs: (command: string, n: number) => { exitCode: 
     where: "container" as const,
     strength: "clean_replay" as const,
     image: "node:22-bookworm",
+    imageSource: "audit" as const,
     root: tmp(),
     ran,
     exec: async (command: string, _cwd: string, timeoutSec: number) => {

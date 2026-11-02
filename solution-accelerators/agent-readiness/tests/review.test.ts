@@ -44,6 +44,7 @@ function fakeExecutor(outputs: Record<string, { exitCode: number; output: string
     where: "container",
     strength: "clean_replay",
     image: "node:22-bookworm",
+    imageSource: "audit",
     root: "/work",
     exec: async (command) => ({ timedOut: false, durationMs: 1, ...(outputs[command] ?? { exitCode: 0, output: "" }) }),
     offline: () => (ex.networkOff = networkOff),
@@ -232,7 +233,7 @@ describe("fixes from the independent pre-ship review", () => {
     mkdirSync(join(tree, "infra"));
     writeFileSync(join(tree, "infra/main.tf"), "");
     const comps = discoverComponents(tree, ["package.json", "infra/main.tf", "test/a.test.js"]);
-    assert.deepEqual(comps.map((c) => [c.id, c.assessed ? "assessed" : c.notAssessedReason ?? ""]), [["app", ""], ["infra", "Terraform isn't supported by this rubric"]]);
+    assert.deepEqual(comps.map((c) => [c.id, c.assessed ? "assessed" : c.notAssessedReason ?? ""]), [["app", ""], ["infra", "Terraform isn't supported yet"]]);
   });
 
   test("history from a fresh clone reads the remote branch, and a push keeps every earlier line", () => {

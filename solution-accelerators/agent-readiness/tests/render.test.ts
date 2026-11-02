@@ -264,7 +264,7 @@ describe("part 1 rules", () => {
     const ex = r.executive;
     assert.equal(r.maturity.assessedComponents, 0);
     assert.equal(ex.heading, "Not assessed: no component could be assessed");
-    assert.equal(ex.headline, "No component could be assessed, so this audit can't give a level yet: it skipped services (100% of changes) because Terraform isn't supported by this rubric.");
+    assert.equal(ex.headline, "No component could be assessed, so this audit can't give a level yet: it skipped services (100% of changes) because Terraform isn't supported yet.");
     assert.equal(ex.nextLine, "Next: Level 1, bootable, once a component can be assessed. No condition has been checked yet.");
     assert.deepEqual(ex.numbers.map((n) => n.value), ["none assessed", "not measured", "100%"]);
     assert.doesNotMatch(JSON.stringify(ex), /Met:|0 of 0/);
@@ -324,15 +324,15 @@ describe("part 1 rules", () => {
 
   test("part 4 lists the components found, the ones left out and why, and satellites that aren't components", () => {
     const audit = makeAudit({ components: [{ id: "web", share: 0.8, faults: "pass" }, { id: "core", share: 0.2, assessed: false }] });
-    audit.profile!.components.find((c) => c.id === "core")!.notAssessedReason = ".NET isn't supported by this rubric";
+    audit.profile!.components.find((c) => c.id === "core")!.notAssessedReason = ".NET isn't supported yet";
     audit.profile!.satellites = [{ path: "examples/starter", manifest: "examples/starter/package.json", toolchain: "Node", reason: "it sits under examples/, which usually holds tests, samples or tooling rather than the product" }];
     const r = reportFor(audit);
     assert.deepEqual(r.components.included.map((c) => c.id), ["web"]);
-    assert.deepEqual(r.components.excluded.map((c) => [c.id, c.reason]), [["core", ".NET isn't supported by this rubric"], ["starter", "not a component: it sits under examples/, which usually holds tests, samples or tooling rather than the product"]]);
+    assert.deepEqual(r.components.excluded.map((c) => [c.id, c.reason]), [["core", ".NET isn't supported yet"], ["starter", "not a component: it sits under examples/, which usually holds tests, samples or tooling rather than the product"]]);
     const md = renderMarkdown(r, rubric);
     assert.match(md, /### Levels by component/);
     assert.match(md, /\| `web` \| `web` \| [^\n]* \| 80% \| 2 Verifiable \|/);
-    assert.match(md, /\| `core` \| `core` \| .* \| 20% \| not assessed: \.NET isn't supported by this rubric \|/);
+    assert.match(md, /\| `core` \| `core` \| .* \| 20% \| not assessed: \.NET isn't supported yet \|/);
     assert.match(md, /\| `starter` \| `examples\/starter` \| Node \| .* \| n\/a \| not assessed: not a component/);
     assert.match(md, /Repo level: 2 Verifiable\. The repo level is the lowest level among active components/);
     audit.safety = [{ id: "saf-001", kind: "elevated", file: ".cursor/environment.json", detail: "start runs sudo", blocking: false }];

@@ -81,7 +81,7 @@ export function noRealResults(audit: Audit, states: Map<string, CompStates>): st
 function fromEvidence(rubric: Rubric, ev: Evidence | undefined, check: string, missingReason: string): CondDetail {
   if (!ev) return { state: "unknown", reason: missingReason, evidence: [] };
   const blocked = blockedBy(ev);
-  if (blocked) return { state: "blocked", reason: `${blocked}, an environment limit rather than a repo defect; Level 1 needs a clean container`, evidence: [ev.id] };
+  if (blocked) return { state: "blocked", reason: ev.where === "container" ? `${blocked}, a limit of the audit's environment rather than a repo defect` : `${blocked}, an environment limit rather than a repo defect; Level 1 needs a clean container`, evidence: [ev.id] };
   if (ev.result === "fail") return { state: "not_met", reason: ev.summary, evidence: [ev.id] };
   if (ev.result === "not_run") return { state: "unknown", reason: ev.summary, evidence: [ev.id] };
   const min = rubric.checks.find((c) => c.id === check)?.minStrengthForPass ?? "executed";

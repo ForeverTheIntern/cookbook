@@ -1,0 +1,25 @@
+{
+  "purpose": "A Bun project with bun.lock and bun test. The audit has no Bun install yet, so it says Bun isn't supported yet, links the support list and gives no level, instead of a non-frozen npm install and a Level 0 for a missing bun.",
+  "runs": [
+    {
+      "name": "default",
+      "level": 0,
+      "levels": {},
+      "top": [],
+      "startNow": null,
+      "noBlocker": false,
+      "safety": "pass",
+      "outcome": "not_assessed",
+      "notAssessed": [
+        "bun-lock"
+      ],
+      "shares": {
+        "bun-lock": 1
+      },
+      "unassessed": {
+        "share": 1,
+        "supportLink": true
+      }
+    }
+  ]
+}

@@ -51,6 +51,14 @@ describe("fixtures match expected.json", { concurrency: 3, skip: runtime ? false
           for (const text of run.neverRan) assert.deepEqual(ran.filter((c: string) => c.includes(text)), [], `no command the audit ran contains ${text}`);
         }
         if (run.skipped !== undefined) assert.equal(a.audit.instructions.filter((i: { category: string }) => i.category === "skipped").length, run.skipped, "instruction commands listed as skipped");
+        if (run.unassessed !== undefined) {
+          const u = r.executive.unassessed;
+          assert.deepEqual(u ? { share: u.share, supportLink: u.supportDoc !== null } : null, run.unassessed, "part 1 says what isn't assessed");
+          if (run.unassessed?.supportLink) assert.match(a.markdown, /\*\*Not assessed:\*\* .*What the audit supports/, "part 1 links the support list");
+        }
+        for (const value of run.absent ?? []) {
+          for (const [what, text] of [["report.md", a.markdown], ["report.json", JSON.stringify(r)], ["audit.json", JSON.stringify(a.audit)]]) assert.ok(!text.includes(value), `${what} doesn't echo ${value.slice(0, 6)}…`);
+        }
       });
     }
   }

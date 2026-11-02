@@ -399,3 +399,12 @@ The two columns use different drivers and judges, so read them as two baselines,
 - **Lever tried:** script check (lever 3). `validatePart1` refused narrated headlines that restated `Level N` without plain meaning, or that said nothing blocks / start delegating while Level 1 was unproven. Deterministic test added.
 - **Remeasure:** not a clear keep. Headline scores on the three cases averaged 0.65 (was ~0.63); no-container-runtime fell 0.65 → 0.45; hard gates passed in only 1 of 3 cases (nested-apps and re-audit sealed at Level 0, with one worker crash / capacity error). Not enough signal that the lever improves the target without regressing gates.
 - **Verdict:** deferred. Reverted the script change for the MVP ship. Left under Still open / Known gaps; retry when the eval environment is stable and the change can be measured without capacity noise.
+
+### Round 10 (pending measurement): stacks the audit doesn't support yet
+
+- **Fixtures:** poetry-only, bun-lock, python-behind-root-package, swift-package, dart-packages, terraform-modules, turbo-depends-on-build, partial-coverage (new in this round).
+- **Failure mode:** on a stack the audit can't install or test, the agent reports the sealed Level 0 as a repo gap and offers a fix, as in the real-repo review's Cleo, Elysia, Saleor and Laravel runs.
+- **Lever:** wording in SKILL.md (lever 1). Preflight checks the stack against `references/supported.md`, and the reply says "isn't supported yet" and links it instead of offering a fix. The scripts carry the rest: those components are not assessed, and part 1 says so with the support link.
+- **New tests:** `tests/supported.test.ts` (supported.md matches the detectors; SKILL.md points at it) and the fixtures above, with expected.json.
+- **Remeasure:** not run yet. Egress to api.cursor.com is blocked on the machine that made the change, so before and after on these cases, and the full set for hard-gate drops, need an SDK run with `CURSOR_API_KEY`.
+- **Verdict:** pending.

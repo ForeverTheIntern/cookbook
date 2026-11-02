@@ -138,6 +138,10 @@ export interface ExpectedRun {
   neverRan?: string[];
   // How many instruction commands are listed as skipped.
   skipped?: number;
+  // Values, such as a committed secret, that must appear nowhere in the report or the sealed audit.
+  absent?: string[];
+  // Part 1's line for what the level doesn't cover: its share, and whether it links the support list.
+  unassessed?: { share: number; supportLink: boolean } | null;
 }
 
 export interface Expected {
@@ -155,6 +159,7 @@ export interface FixtureAudit {
   code: number;
   out: string;
   report: Record<string, any>;
+  markdown: string;
   roadmap: Record<string, any>;
   audit: Record<string, any>;
 }
@@ -176,7 +181,8 @@ export function auditFixture(fixture: string, run: ExpectedRun, opts: { seed?: s
   const r = readiness(repo, args, env);
   const read = (p: string) => (existsSync(join(repo, p)) ? JSON.parse(readFileSync(join(repo, p), "utf8")) : {});
   const report = read(".agent-readiness/latest/report.json");
-  return { repo, code: r.code, out: r.out, report, roadmap: read(".agent-readiness/roadmap.json"), audit: report.audit ? read(`.agent-readiness/history/audits/${report.audit.id}/audit.json`) : {} };
+  const md = join(repo, ".agent-readiness/latest/report.md");
+  return { repo, code: r.code, out: r.out, report, markdown: existsSync(md) ? readFileSync(md, "utf8") : "", roadmap: read(".agent-readiness/roadmap.json"), audit: report.audit ? read(`.agent-readiness/history/audits/${report.audit.id}/audit.json`) : {} };
 }
 
 export function fixtureNames(): string[] {

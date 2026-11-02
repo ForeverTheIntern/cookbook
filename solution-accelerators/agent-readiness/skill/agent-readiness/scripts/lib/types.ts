@@ -26,7 +26,7 @@ export type CommandKind = "doctor" | "install" | "build" | "lint" | "typecheck" 
 export type Where = "static" | "host" | "fresh_copy" | "container";
 export type Result = "pass" | "fail" | "not_run";
 export type Language = "ts" | "js" | "py" | "other";
-export type PackageManager = "npm" | "pnpm" | "yarn" | "pip" | "uv" | "poetry";
+export type PackageManager = "npm" | "pnpm" | "yarn" | "bun" | "pip" | "uv" | "poetry";
 export type Effort = "small" | "medium" | "large";
 
 export interface Component {
@@ -42,6 +42,8 @@ export interface Component {
   packageManager?: PackageManager | null;
   toolchain?: string;
   lockfile?: string | null;
+  // The entry in scripts/lib/support.ts this component falls under.
+  stack?: string;
 }
 
 export interface Profile {
@@ -387,6 +389,8 @@ export interface ReportJson {
     ask: string;
     coverage: string;
     noBlocker: boolean;
+    // What the level doesn't cover, and the support list when a stack isn't supported yet.
+    unassessed: { share: number; text: string; supportDoc: string | null } | null;
   };
   actions: ReportAction[];
   // y is the plotted impact; impact is the share of recent changes the action unblocks.

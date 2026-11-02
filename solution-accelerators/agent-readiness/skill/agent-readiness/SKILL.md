@@ -45,7 +45,8 @@ For a private registry, ask for the variable names (never values) and pass `--re
 
 1. `git status --short`. Uncommitted changes aren't audited: the audit reads `git archive HEAD`. Say so if the tree is dirty. An uncommitted copy of this skill under `.cursor/skills/agent-readiness/` and the `.agent-readiness/` records don't count; the audit records "clean tree" without them.
 2. `docker info` (or `podman info`). With no container runtime, tell the user up front that Level 1 can't be proved on this machine. It's an environment limit, not a repo gap, and the scheduled CI recheck can prove it. The fallback runs on the host, so a tool this machine lacks (for example a .NET SDK the repo's own image installs) is reported as a limit of this machine, and commands that use `sudo` are never run there.
-3. `readiness init --tier <tier>`, plus `--scenario <id>` if the user asked for one. If a draft is already open from an earlier attempt, add `--force`.
+3. Check the repo's stack against [references/supported.md](references/supported.md). A component outside the supported tier (for example Poetry, Bun, Go or a Python app next to a root `package.json`) gets no level: the report says it "isn't supported yet" and links that file. If that covers most of the repo, tell the user up front that the audit will list it without a level.
+4. `readiness init --tier <tier>`, plus `--scenario <id>` if the user asked for one. If a draft is already open from an earlier attempt, add `--force`.
 
 ## 3. Profile, agent assets and static checks
 
@@ -93,7 +94,7 @@ For a private registry, ask for the variable names (never values) and pass `--re
 
 1. `readiness verify-seal`.
 2. Read `.agent-readiness/latest/report.md` and reply with part 1 in your own words: the level and what it means, the headline, the three numbers, the gaps and the one ask. Give the confidence too, and its reasons, but never as part of the level. Link the report. Don't paste the whole report.
-3. When the report finds no blocker, say so plainly and recommend starting to delegate. Don't invent work.
+3. When the report finds no blocker, say so plainly and recommend starting to delegate. Don't invent work. When part 1 says something isn't supported yet, say so in those words and link [references/supported.md](references/supported.md); don't offer a fix for it or guess a level.
 4. Offer the next step in one line, for example: "Say 'fix the primary blocker' and I'll set up Postgres for agents and prove it with a new audit."
 5. Say what to commit: `.agent-readiness/roadmap.json` and `.agent-readiness/latest/` go on the main branch. The sealed audits and `history.jsonl` go to the `agent-readiness/history` branch with `readiness history push --push`, or to CI artifacts.
 

@@ -9,6 +9,8 @@ import type { Audit, HistoryLine, ReportJson, Targets } from "../../skill/agent-
 import { CLI, expected } from "../../tools/fixture.ts";
 import type { ExpectedRun } from "../../tools/fixture.ts";
 import { claimsNotInTree } from "./claims.ts";
+import { CHECKED_FIELDS, checkOf, expectedProblems } from "./expected.ts";
+import { narratedTexts, narrationCheck } from "./narration.ts";
 import { trajectoryGate } from "./trajectory.ts";
 import type { EvalCase, Gate, GateResult, Trajectory, Workspace } from "./types.ts";
 
@@ -22,7 +24,7 @@ export function latestReport(ws: Workspace): ReportJson | null {
   return existsSync(f) ? (JSON.parse(readFileSync(f, "utf8")) as ReportJson) : null;
 }
 
-export function roadmap(ws: Workspace): { items: { id: string; status: string; fixes: { condition: string }[] }[]; targets?: Targets | null } | null {
+export function roadmap(ws: Workspace): { items: { id: string; status: string; fixes: { condition: string; component: string }[] }[]; targets?: Targets | null } | null {
   const f = join(ws.dir, ".agent-readiness/roadmap.json");
   return existsSync(f) ? JSON.parse(readFileSync(f, "utf8")) : null;
 }
@@ -58,8 +60,6 @@ function runFor(c: EvalCase): ExpectedRun {
   const exp = expected(c.fixture);
   return exp.runs.find((r) => r.name === (c.expectedRun ?? "default")) ?? exp.runs[0];
 }
-
-const CHECK_OF: Record<string, string> = { "clean.install": "bootstrap.cold_replay", "clean.build": "bootstrap.cold_replay", "clean.test": "bootstrap.cold_replay", toolchain: "bootstrap.cold_replay", lockfile: "bootstrap.cold_replay", commands: "verify.canonical_interface", faults: "verify.behavioral_oracle", instructions: "context.instructions_verified", safety: "safety.execution_boundary" };
 
 // verify-seal only checks each record against its own digests, which anyone can recompute for an
 // unkeyed seal. This checks the records against each other: the last history line, its sealed
@@ -135,7 +135,7 @@ export const topGate: Gate = (ws, _t, c) => {
   if (!r || !rm) return { name: "top items match expected.json", pass: false, detail: "no report" };
   const top = r.actions.filter((a) => !a.startNow).map((a) => a.itemId);
   const passed = new Set(r.details.checks.filter((x) => x.ok === true).map((x) => x.id));
-  const bad = top.filter((id) => rm.items.find((i) => i.id === id)?.fixes.some((f) => passed.has(CHECK_OF[f.condition])));
+  const bad = top.filter((id) => rm.items.find((i) => i.id === id)?.fixes.some((f) => passed.has(checkOf(f.condition))));
   const primaryOk = top[0] === run.top[0];
   return { name: "top items match expected.json", pass: primaryOk && bad.length === 0, detail: primaryOk ? (bad.length ? `items name passed checks: ${bad.join(", ")}` : `primary blocker ${top[0]}`) : `primary blocker ${top[0] ?? "none"}, expected ${run.top[0]}` };
 };
@@ -151,7 +151,59 @@ export const reportGate: Gate = (ws) => {
 
 export const trajectory: Gate = (ws, t, c) => trajectoryGate(ws, t, Boolean(c.remediation));
 
-export const DEFAULT_GATES: Gate[] = [sealedGate, levelsGate, topGate, reportGate, trajectory];
+// Every field of the case's expected.json run, through the checker tests/fixtures.test.ts uses.
+export function expectedJsonMatch(want: ExpectedRun, name = "every expected.json field matches"): Gate {
+  return (ws) => {
+    const report = latestReport(ws);
+    const audit = sealedAudits(ws).at(-1);
+    if (!report || !audit) return { name, pass: false, detail: "no sealed audit" };
+    const problems = expectedProblems(want, { report, roadmap: roadmap(ws) ?? {}, audit });
+    const checked = CHECKED_FIELDS.filter((f) => want[f as keyof ExpectedRun] !== undefined || f === "scenarioLevels");
+    return { name, pass: problems.length === 0, detail: problems.slice(0, 4).join("; ") || `${checked.length} fields match: ${checked.join(", ")}` };
+  };
+}
+
+export const expectedJsonGate: Gate = (ws, t, c) => expectedJsonMatch(runFor(c))(ws, t, c);
+
+// The agent's narrated headline, ask, gaps and titles: every cause named maps to an evidence row,
+// every change share is the named component's, and every "X is at Level N" is the scripts' level.
+export const narrationGate: Gate = (ws) => {
+  const name = "narrated causes, shares and levels match the evidence";
+  const r = latestReport(ws);
+  const audit = sealedAudits(ws).at(-1) as unknown as Audit | undefined;
+  if (!r || !audit) return { name, pass: false, detail: "no sealed audit" };
+  const texts = narratedTexts(audit);
+  if (!texts.length) return { name, pass: true, detail: "nothing narrated; the scripts' default text is built from the evidence" };
+  const { problems, mapped } = narrationCheck(texts, r, audit);
+  return { name, pass: problems.length === 0, detail: problems.slice(0, 4).join("; ") || (mapped.length ? `causes map to evidence: ${mapped.join(", ")}` : "names no cause, share or level the evidence contradicts") };
+};
+
+// Conditions of one check that fail together: a failed install leaves build and test failed or not run.
+const SAME_CHECK = (condition: string) => (condition.startsWith("clean.") ? "clean" : condition);
+
+// Every condition that holds a component below its next level, and isn't just blocked on this
+// machine, has an open roadmap item the report shows. Level 3 outcomes are planned by "targets".
+export function conditionsWithoutAction(r: ReportJson, rm: { items: { id: string; status: string; fixes: { condition: string; component: string }[] }[] }): string[] {
+  const shown = new Set([...r.actions.map((a) => a.itemId), ...r.roadmap.items.filter((i) => i.status !== "done").map((i) => i.id)]);
+  const open = rm.items.filter((i) => i.status !== "done" && shown.has(i.id));
+  const covers = (condition: string, component: string) =>
+    condition === "outcomes" ? open.some((i) => i.id === "targets") : open.some((i) => i.fixes.some((f) => SAME_CHECK(f.condition) === SAME_CHECK(condition) && (f.component === component || f.component === "*")));
+  const missing: string[] = [];
+  for (const c of r.components.included) for (const cr of c.capReasons) if (cr.state === "not_met" && !covers(cr.condition, c.id)) missing.push(`${c.id} ${cr.condition} (${cr.reason.slice(0, 80)})`);
+  return missing;
+}
+
+export const actionsGate: Gate = (ws) => {
+  const name = "every failed condition has an action";
+  const r = latestReport(ws);
+  const rm = roadmap(ws);
+  if (!r || !rm) return { name, pass: false, detail: "no report" };
+  const missing = conditionsWithoutAction(r, rm);
+  const failed = r.components.included.flatMap((c) => c.capReasons.filter((x) => x.state === "not_met"));
+  return { name, pass: missing.length === 0, detail: missing.length ? `no open item for: ${missing.slice(0, 3).join("; ")}` : `${failed.length} failed conditions, each with an open item in the report` };
+};
+
+export const DEFAULT_GATES: Gate[] = [sealedGate, expectedJsonGate, reportGate, narrationGate, actionsGate, trajectory];
 
 export function gradeCase(ws: Workspace, t: Trajectory, c: EvalCase): GateResult[] {
   const gates = c.gates ?? DEFAULT_GATES;

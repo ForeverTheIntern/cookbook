@@ -235,6 +235,14 @@ describe("informational signals", () => {
     const again = Object.fromEntries(staticSignals(repo, buildProfile(repo, repo, rubric), []).map((s) => [s.id, s.found]));
     assert.deepEqual([again.env_sample, again.agents_md_length, again.targeted_tests], [true, true, false]);
   });
+
+  test("the installed skill's own environment reads don't count as the repo's", () => {
+    const repo = gitRepo({ "package.json": JSON.stringify({ name: "shop", scripts: { test: "node --test" } }), "package-lock.json": "{}", "src/a.js": "export const a = 1;\n" });
+    mkdirSync(join(repo, ".cursor/skills/agent-readiness/scripts"), { recursive: true });
+    writeFileSync(join(repo, ".cursor/skills/agent-readiness/scripts/readiness.ts"), "const seed = process.env.SA_READINESS_EVAL_SEED;\n");
+    const env = staticSignals(repo, buildProfile(repo, repo, rubric), []).find((s) => s.id === "env_sample")!;
+    assert.deepEqual([env.found, env.detail], [null, "the code reads no environment variables of its own"]);
+  });
 });
 
 describe("static checks", () => {

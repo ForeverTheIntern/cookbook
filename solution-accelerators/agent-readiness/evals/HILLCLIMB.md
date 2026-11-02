@@ -2,6 +2,17 @@
 
 Each round names one failure mode, changes one lever and remeasures the same cases with the same repeats. A change is kept only if its target improves and no hard gate regresses, and every kept change adds a case that would have failed before it. Scoring rules, level rules and each fixture's `expected.json` are frozen during a round.
 
+## Rules for rounds from November 2, 2026
+
+Rounds 1 to 9 below were measured with 3 repeats, in-sample, and with judges that saw no evidence. From now on:
+
+- **Repeats.** At least 5 per case. Run `npm run evals -- --hill-climb --repeats 5 ...`, which refuses fewer.
+- **Report the interval.** Every round gives its before and after with the pooled pass rate's Wilson interval and the judge's bootstrap interval, from the run summary. A change is kept only if the after interval doesn't overlap the before one on its target, and no gate drops by two runs or more in any case.
+- **Held-out fixtures.** `standalone-nested-mixed`, `vendored-skill` and `write-mode-lint` are left out of every round (`--hill-climb` drops them). Report them once per release with `--include-holdout`, separately.
+- **One instrument.** Before and after use the same driver model, judge model, driver and judge prompt. The baseline's `instrument` records these.
+- **Lift.** A round that changes narration or SKILL.md also reports the lift over `--arm scripted`. When the lift is zero, the narration change added nothing measurable.
+- **Not comparable.** The judge prompts changed (evidence, delimiters, the bare "Level N" rule), so judge scores from rounds 1 to 9 can't be compared with later ones. The [evals README](README.md#measurement) has the details.
+
 ## How runs were measured
 
 - **Agent:** the Cursor agent (Claude Opus 5.5) as a subagent per run, through the external driver: `npm run evals -- --prepare` builds the workspaces and prompts, a subagent runs each prompt, and `npm run evals -- --grade <root>` grades the artifacts it left. The external driver has no tool-call stream, so the trajectory gate reads the CLI log, git and file digests. The SDK driver (`npm run evals`) grades tool calls as well and is what CI runs.

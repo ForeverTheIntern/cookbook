@@ -5,6 +5,7 @@ import { fileURLToPath } from "node:url";
 import { HILL_CLIMB_MIN_REPEATS, compare, crashedRun, isInfraError, summarize, withControls, writeJunit } from "./lib/baseline.ts";
 import type { Baseline } from "./lib/baseline.ts";
 import { scriptedAudit } from "./lib/controls.ts";
+import { isolateHome } from "./lib/isolation.ts";
 import { gradeCase, latestReport } from "./lib/grade.ts";
 import { renderMarkdown } from "../skill/agent-readiness/scripts/lib/render.ts";
 import { loadRubric } from "../skill/agent-readiness/scripts/lib/rubric.ts";
@@ -94,6 +95,9 @@ async function judgeRun(r: ReportJson | null, arm: Arm, judgeModel: string | nul
 }
 
 async function worker(flags: Record<string, string | true>): Promise<void> {
+  // Before anything reads HOME: the SDK, the agent's shell and the grader all run in this process.
+  const iso = isolateHome();
+  if (iso.userDirs.length) throw new Error(`the isolated HOME already holds ${iso.userDirs.join(", ")}`);
   const all = await loadCases();
   const c = all.find((x) => x.id === flags.case)!;
   const model = String(flags.model);
@@ -105,7 +109,7 @@ async function worker(flags: Record<string, string | true>): Promise<void> {
   const gates = t.error && c.attack ? [{ name: "the attack ran", pass: false, detail: t.error }] : gradeCase(ws, t, c);
   const report = latestReport(ws);
   const [h, p] = c.attack ? [NOT_JUDGED, NOT_JUDGED] : await judgeRun(report, arm, judgeModel);
-  const run: CaseRun = { id: c.id, repeat: Number(flags.repeat), model, driver: t.driver, arm, judgeModel: c.attack ? null : judgeModel, rubric: report?.audit.rubric ?? null, workspace: ws.dir, grade: { gates, soft: { judge: h.score, judgeReasons: h.reasons, page: p.score, pageReasons: p.reasons, wallMs: t.durationMs, toolCalls: t.toolCalls.length, tokens: t.tokens } }, error: t.error };
+  const run: CaseRun = { id: c.id, repeat: Number(flags.repeat), model, driver: t.driver, arm, judgeModel: c.attack ? null : judgeModel, rubric: report?.audit.rubric ?? null, isolation: iso.id, workspace: ws.dir, grade: { gates, soft: { judge: h.score, judgeReasons: h.reasons, page: p.score, pageReasons: p.reasons, wallMs: t.durationMs, toolCalls: t.toolCalls.length, tokens: t.tokens } }, error: t.error };
   writeFileSync(String(flags.out), JSON.stringify({ run, trajectory: t }, null, 2));
 }
 
@@ -262,7 +266,7 @@ async function main(): Promise<void> {
     const h = readJudge(join(root, "headline.json"));
     const p = readJudge(join(root, "page.json"));
     const judgeModel = typeof flags["judge-model"] === "string" ? flags["judge-model"] : null;
-    const run: CaseRun = { id, repeat: Number(flags.repeat ?? 1), model: String(flags.model ?? "external"), driver: "external", arm: "agent", judgeModel, rubric: report?.audit.rubric ?? null, workspace: ws.dir, grade: { gates, soft: { judge: h.score, judgeReasons: h.reasons, page: p.score, pageReasons: p.reasons, wallMs: t.durationMs, toolCalls: 0, tokens: null } }, error: null };
+    const run: CaseRun = { id, repeat: Number(flags.repeat ?? 1), model: String(flags.model ?? "external"), driver: "external", arm: "agent", judgeModel, rubric: report?.audit.rubric ?? null, isolation: "external: not controlled by the harness", workspace: ws.dir, grade: { gates, soft: { judge: h.score, judgeReasons: h.reasons, page: p.score, pageReasons: p.reasons, wallMs: t.durationMs, toolCalls: 0, tokens: null } }, error: null };
     writeFileSync(join(root, "result.json"), JSON.stringify({ run }, null, 2));
     for (const g of gates) process.stdout.write(`${g.pass ? "PASS" : "FAIL"}  ${g.name}: ${g.detail}\n`);
     return;

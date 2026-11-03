@@ -236,7 +236,10 @@ function headlineFor(input: RenderInput, ready: string[], setByShare: number): s
     if (rollup.level >= 3) return "Agent PRs meet your Level 3 targets. Keep the weekly recheck running and widen the work agents take.";
     const one = active.length === 1;
     const where = active.length <= 3 ? list(active) : `all ${active.length} active components`;
-    return `Nothing blocks agents in ${where}: from a clean checkout ${one ? "it installs, builds and passes its" : "they install, build and pass their"} tests, and ${one ? "its" : "their"} tests caught the planted bugs. Start delegating work to agents.`;
+    // "builds" only when every active component has a build step that passed; many have none.
+    const built = active.every((id) => input.audit.contract.some((c) => c.kind === "build" && (c.component === id || c.component === "*") && input.audit.evidence.some((e) => e.contractId === c.id && e.result === "pass")));
+    const does = one ? (built ? "it installs, builds and passes its" : "it installs and passes its") : built ? "they install, build and pass their" : "they install and pass their";
+    return `Nothing blocks agents in ${where}: from a clean checkout ${does} tests, and ${one ? "its" : "their"} tests caught the planted bugs. Start delegating work to agents.`;
   }
   const names = list(rollup.setBy);
   const share = active.length > 1 ? `, and ${pct(setByShare, 1)}% of recent changes land there` : "";

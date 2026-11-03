@@ -54,7 +54,8 @@ export async function runWithSdk(ws: Workspace, c: EvalCase, model: string, apiK
 }
 
 export async function askModel(prompt: string, model: string, apiKey: string, cwd: string): Promise<string> {
-  const agent = await Agent.create({ apiKey, name: "agent-readiness judge", model: { id: model }, local: { cwd } });
+  // No settings layer at all: a judge needs no rules, skills or hooks.
+  const agent = await Agent.create({ apiKey, name: "agent-readiness judge", model: { id: model }, local: { cwd, settingSources: [] } });
   try {
     const run = await agent.send(prompt);
     let text = "";

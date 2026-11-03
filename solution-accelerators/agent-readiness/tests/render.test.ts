@@ -166,7 +166,11 @@ describe("part 1 rules", () => {
   test("default headlines name the component and what works, and skip the share when there is one component", () => {
     const ready = reportFor(makeAudit({ components: [{ id: "app", share: 1, faults: "pass" }] })).executive;
     assert.equal(ready.noBlocker, true);
-    assert.equal(ready.headline, "Nothing blocks agents in app: from a clean checkout it installs, builds and passes its tests, and its tests caught the planted bugs. Start delegating work to agents.");
+    assert.equal(ready.headline, "Nothing blocks agents in app: from a clean checkout it installs and passes its tests, and its tests caught the planted bugs. Start delegating work to agents.", "no build step ran, so it doesn't say it builds");
+    const withBuild = makeAudit({ components: [{ id: "app", share: 1, faults: "pass" }] });
+    withBuild.contract.push({ id: "cmd-app-build", kind: "build", component: "app", cwd: "app", command: "npm run build", source: "package.json scripts.build", reason: "build", timeoutSec: 600 });
+    withBuild.evidence.push({ ...withBuild.evidence[0], id: "ev-build", condition: "clean.build", component: "app", kind: "build", contractId: "cmd-app-build", command: "npm run build", summary: "build passed" });
+    assert.match(reportFor(withBuild).executive.headline, /^Nothing blocks agents in app: from a clean checkout it installs, builds and passes its tests/);
     assert.equal(reportFor(makeAudit({ components: [{ id: "app", share: 1, test: "fail", faults: "not_run" }] })).executive.headline, "Agents can't pass the tests in app from a clean checkout.");
     assert.equal(reportFor(makeAudit(mixed)).executive.headline, "Agents can't pass the tests in api from a clean checkout because its tests need Postgres running, which the setup doesn't start, and 56% of recent changes land there. shared is already at Level 2.");
     const registry = makeAudit({ install: "fail", components: [{ id: "app", share: 1, test: "not_run", faults: "not_run" }] });

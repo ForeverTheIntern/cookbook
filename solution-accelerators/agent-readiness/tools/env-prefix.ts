@@ -4,7 +4,7 @@ import { join, relative } from "node:path";
 // Project rule: an environment variable the accelerator defines itself starts with SA_. Names other
 // systems define (the OS, CI, Cursor, package managers, the user's registry tokens) are external.
 const EXTERNAL = new Set([
-  "PATH", "HOME", "TMPDIR", "TMP", "TEMP", "PWD", "USER", "SHELL", "LANG", "TZ", "TERM", "CI", "NODE_ENV", "NODE_OPTIONS",
+  "PATH", "HOME", "USERPROFILE", "TMPDIR", "TMP", "TEMP", "PWD", "USER", "SHELL", "LANG", "TZ", "TERM", "CI", "NODE_ENV", "NODE_OPTIONS",
   "CURSOR_API_KEY", "GH_TOKEN", "GITHUB_TOKEN", "GITHUB_OUTPUT", "GITHUB_ENV", "GITHUB_STEP_SUMMARY",
   "NPM_TOKEN", "PIP_INDEX_URL", "DEBIAN_FRONTEND", "DOCKER_HOST",
   "HTTP_PROXY", "HTTPS_PROXY", "NO_PROXY", "NODE_EXTRA_CA_CERTS", "SSL_CERT_FILE", "SSL_CERT_DIR", "REQUESTS_CA_BUNDLE",

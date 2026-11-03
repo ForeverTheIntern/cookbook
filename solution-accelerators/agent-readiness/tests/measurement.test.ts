@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, test } from "node:test";
 import { HOLDOUT, cases as fixtureCases } from "../evals/cases/fixtures.ts";
@@ -10,6 +11,7 @@ import { scriptedArgs, scriptedAudit, tierOf } from "../evals/lib/controls.ts";
 import { expectedProblems } from "../evals/lib/expected.ts";
 import { DEFAULT_GATES, actionsGate, conditionsWithoutAction, expectedJsonGate, narrationGate } from "../evals/lib/grade.ts";
 import { JUDGE_CANDIDATES, chooseJudge, family, headlinePrompt, judgePromptDigest, pagePrompt, parseJudge } from "../evals/lib/judge.ts";
+import { ISOLATION, isolateHome, userAgentDirs } from "../evals/lib/isolation.ts";
 import { narrationCheck } from "../evals/lib/narration.ts";
 import { bootstrapMean, kOfN, wilson } from "../evals/lib/stats.ts";
 import type { CaseRun, EvalCase, Trajectory } from "../evals/lib/types.ts";
@@ -211,6 +213,18 @@ describe("judges", () => {
     assert.match(pagePrompt(sampled), /reads as if the whole repo was checked scores 0\.3 or lower/);
   });
 
+  test("the judge sees the setup that ran before the tests, and page lines the scripts computed are marked", () => {
+    const hidden = headlinePrompt(loadBase("hidden-service"));
+    assert.match(hidden, /Setup the audit ran before the tests: doctor pass \(`node --version && npm --version`\), install pass \(`npm ci`\); no start step, so the setup starts no service\./);
+    assert.match(hidden, /test failed: connection refused on port 5432 \(1 of 1 tests failed\) \(ran `npm run test`\)/);
+    assert.match(headlinePrompt(loadBase("healthy-node")), /Level 3 \(beyond what agents need to start\) for healthy-node needs: agent PRs meet the team's targets/);
+    const page = pagePrompt(loadBase("monorepo-mixed"));
+    for (const line of ["Heading (computed):", "Number (computed): Agent PRs that pass CI the first time", "Next level (computed):", "Coverage (computed):", "(computed) Blocks Level 1 for api"]) assert.ok(page.includes(line), line);
+    assert.match(page, /"Also name an owner" is that second part, not a second decision/);
+    assert.doesNotMatch(page, /Headline \(computed\)|Ask \(computed\)/, "the narrated lines are checked for truth");
+    assert.match(headlinePrompt(loadBase("slugify")), /toolchain isn't supported needs no rerun advice/);
+  });
+
   test("a judge reply without a numeric score is null, not zero", () => {
     assert.deepEqual(parseJudge('{"score": 0.7, "reasons": ["ok"]}'), { score: 0.7, reasons: ["ok"] });
     assert.equal(parseJudge("I can't grade this").score, null);
@@ -226,6 +240,31 @@ describe("judges", () => {
     assert.match(chooseJudge("claude-opus-5-5", null).why, /couldn't be read/);
     assert.match(chooseJudge("claude-opus-5-5", [], "claude-sonnet-5-5").why, /same family/);
     assert.ok(JUDGE_CANDIDATES.length >= 3);
+  });
+});
+
+describe("isolation from the machine owner's rules and skills", () => {
+  test("a worker gets an empty HOME with a git identity, and container runtimes keep their config", () => {
+    const real = mkdtempSync(join(tmpdir(), "real-home-"));
+    mkdirSync(join(real, ".docker"));
+    mkdirSync(join(real, ".cursor", "rules"), { recursive: true });
+    writeFileSync(join(real, ".cursor", "rules", "mine.mdc"), "always do x\n");
+    const env: NodeJS.ProcessEnv = { HOME: real };
+    const iso = isolateHome(env);
+    assert.equal(iso.id, ISOLATION);
+    assert.notEqual(env.HOME, real);
+    assert.deepEqual(iso.userDirs, []);
+    assert.deepEqual(userAgentDirs(real), [".cursor"], "the real home's rules are what's being kept out");
+    assert.match(readFileSync(join(env.HOME!, ".gitconfig"), "utf8"), /name = Contributor A/);
+    assert.equal(env.DOCKER_CONFIG, join(real, ".docker"));
+    assert.equal(env.XDG_DATA_HOME, join(real, ".local", "share"));
+  });
+
+  test("compare() refuses a run whose agents could load other rules and skills", () => {
+    const base = summarize(healthyBaseline().map((r) => ({ ...r, isolation: ISOLATION })), O);
+    assert.equal(base.instrument.isolation, ISOLATION);
+    const loose = summarize(healthyBaseline().map((r) => ({ ...r, isolation: "external: not controlled by the harness" })), O);
+    assert.match(compare(loose, base).regressions.join(), /agent isolation differs/);
   });
 });
 

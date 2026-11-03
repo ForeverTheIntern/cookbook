@@ -9,7 +9,7 @@ Rounds 1 to 9 below were measured with 3 repeats, in-sample, and with judges tha
 - **Repeats.** At least 5 per case. Run `npm run evals -- --hill-climb --repeats 5 ...`, which refuses fewer.
 - **Report the interval.** Every round gives its before and after with the pooled pass rate's Wilson interval and the judge's bootstrap interval, from the run summary. A change is kept only if the after interval doesn't overlap the before one on its target, and no gate drops by two runs or more in any case.
 - **Held-out fixtures.** `standalone-nested-mixed`, `vendored-skill` and `write-mode-lint` are left out of every round (`--hill-climb` drops them). Report them once per release with `--include-holdout`, separately.
-- **One instrument.** Before and after use the same driver model, judge model, driver and judge prompt. The baseline's `instrument` records these.
+- **One instrument.** Before and after use the same driver model, judge model, driver, judge prompt and agent isolation. The baseline's `instrument` records these. Agents run with only the repo's rules and skills (see the [evals README](README.md#isolation)); earlier rounds loaded the machine owner's global ones.
 - **Lift.** A round that changes narration or SKILL.md also reports the lift over `--arm scripted`. When the lift is zero, the narration change added nothing measurable.
 - **Not comparable.** The judge prompts changed (evidence, delimiters, the bare "Level N" rule), so judge scores from rounds 1 to 9 can't be compared with later ones. The [evals README](README.md#measurement) has the details.
 

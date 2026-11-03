@@ -11,7 +11,7 @@ import { buildProfile, uvWorkspaceMembers } from "../skill/agent-readiness/scrip
 import { budgetLeftSec, environmentLimit, newBudget, runContract } from "../skill/agent-readiness/scripts/lib/replay.ts";
 import type { Executor } from "../skill/agent-readiness/scripts/lib/replay.ts";
 import { loadRubric } from "../skill/agent-readiness/scripts/lib/rubric.ts";
-import { BUDGET_OUT, sampledScope } from "../skill/agent-readiness/scripts/lib/scope.ts";
+import { BUDGET_OUT, CUT_OFF, sampledScope } from "../skill/agent-readiness/scripts/lib/scope.ts";
 import { safetyScan } from "../skill/agent-readiness/scripts/lib/static.ts";
 import type { ContractCommand, ScanBound } from "../skill/agent-readiness/scripts/lib/types.ts";
 import { readiness } from "../tools/fixture.ts";
@@ -193,6 +193,12 @@ describe("time bounds on large repos", () => {
     audit.evidence.push({ id: "ev-099", at: audit.createdAt, checkId: "bootstrap.cold_replay", condition: "clean.build", component: "app", kind: "build", strength: "clean_replay", where: "container", result: "not_run", summary: "build not run: cut off by the time budget", blocked: BUDGET_OUT });
     assert.equal(sampledScope(audit), "the secret scan read 12,000 of 24,654 files before the scan's 3-minute bound; git history was read for 43 of 180 agent assets; the time budget cut off 1 command");
     assert.match(reportFor(audit).executive.coverage, /Sampled scope: the secret scan read 12,000 of 24,654 files/);
+    audit.profile!.scope.fileCap = 50000;
+    audit.evidence.push({ id: "ev-100", at: audit.createdAt, checkId: "verify.behavioral_oracle", condition: "faults", component: "app", strength: "clean_replay", where: "container", result: "pass", summary: "caught 4 of 4 planted faults (tried: boundary_flip); the time budget cut off 1 of 5" });
+    audit.instructions = [{ id: "ins-001", source: "AGENTS.md", line: 1, kind: "command", text: "npm test", category: "replay", staticResult: "pass", result: "not_run", reason: CUT_OFF }];
+    const all = sampledScope(audit)!;
+    assert.match(all, /^the scan listed only the first 50,000 files; .*planted faults in app stopped at the time budget; 1 documented command wasn't run before the time budget ran out$/);
+    for (const term of rubric.part1.bannedTerms) assert.ok(!all.toLowerCase().includes(term.toLowerCase()), `the sampled scope can't say "${term}" in part 1`);
   });
 
   test("scan --budget-scan samples a large tree, finishes, and says what it sampled", () => {

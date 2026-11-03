@@ -26,6 +26,6 @@ export function sampledScope(audit: Pick<Audit, "profile" | "evidence" | "instru
   if (commands) parts.push(`the time budget cut off ${commands} ${commands === 1 ? "command" : "commands"}`);
   if (faults.length) parts.push(`planted faults in ${faults.join(", ")} stopped at the time budget`);
   const instructions = audit.instructions.filter((i) => i.reason === CUT_OFF).length;
-  if (instructions) parts.push(`${instructions} documented ${instructions === 1 ? "command wasn't" : "commands weren't"} replayed in time`);
+  if (instructions) parts.push(`${instructions} documented ${instructions === 1 ? "command wasn't" : "commands weren't"} run before the time budget ran out`);
   return parts.length ? parts.join("; ") : null;
 }

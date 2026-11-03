@@ -10,6 +10,7 @@ class CoreTest(unittest.TestCase):
         self.assertEqual(discount(150), 140)
 
     def test_is_adult(self):
+        self.assertFalse(is_adult(0))
         self.assertFalse(is_adult(17))
         self.assertTrue(is_adult(18))
         self.assertTrue(is_adult(19))

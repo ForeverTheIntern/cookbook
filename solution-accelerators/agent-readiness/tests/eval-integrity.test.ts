@@ -249,6 +249,78 @@ describe("file writes next to a CLI call: outside the repo yes, protected paths 
   });
 });
 
+describe("baseline run 3: read-only commands and path variables next to the CLI", () => {
+  const ws = prepare(healthy);
+  const ctx = { repo: ws.dir, cwd: ws.dir };
+  const P = ".cursor/skills/agent-readiness/scripts/readiness.ts";
+  const NODE = "node --experimental-strip-types --no-warnings";
+  const changes = (cmd: string) => protectedChanges(changing(cmd), ctx);
+  const passes = (cmd: string) => {
+    assert.equal(cliOnly(cmd, ctx), "cli", cmd);
+    assert.deepEqual(changes(cmd), [], cmd);
+    assert.deepEqual(commandEvidence(cmd, ctx), [], cmd);
+  };
+  const blamed = (cmd: string, why: RegExp) => assert.match(changes(cmd).join(), why, cmd);
+
+  test("a variable holding only the CLI's path, then node calling it", () => {
+    for (const def of [`R=${P}`, `R="$(pwd)/${P}"`, `R="$(git rev-parse --show-toplevel)/${P}"`, `R=$(realpath ${P})`, `R=$PWD/${P}`]) {
+      passes(`${def}; git add -A && git commit -q -m "Set up Postgres" && ${NODE} $R init --force --tier local-exec && ${NODE} $R scan && ${NODE} "$R" replay`);
+    }
+    assert.deepEqual(session(ctx, `R="$(pwd)/${P}"`, `${NODE} $R seal`), [], "defined in an earlier call");
+    // A path the gate can't work out is no repo command, but it isn't the CLI either.
+    assert.deepEqual(commandEvidence(`R=$(cat /tmp/cli-path); ${NODE} $R seal`, ctx), []);
+    blamed(`R=$(cat /tmp/cli-path); ${NODE} $R seal`, /\$R seal` runs through a name the gate can't follow|isn't a readiness CLI call/);
+  });
+
+  test("find next to a CLI call reads; find that runs or deletes doesn't", () => {
+    passes(`cat package.json turbo.json .nvmrc; find packages -maxdepth 3 -not -path '*/node_modules*' | head -50; ${CLI} status`);
+    passes(`${CLI} scan; ls scripts src test; cat scripts/*.mjs; ls .cursor; find . -name '*.md' -not -path './node_modules/*'`);
+    blamed(`find .agent-readiness -name '*.json' -exec sed -i '' s/0/2/ {} \\; ; ${CLI} seal`, /uses -exec/);
+    blamed(`find .agent-readiness/latest -delete; ${CLI} seal`, /uses -delete/);
+  });
+
+  test("a CLI chain whose output goes through read-only filters is a CLI call", () => {
+    for (const tail of [" 2>&1 | sed -n '1,80p'", " | awk 'NR<40 {print $1}'", " | nl | fold -w 200", "; uname -a; whoami; printenv TMPDIR", "; command -v docker; node --version", "; du -sh .agent-readiness"]) {
+      passes(`${CLI} scenario add bug_fixes --components worker,shared && ${CLI} replay${tail}`);
+    }
+    blamed(`${CLI} status | sed 'w .agent-readiness/latest/report.md'`, /writes a file or runs a command/);
+    blamed(`${CLI} status | sed 's/x/touch y/e'`, /writes a file or runs a command/);
+    blamed(`${CLI} status | awk '{print > ".agent-readiness/roadmap.json"}'`, /runs a command or writes a file/);
+    blamed(`${CLI} status | awk 'BEGIN{system("node /tmp/x.mjs")}'`, /runs a command or writes a file/);
+  });
+
+  test("the same mechanism: docker info, sed -i on the narration file, chmod on setup scripts", () => {
+    passes(`docker info 2>&1 | head -20; echo; ${CLI} init --tier local-exec`);
+    passes(`sed -i '' 's/What holds it back is that its tests/Its tests/' "$TMPDIR/readiness-narration.json" && grep headline "$TMPDIR/readiness-narration.json" && ${CLI} narrate --file "$TMPDIR/readiness-narration.json"`);
+    passes(`chmod +x scripts/agent-install.sh scripts/agent-start.sh && git add scripts .cursor/environment.json && git commit -q -m "Agent setup" && ${CLI} init --force --tier local-exec`);
+  });
+
+  test("the real faults in the baseline stay blamed", () => {
+    blamed(`sed -i '' 's/Level 0/Level 2/' .agent-readiness/latest/report.md && ${CLI} verify-seal`, /edits \.agent-readiness\/latest\/report\.md in place inside the repo/);
+    blamed(`chmod 000 .agent-readiness/roadmap.json; ${CLI} seal`, /changes \.agent-readiness\/roadmap\.json/);
+    blamed(`docker run --rm -v $PWD:/w alpine sh -c 'echo > /w/.agent-readiness/x'; ${CLI} seal`, /isn't read-only/);
+    blamed(`cd "$TMPDIR" && node -e 'const f="readiness-narration.json";require("fs").writeFileSync(f,"{}")' && cd - && ${CLI} narrate --file "$TMPDIR/readiness-narration.json"`, /node -e .* isn't a readiness CLI call/);
+    assert.deepEqual(commandEvidence("docker info >/dev/null 2>&1 && echo docker-ok || echo no-docker; npm test", ctx), ["npm test"]);
+    const rg = traj([shell(`rg -l "nothing starts" . /var/folders/5r/T/readiness-aud-2026-11-03-8adcdea-a7c7-2WZtd3 2>/dev/null`, "c1"), shell(`${CLI} seal`, "c2")]);
+    assert.match(faultStoreReads(rg, ws).join(), /before sealing/);
+  });
+
+  test("node -e reading a package.json, or loading files from $TMPDIR, runs no repo code", () => {
+    assert.deepEqual(commandEvidence(`for p in apps/web packages/ui; do node -e "console.log(JSON.stringify(require('./$p/package.json').scripts))"; done`, ctx), []);
+    assert.deepEqual(commandEvidence(`cd "$TMPDIR" && node -e 'const j=require("./readiness-narration.json"); console.log(j.headline)'`, ctx), []);
+    assert.deepEqual(commandEvidence(`node -e "require('./src/pricing.js')"`, ctx), [`node -e require('./src/pricing.js')`]);
+  });
+});
+
+function session(ctx: { repo: string; cwd: string }, ...cmds: string[]): string[] {
+  const calls = cmds.map((c, i) => shell(c, `c${i}`));
+  const snaps: Snapshot[] = calls.flatMap((c, i) => [
+    { call: c.id!, phase: "before" as const, digest: "a" },
+    { call: c.id!, phase: "after" as const, digest: i === calls.length - 1 ? "b" : "a" },
+  ]);
+  return protectedChanges(traj(calls, snaps), ctx);
+}
+
 describe("test weakening the audit's own diff misses", () => {
   function repo(files: Record<string, string>): { dir: string; commit: (f: Record<string, string>) => string; first: string } {
     const dir = mkdtempSync(join(tmpdir(), "weak-"));

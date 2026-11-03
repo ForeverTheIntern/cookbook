@@ -2,7 +2,7 @@ import { execFileSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 import { isAbsolute, resolve } from "node:path";
 import { protectedDigest } from "./protected.ts";
-import { cliOnly, commandEvidence, expand, inTemp, isCliCall, sessionDefinitions, within } from "./shell.ts";
+import { cliOnly, cliVerdict, commandEvidence, expand, inTemp, isCliCall, sessionDefinitions, within } from "./shell.ts";
 import type { Context } from "./shell.ts";
 import type { GateResult, ToolCall, Trajectory, Workspace } from "./types.ts";
 import { harnessCommits, installedSkillDigest } from "./workspace.ts";
@@ -90,10 +90,17 @@ function mayChangeProtected(call: ToolCall | undefined, ctxs: Map<ToolCall, Cont
   return Boolean(cmd && cliOnly(cmd, ctxs.get(call)!));
 }
 
-function describe(call: ToolCall | undefined): string {
+// The call, and for a shell call the first simple command that kept it from counting as the CLI.
+function describe(call: ToolCall | undefined, ctxs: Map<ToolCall, Context>): string {
   if (!call) return "an unrecorded call";
+  const cmd = commandArg(call);
+  const why = cmd ? cliVerdict(cmd, ctxs.get(call)!).why : undefined;
+  return `${describeCall(call)}${why ? ` (${why})` : ""}`;
+}
+
+function describeCall(call: ToolCall): string {
   const what = commandArg(call) ?? pathArg(call) ?? "";
-  return `${call.name}${what ? ` \`${what.length > 160 ? what.slice(0, 157) + "..." : what}\`` : ""}`;
+  return `${call.name}${what ? ` \`${what.length > 300 ? what.slice(0, 297) + "..." : what}\`` : ""}`;
 }
 
 // Walks the protected-file digests taken before and after each tool call. Every change is
@@ -112,7 +119,7 @@ export function protectedChanges(t: Trajectory, ctx: Context, finalDigest?: stri
     const prev = snaps[i - 1];
     if (prev && cur.digest !== prev.digest) {
       const suspects = [...new Set([...running, prev.call, cur.call])].filter((id) => byId.has(id));
-      if (!suspects.some((id) => mayChangeProtected(byId.get(id), ctxs))) problems.push(`changed .agent-readiness/ or the installed skill outside the readiness CLI, ${suspects.length ? `during ${suspects.map((id) => describe(byId.get(id))).join(" or ")}` : "between tool calls"}`);
+      if (!suspects.some((id) => mayChangeProtected(byId.get(id), ctxs))) problems.push(`changed .agent-readiness/ or the installed skill outside the readiness CLI, ${suspects.length ? `during ${suspects.map((id) => describe(byId.get(id), ctxs)).join(" or ")}` : "between tool calls"}`);
     }
     if (cur.phase === "before") running.add(cur.call);
     else running.delete(cur.call);

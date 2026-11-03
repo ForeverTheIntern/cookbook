@@ -85,6 +85,8 @@ export function segments(cmd: string): Segment[] {
     sub(inner);
     const t = inner.trim();
     if (/^mktemp(\s|$)/.test(t)) return `$(mktemp:${Buffer.from(t).toString("base64url")})`;
+    const abs = t.match(/^(?:realpath|readlink -f)\s+(\S+)$/);
+    if (abs) return `$(abs:${Buffer.from(abs[1].replace(/^(['"])(.*)\1$/, "$2")).toString("base64url")})`;
     return t === "pwd" ? "$(pwd)" : t === "git rev-parse --show-toplevel" ? "$(toplevel)" : "$(...)";
   };
   for (let i = 0; i < cmd.length; i++) {
@@ -321,6 +323,18 @@ function setDefinition(map: Map<string, string | null>, name: string, value: str
   else if (map.get(name) !== value) map.set(name, null);
 }
 
+// `$(pwd)`, `$(git rev-parse --show-toplevel)` and `$(realpath X)` in a value, which agents use to
+// build the CLI's path, as the paths they print.
+function pathMarkers(value: string, repo: string, cwd: string): string {
+  return value
+    .replace(/\$\(pwd\)/g, cwd)
+    .replace(/\$\(toplevel\)/g, repo)
+    .replace(/\$\(abs:([\w-]*)\)/g, (m, b64: string) => {
+      const p = Buffer.from(b64, "base64url").toString();
+      return /\$|`/.test(p) ? m : resolve(cwd, p);
+    });
+}
+
 // A variable's value where the command runs: a session definition, or for the few the agent's
 // shell inherits from the eval worker, the worker's own value. undefined when it's unknown.
 function lookup(name: string, defs: Definitions, cwd: string): string | null | undefined {
@@ -459,7 +473,8 @@ function walk(segs: Segment[], bodies: string[], ctx: Context, defs: Definitions
     if (decl.length && decl.every((x) => ASSIGN.test(x))) {
       for (const x of decl) {
         const [, name, value] = x.match(ASSIGN)!;
-        setDefinition(defs.vars, name, /\$\(|`|\$\{?[A-Za-z_]/.test(value) ? null : value, certain);
+        const v = pathMarkers(value, ctx.repo, cwd);
+        setDefinition(defs.vars, name, /\$\(|`|\$\{?[A-Za-z_]/.test(v) ? null : v, certain);
       }
       continue;
     }
@@ -552,6 +567,14 @@ function firstArg(w: string[], from = 1): string | undefined {
   return w.slice(from).find((x) => !x.startsWith("-"));
 }
 
+// Does `node -e` code load a module from the repo? Relative specifiers resolve from the directory
+// node runs in, so they count only when that is inside the repo, and a .json file is data, not code.
+function evalLoadsRepoCode(code: string, ctx: Context): boolean {
+  if (code.includes(ctx.repo)) return true;
+  const specs = [...code.matchAll(/(?:require|import)\s*\(\s*['"`](\.{0,2}\/[^'"`]*)|from\s+['"`](\.{1,2}\/[^'"`]*)/g)].map((m) => m[1] ?? m[2]);
+  return specs.some((spec) => !/\.json$/.test(spec) && within(ctx.repo, resolve(ctx.cwd, spec)));
+}
+
 // Why a simple command runs the repo's code (install, build, tests or a repo script) outside the
 // readiness scripts, or null when it doesn't.
 export function repoEvidence(words: string[], ctx: Context): string | null {
@@ -563,17 +586,16 @@ export function repoEvidence(words: string[], ctx: Context): string | null {
     for (let i = 1; i < w.length; i++) {
       const a = w[i];
       if (a === "--test" || a.startsWith("--test=")) return line;
-      if (["-e", "--eval", "-p", "--print"].includes(a)) {
-        const code = w[i + 1] ?? "";
-        return /(require|import)\s*\(\s*['"`]\.{0,2}\/|from\s+['"`]\.{1,2}\//.test(code) || code.includes(ctx.repo) ? line : null;
-      }
+      if (["-e", "--eval", "-p", "--print"].includes(a)) return evalLoadsRepoCode(w[i + 1] ?? "", ctx) ? line : null;
       if (["--import", "--require", "-r", "--loader", "--experimental-loader"].includes(a)) {
         if (w[i + 1] && inRepo(ctx, w[i + 1])) return line;
         i++;
         continue;
       }
       if (a.startsWith("-")) continue;
-      return inRepo(ctx, a) ? line : null;
+      // A script path that is still a variable here is unknown, not a repo file; if the call
+      // changed the records, the protected-file rule blames it anyway.
+      return !/^\$/.test(a) && inRepo(ctx, a) ? line : null;
     }
     return null;
   }
@@ -631,48 +653,134 @@ export function commandEvidence(cmd: string, ctx: Context): string[] {
   return out;
 }
 
-const READ_ONLY = new Set(["cd", "pushd", "popd", "source", ".", "export", "set", "unset", "echo", "printf", "cat", "head", "tail", "less", "more", "ls", "pwd", "true", "false", "sleep", "wc", "grep", "egrep", "rg", "jq", "sort", "uniq", "test", "[", "which", "type", "date", "clear", "column", "cut", "tr", "basename", "dirname", "realpath", "readlink", "stat", "file", "diff"]);
+const READ_ONLY = new Set(["cd", "pushd", "popd", "source", ".", "export", "set", "unset", "echo", "printf", "cat", "head", "tail", "less", "more", "ls", "pwd", "true", "false", "sleep", "wc", "grep", "egrep", "rg", "jq", "sort", "uniq", "test", "[", "which", "type", "date", "clear", "column", "cut", "tr", "basename", "dirname", "realpath", "readlink", "stat", "file", "diff", "nl", "fold", "od", "hexdump", "printenv", "whoami", "uname", "id", "hostname", "du", "df", "tree", "cmp", "comm", "paste", "expand", "rev", "seq", "md5", "md5sum", "shasum", "sha256sum"]);
+const DOCKER_READS = new Set(["info", "version", "ps", "images", "inspect", "context", "--version", "-v"]);
+const VERSION_QUERY = /^(--version|-v|-V|version)$/;
+const FIND_ACTIONS = /^-(exec|execdir|ok|okdir|delete|fprint|fprint0|fprintf|fls)$/;
+// sed's w and W commands and the s///w flag write a file; e and s///e run a command.
+const SED_ADDR = String.raw`(?:\d+|\$|\/(?:[^\/\\]|\\.)*\/)`;
+const SED_WRITES = new RegExp(String.raw`(^|[;{}\n])\s*(?:${SED_ADDR}(?:\s*,\s*${SED_ADDR})?)?\s*!?\s*[wWe](\s|$)|s(?<d>[^\w\s\\])(?:(?!\k<d>).)*\k<d>(?:(?!\k<d>).)*\k<d>[a-zA-Z0-9]*[we]`);
+// awk can run commands (system, pipes, getline from a command) and print to files.
+const AWK_EFFECTS = /\bsystem\s*\(|\bprintf?\b[^;}]*(>|\|)|\|\s*getline|\|&|\bclose\s*\(/;
+
+function isProtectedPath(repo: string, target: string, c: { cwd: string; links: Map<string, string> }): boolean {
+  if (/\$|`/.test(target)) return true;
+  const full = real(followLinks(at({ repo, cwd: c.cwd }, target), c.links));
+  if (!within(repo, full)) return hardLinkedToProtected(repo, full);
+  return /^(\.agent-readiness|\.cursor\/skills\/agent-readiness\/(scripts|rubric|schema|templates))(\/|$)/.test(relative(real(repo), full));
+}
+
+// Why a simple command next to a CLI call could change files, or null when it only reads. File
+// writes it makes must land outside the repo (writesOutsideRepo); a mode change must not touch a
+// protected path, though the digests hash contents, not modes.
+function sideEffect(c: Expanded, repo: string): string | null {
+  const w = program(c.words);
+  const p = basename(w[0] ?? "");
+  const args = w.slice(1);
+  const line = w.join(" ");
+  if (c.words[0] === "command" && /^-[vV]$/.test(c.words[1] ?? "")) return null;
+  if (READ_ONLY.has(p)) return null;
+  if (args.length === 1 && VERSION_QUERY.test(args[0])) return null;
+  if (p === "tee") {
+    const bad = args.filter((x) => !x.startsWith("-")).find((f) => !writesOutsideRepo(f, c, repo));
+    return bad ? `\`${line}\` writes ${bad} inside the repo` : null;
+  }
+  if (p === "mktemp") {
+    const made = mktempPath(w, { ...emptyDefinitions(), vars: new Map([["TMPDIR", c.tmpdir]]) }, c.cwd);
+    return made && writesOutsideRepo(made, c, repo) ? null : `\`${line}\` may create a file inside the repo`;
+  }
+  if (p === "find") {
+    const action = args.find((a) => FIND_ACTIONS.test(a));
+    return action ? `\`${line}\` uses ${action}` : null;
+  }
+  if (p === "sed" || p === "gsed") {
+    const scripts: string[] = [];
+    const rest: string[] = [];
+    let inPlace = false;
+    for (let i = 0; i < args.length; i++) {
+      const a = args[i];
+      if (a === "-e" || a === "--expression") scripts.push(args[++i] ?? "");
+      else if (a === "-f" || a === "--file") return `\`${line}\` reads its script from a file`;
+      else if (a === "-i" || a === "--in-place") {
+        inPlace = true;
+        // BSD sed takes the backup suffix as its own argument, often '' on macOS.
+        if (args[i + 1] === "" || /^\.\w+$/.test(args[i + 1] ?? "")) i++;
+      } else if (/^-[a-zA-Z]*i/.test(a) || a.startsWith("--in-place=")) inPlace = true;
+      else if (!a.startsWith("-")) rest.push(a);
+    }
+    if (!scripts.length && rest.length) scripts.push(rest.shift()!);
+    if (scripts.some((x) => SED_WRITES.test(x))) return `\`${line}\` writes a file or runs a command from its script`;
+    const bad = inPlace ? (rest.length ? rest.find((f) => !writesOutsideRepo(f, c, repo)) : "standard input") : undefined;
+    return bad ? `\`${line}\` edits ${bad} in place inside the repo` : null;
+  }
+  if (["awk", "gawk", "mawk", "nawk"].includes(p)) {
+    const progs: string[] = [];
+    for (let i = 0; i < args.length; i++) {
+      const a = args[i];
+      if (a === "-f" || a === "-i" || a.startsWith("--include") || a === "--file") return `\`${line}\` loads an awk program from a file`;
+      if (a === "-F" || a === "-v") i++;
+      else if (!a.startsWith("-") && !progs.length) progs.push(a);
+    }
+    return progs.some((x) => AWK_EFFECTS.test(x)) ? `\`${line}\` runs a command or writes a file` : null;
+  }
+  if (p === "chmod") {
+    const targets = args.filter((x) => !x.startsWith("-")).slice(1);
+    const bad = targets.find((f) => isProtectedPath(repo, f, c));
+    return bad ? `\`${line}\` changes ${bad}` : null;
+  }
+  if (p === "docker" || p === "podman") {
+    const sub = args.find((a) => !a.startsWith("-")) ?? (args.includes("--version") ? "--version" : undefined);
+    return !sub || DOCKER_READS.has(sub) ? null : `\`${line}\` isn't read-only`;
+  }
+  return `\`${line}\` isn't a readiness CLI call or a read-only command`;
+}
 
 // The substitutions a wrapper may use to build the CLI's path.
 const PATH_LOOKUP = /^(pwd|git rev-parse --show-toplevel)$/;
 
+export interface CliVerdict {
+  kind: "cli" | "git" | null;
+  // When kind is null: the first simple command that kept the call from counting.
+  why?: string;
+}
+
 // A call the protected-file rule lets change .agent-readiness/: one that runs the readiness CLI and,
-// besides it, only read-only commands, whose file writes (redirects, `tee`, `mktemp`) all land
-// outside the repo (see writesOutsideRepo). That covers SKILL.md's narration step, a heredoc into
-// $TMPDIR followed by `narrate --file`. The CLI may be called through a shell function or variable,
-// as long as the function's body does nothing but `cd` and call the CLI. A call made only of git
-// commands is also let through; what git can restore there, the seal and the record cross-check catch.
-export function cliOnly(cmd: string, ctx: Context): "cli" | "git" | null {
+// besides it, only commands that read (see sideEffect), whose file writes (redirects, `tee`,
+// `mktemp`, `sed -i`) all land outside the repo (see writesOutsideRepo). That covers SKILL.md's
+// narration step, a heredoc into $TMPDIR followed by `narrate --file`. The CLI may be called
+// through a shell function or variable, as long as the function's body does nothing but `cd` and
+// call the CLI. A call made only of git commands is also let through; what git can restore there,
+// the seal and the record cross-check catch.
+export function cliVerdict(cmd: string, ctx: Context): CliVerdict {
   const calls = expand(cmd, ctx).calls;
   let cli = false;
   let gitOnly = calls.length > 0;
   for (const c of calls) {
-    if (!c.known) return null;
+    const line = c.words.join(" ");
+    if (!c.known) return { kind: null, why: `\`${line}\` runs through a name the gate can't follow` };
     const w = program(c.words);
     const devOnly = c.writes.every((f) => /^\/dev\/(null|stdout|stderr)$/.test(f));
-    const outside = c.writes.every((f) => writesOutsideRepo(f, c, ctx.repo));
+    const inside = c.writes.find((f) => !writesOutsideRepo(f, c, ctx.repo));
     if (isCliCall(c.words, { ...ctx, cwd: c.cwd })) {
-      if (c.via ? !devOnly : !outside) return null;
+      if (c.via ? !devOnly : inside) return { kind: null, why: `\`${line}\` writes ${inside ?? "a file"} from ${c.via ?? "the shell"}` };
       cli = true;
       gitOnly = false;
       continue;
     }
     if (c.via) {
       if ((w[0] === "cd" || w[0] === "pushd" || PATH_LOOKUP.test(w.join(" "))) && devOnly) continue;
-      return null;
+      return { kind: null, why: `${c.via} runs \`${line}\` besides the CLI` };
     }
     if (w.length && basename(w[0]) === "git" && devOnly) continue;
     gitOnly = false;
-    if (!w.length && outside) continue;
-    if (!outside) return null;
-    if (w[0] === "tee" && w.slice(1).filter((x) => !x.startsWith("-")).every((f) => writesOutsideRepo(f, c, ctx.repo))) continue;
-    if (w[0] === "mktemp") {
-      const made = mktempPath(w, { ...emptyDefinitions(), vars: new Map(c.tmpdir === null ? [["TMPDIR", null]] : [["TMPDIR", c.tmpdir]]) }, c.cwd);
-      if (made && writesOutsideRepo(made, c, ctx.repo)) continue;
-      return null;
-    }
-    if (w.length && READ_ONLY.has(basename(w[0]))) continue;
-    return null;
+    if (inside) return { kind: null, why: `\`${line}\` writes ${inside} inside the repo` };
+    if (!w.length) continue;
+    const effect = sideEffect(c, ctx.repo);
+    if (effect) return { kind: null, why: effect };
   }
-  return cli ? "cli" : gitOnly ? "git" : null;
+  return cli ? { kind: "cli" } : gitOnly ? { kind: "git" } : { kind: null, why: "no readiness CLI call" };
+}
+
+export function cliOnly(cmd: string, ctx: Context): "cli" | "git" | null {
+  return cliVerdict(cmd, ctx).kind;
 }

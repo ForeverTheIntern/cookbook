@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, test } from "node:test";
@@ -8,7 +8,8 @@ import { diagnose } from "../skill/agent-readiness/scripts/lib/diagnose.ts";
 import { buildProfile, discoverLayout } from "../skill/agent-readiness/scripts/lib/profile.ts";
 import { environmentLimit } from "../skill/agent-readiness/scripts/lib/replay.ts";
 import { loadRubric } from "../skill/agent-readiness/scripts/lib/rubric.ts";
-import { notShipped, safetyScan } from "../skill/agent-readiness/scripts/lib/static.ts";
+import { inventory } from "../skill/agent-readiness/scripts/lib/assets.ts";
+import { instructionItems, notShipped, prodCredential, safetyScan } from "../skill/agent-readiness/scripts/lib/static.ts";
 import type { ContractCommand, Diagnosis } from "../skill/agent-readiness/scripts/lib/types.ts";
 import { makeAudit, reportFor } from "./helpers.ts";
 
@@ -134,7 +135,7 @@ describe("stacks the audit doesn't support yet", () => {
     const files = { "package.json": "{\"name\":\"saleor\",\"scripts\":{\"release\":\"release-it\"}}", "package-lock.json": "{}", "pyproject.toml": "[project]\nname = \"saleor\"\n", "saleor/core.py": "", "tests/test_core.py": "" };
     const comps = layout(tree(files), files).components;
     assert.deepEqual(comps.map((c) => [c.id, c.path, c.assessed, c.notAssessedReason]), [
-      ["saleor", ".", false, "it has no tests of its own, and the Python app next to it isn't supported yet"],
+      ["saleor", ".", false, "it goes with the Python app at the root, which isn't supported yet, so it isn't assessed on its own"],
       ["saleor-python", ".", false, "a Python app next to a root package.json isn't supported yet: the audit runs one image per repo, and it picks Node's"],
     ]);
     const withTests = { ...files, "package.json": "{\"name\":\"web\",\"scripts\":{\"test\":\"node --test\"}}" };
@@ -190,5 +191,68 @@ describe("part 1 says what isn't assessed, in grammatical sentences", () => {
     assert.equal(r.maturity.level, 2);
     assert.equal(r.maturity.confidence.level, "medium");
     assert.equal(r.executive.unassessed?.text, "40% of recent changes aren't assessed: inventory (40%), because Go isn't supported yet");
+  });
+});
+
+// Shapes the MacBook real-repo gate (G3) found in Spree, Medusa, Saleor and Laravel.
+describe("real-repo gate fixes", () => {
+  const pkgs = [{ name: "@spree/sdk-core", path: "packages/sdk-core" }, { name: "@spree/admin-sdk", path: "packages/admin-sdk" }];
+  const sdkBuild = cmd("build", "packages/admin-sdk");
+
+  test("Spree: esbuild and Vitest failing on an unbuilt sibling are blocked, not repo failures", () => {
+    const esbuild = "CJS Build start\n\u2718 [ERROR] Could not resolve \"@spree/sdk-core\"\n\n    src/index.ts:21:7:\n      21 \u2502 } from '@spree/sdk-core'\n\nCJS Build failed\n[ELIFECYCLE] Command failed with exit code 1.";
+    const vitest = "\x1b[31m\x1b[1mError\x1b[22m: Failed to resolve entry for package \"@spree/sdk-core\". The package may have incorrect main/module/exports specified in its package.json.\x1b[39m\n[ELIFECYCLE] Test failed. See above for more details.";
+    for (const [out, kind] of [[esbuild, "build"], [vitest, "test"]] as const) {
+      const d = diagnose(out, false, kind);
+      assert.deepEqual(d, { cause: "missing_module", detail: "module @spree/sdk-core is missing" }, kind);
+      assert.equal(environmentLimit(container, kind === "build" ? sdkBuild : cmd("test", "packages/admin-sdk"), d, pkgs), "@spree/sdk-core is a sibling package the audit didn't build first, which isn't supported yet");
+    }
+    assert.equal(diagnose("Module not found: Error: Can't resolve '@acme/ui' in '/work/apps/web/src'", false, "build").detail, "module @acme/ui is missing");
+    assert.equal(diagnose('[vite]: Rollup failed to resolve import "@acme/ui" from "src/main.ts".', false, "build").detail, "module @acme/ui is missing");
+    assert.equal(environmentLimit(container, sdkBuild, diagnose('\u2718 [ERROR] Could not resolve "left-pad"', false, "build"), pkgs), undefined, "a third-party package that can't be resolved is still the repo's");
+  });
+
+  test("Spree: a vendored skill's paths aren't checked, and a symlinked skill folder is one asset at its tracked path", () => {
+    const dir = tree({
+      "package.json": "{\"name\":\"spree\",\"scripts\":{\"test\":\"node --test\"}}",
+      "skills-lock.json": JSON.stringify({ version: 1, skills: { "improve-animations": { source: "emilkowalski/skill" } } }),
+      ".agents/skills/improve-animations/SKILL.md": "---\nname: improve-animations\ndescription: x\n---\n\nWrite the plan to `plans/README.md`, then run `npm run plan:check`.\n",
+      ".cursor/skills/release/SKILL.md": "---\nname: release\ndescription: x\n---\n\nSee `docs/RELEASING.md`.\n",
+    });
+    mkdirSync(join(dir, ".claude/skills"), { recursive: true });
+    symlinkSync("../../.agents/skills/improve-animations", join(dir, ".claude/skills/improve-animations"));
+    const profile = buildProfile(dir, dir, rubric);
+    const items = instructionItems(dir, profile);
+    assert.deepEqual(items.filter((i) => i.source.includes("improve-animations")).map((i) => [i.source, i.kind, i.category]), [[".agents/skills/improve-animations/SKILL.md", "command", "skipped"]], "checked once, at the tracked path, and its path isn't checked");
+    assert.deepEqual(items.filter((i) => i.source.startsWith(".cursor")).map((i) => [i.kind, i.result]), [["path", "fail"]], "a first-party skill's paths are still checked");
+    const skills = inventory(dir, dir, items).filter((a) => a.kind === "skill").map((a) => a.path);
+    assert.deepEqual(skills, [".agents/skills/improve-animations/SKILL.md", ".cursor/skills/release/SKILL.md"]);
+  });
+
+  test("Medusa: integration-test helpers and specs don't block, and non-credential environment reads aren't flagged", () => {
+    const assign = 'const customer = { email: "x@example.com", password: "Zq8mN2pL7vX4kR9t" }\n';
+    const dir = tree({
+      "package.json": "{\"name\":\"medusa\"}",
+      "integration-tests/modules/helpers/create-authenticated-customer.ts": assign,
+      "packages/core/utils/src/common/__tests__/load-env.spec.ts": "process.env.MEDUSA_PRODUCTION_VERSION = '2'\nconst db = process.env.PRODUCT_DATABASE_URL\n",
+      "packages/api/test-utils/seed.ts": assign,
+      "packages/payments/src/__tests__/live.spec.ts": "const key = process.env.STRIPE_LIVE_KEY\nconst url = process.env['PROD_DATABASE_URL']\n",
+    });
+    const findings = safetyScan(dir, buildProfile(dir, dir, rubric));
+    assert.deepEqual(findings.filter((f) => f.blocking).map((f) => [f.file, f.detail]), [
+      ["packages/payments/src/__tests__/live.spec.ts", "tests read STRIPE_LIVE_KEY"],
+      ["packages/payments/src/__tests__/live.spec.ts", "tests read PROD_DATABASE_URL"],
+    ]);
+    assert.equal(findings.filter((f) => f.kind === "secret" && !f.blocking).length, 2, "the helpers' passwords are listed for review");
+    for (const name of ["PRODUCT_DATABASE_URL", "MEDUSA_PRODUCTION_VERSION", "LIVE_RELOAD", "PRODUCTION_MODE"]) assert.equal(prodCredential(name), false, name);
+    for (const name of ["PAYMENTS_LIVE_KEY", "PROD_DB_PASSWORD", "SENTRY_PROD_DSN", "PRODUCTION_API_TOKEN"]) assert.equal(prodCredential(name), true, name);
+    for (const f of ["integration-tests/a.ts", "packages/x/e2e-tests/b.ts", "src/test-utils/c.ts", "src/testing/d.ts", "lib/thing_spec.rb"]) assert.equal(notShipped(f), "test", f);
+  });
+
+  test("Saleor and Laravel: the root package says it wasn't assessed and why, never that it has no tests", () => {
+    const files = { "package.json": "{\"scripts\":{\"build\":\"vite build\"}}", "composer.json": "{\"name\":\"laravel/laravel\"}", "app/User.php": "" };
+    const [root] = layout(tree(files), files).components;
+    assert.equal(root.notAssessedReason, "it goes with the PHP app at the root, which isn't supported yet, so it isn't assessed on its own");
+    assert.doesNotMatch(root.notAssessedReason!, /no tests/);
   });
 });

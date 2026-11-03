@@ -4,7 +4,7 @@ import { checkOnly } from "./contract.ts";
 import { readPackageJson } from "./profile.ts";
 import { scanText } from "./redact.ts";
 import type { InstructionItem, Profile, SafetyFinding, ScanBound } from "./types.ts";
-import { MAX_FILES, exists, listFiles, readText, sha256 } from "./util.ts";
+import { MAX_FILES, exists, inTreePath, listFiles, readText, sha256 } from "./util.ts";
 
 const COMMAND_START = /^(npm|pnpm|yarn|npx|corepack|make|python3?|pip3?|pytest|uv|poetry|node|bun|cargo|go|tsc|eslint|ruff|\.\/[\w./-]+)(\s|$)/;
 const SHELL_LANGS = new Set(["", "sh", "bash", "shell", "console", "zsh", "terminal"]);
@@ -15,7 +15,14 @@ const LONG_RUNNING = /\b(run )?(dev|start|serve|watch)(\s|$)|--watch\b|compose u
 const NETWORK_PIPED = /\b(curl|wget)\b[^|;&]*\|\s*(sudo\s+)?(ba|z)?sh\b/;
 const DESTRUCTIVE = /rm -rf\s+(\/|~|\*|\$HOME)|\bdrop (database|table)\b|db:(reset|drop)|migrate(:| )reset|\btruncate\b|prisma migrate reset/i;
 const DEPLOY = /\b(npm|pnpm|yarn) publish\b|\bdeploy\b|vercel --prod|firebase deploy|terraform (apply|destroy)|kubectl (apply|delete)|helm (upgrade|install)|gh release create|fly deploy|seed-prod/i;
-const PROD_ENV = /(?:process\.env\.|process\.env\[['"]|os\.environ(?:\.get)?\(?\[?['"]|getenv\(['"])([A-Z0-9_]*(?:PROD|PRODUCTION|LIVE)[A-Z0-9_]*)/;
+const ENV_READ = /(?:process\.env\.|process\.env\[['"]|os\.environ(?:\.get)?\(?\[?['"]|getenv\(['"]|ENV\.fetch\(['"]|ENV\[['"])([A-Z][A-Z0-9_]*)/g;
+
+// A production credential: PROD, PRODUCTION or LIVE as a word of the name, next to a word that
+// holds a secret or a connection string. PRODUCT_DATABASE_URL and MEDUSA_PRODUCTION_VERSION aren't.
+export function prodCredential(name: string): boolean {
+  const words = name.split("_");
+  return words.some((w) => /^(PROD|PRODUCTION|LIVE)$/.test(w)) && words.some((w) => /^(KEY|SECRET|TOKEN|PASSWORD|PASSWD|PASS|PWD|CREDENTIALS?|AUTH|DSN|URL|URI|CONNECTION)$/.test(w));
+}
 
 export function isRisky(cmd: string): boolean {
   return NETWORK_PIPED.test(cmd) || DESTRUCTIVE.test(cmd) || DEPLOY.test(cmd);
@@ -223,13 +230,19 @@ export function instructionItems(tree: string, profile: Profile): InstructionIte
   let basenames: Set<string> | null = null;
   const vendored = vendoredSkills(tree, profile.instructionFiles);
   const seen = new Map<string, string>();
+  const files = new Set(profile.instructionFiles);
   for (const file of profile.instructionFiles) {
+    // Reached through a symlink to a file the scan also lists: check it once, at its tracked path.
+    const real = inTreePath(tree, file);
+    if (real && real !== file && files.has(real)) continue;
     if (duplicateOf(tree, file, seen)) continue;
     const fileDir = dirname(file) === "" ? "." : dirname(file);
     const text = readText(join(tree, file));
     const lines = text.split("\n");
     const thirdParty = vendored.get(file);
     for (const e of extractFromMarkdown(text)) {
+      // A vendored skill's paths belong to its own workflow, such as the plans it writes, not this repo.
+      if (e.kind === "path" && thirdParty) continue;
       // A path the docs say comes later isn't drift: it can't mislead an agent into using it now.
       if (e.kind === "path" && FUTURE.test(lines[e.line - 1] ?? "")) {
         const rel = e.text.replace(/\/$/, "");
@@ -298,7 +311,7 @@ function isText(path: string): boolean {
 // Tests, fixtures, docs, examples and generated code are full of dummy keys, so a hit there is
 // listed for review instead of holding every component below Level 2.
 const NOT_SHIPPED: { re: RegExp; where: string }[] = [
-  { re: /(^|\/)(tests?|__tests__|specs?|e2e|fixtures?|__fixtures__|testdata|__mocks__|mocks?)\/|\.(test|spec)\.[\w]+$|_test\.\w+$|(^|\/)test_[^/]+$|(^|\/)conftest\.py$/, where: "test" },
+  { re: /(^|\/)(tests?|__tests__|specs?|e2e|fixtures?|__fixtures__|testdata|__mocks__|mocks?|(integration|unit|functional|acceptance|api|e2e)[-_]tests?|tests?[-_](utils?|helpers?|support|setup)|testing)\/|\.(test|spec)\.[\w]+$|_(test|spec)\.\w+$|(^|\/)test_[^/]+$|(^|\/)conftest\.py$/, where: "test" },
   { re: /(^|\/)(generated|__generated__|dist|build|coverage)\/|\.generated\.|\.min\.js$/, where: "generated" },
   { re: /(^|\/)(docs?|examples?|samples?)\/|\.(md|mdx|rst|adoc)$|(^|\/)\.env\.(example|sample|template)$|\.example$/, where: "docs or example" },
 ];
@@ -328,11 +341,11 @@ export function safetyScan(tree: string, profile: Profile, bound?: ScanBound): S
     const text = readText(full);
     const where = notShipped(file);
     for (const hit of scanText(text)) add({ kind: "secret", file, line: hit.line, detail: where ? `${hit.type} in a ${where} file, listed for review` : hit.type, blocking: !where });
-    if (/(\.test\.|\.spec\.|(^|\/)tests?\/|(^|\/)test_)/.test(file)) {
+    if (where === "test") {
       const lines = text.split("\n");
       lines.forEach((l, i) => {
-        const m = l.match(PROD_ENV);
-        if (m) add({ kind: "credential_needed", file, line: i + 1, detail: `tests read ${m[1]}`, blocking: true });
+        const name = [...l.matchAll(ENV_READ)].map((m) => m[1]).find(prodCredential);
+        if (name) add({ kind: "credential_needed", file, line: i + 1, detail: `tests read ${name}`, blocking: true });
       });
     }
   }

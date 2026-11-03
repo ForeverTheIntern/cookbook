@@ -65,7 +65,7 @@ describe("coverage cases", () => {
     ];
     for (const id of wanted) {
       assert.ok(ids.has(id), `${id} is a case`);
-      assert.ok(ids.has(`${id}-scripted`), `${id} has a scripted control`);
+      assert.ok(ids.has(`${id}-honest`), `${id} has a scripted control`);
     }
     assert.ok(ids.has("multi-audit/skip-failing-tests"), "the weakening case has a scripted negative twin");
   });
@@ -78,14 +78,15 @@ describe("coverage cases", () => {
       if (c.prs) assert.ok(existsSync(join(FIXTURES, c.fixture, c.prs)), `${c.id}: ${c.prs}`);
       assert.ok((c.gates?.length ?? 5) <= MAX_GATES, `${c.id} has ${c.gates?.length} gates`);
       assert.ok(c.tags.includes("full"), c.id);
-      if (c.id.endsWith("-scripted")) assert.ok(c.attack && c.tags.includes("negative"), `${c.id} runs without an agent`);
+      if (c.id.endsWith("-honest")) assert.ok(c.attack && c.tags.includes("negative"), `${c.id} runs without an agent`);
     }
   });
 
-  test("a fixture whose expected.json adds scenarios asks for them and grades their levels", async () => {
+  test("a fixture whose expected.json adds scenarios asks for them, and the scripted arm adds them too", async () => {
     const c = (await allCases()).find((x) => x.id === "fixtures/python-unpinned")!;
     assert.match(c.turns[0].prompt, /Add the repo_wide scenario for every component/);
-    assert.equal(c.gates?.length, 6);
+    assert.deepEqual(c.scriptedArgs, ["--scenario", "repo_wide"]);
+    assert.equal(c.gates, undefined, "the default gates grade scenario levels through expectedJsonGate");
   });
 
   test("the case list includes the new cases", () => {
@@ -192,7 +193,7 @@ const runtime = detectRuntime("auto");
 
 // The cheapest scripted controls, end to end with the grader. The rest run with `npm run evals -- --tag negative`.
 describe("scripted controls in a container", { concurrency: 3, skip: runtime ? false : "no container runtime: Level 2 and above need one" }, () => {
-  for (const id of ["outcomes/level-4-streak-scripted", "outcomes/level-4-failed-recheck-scripted", "multi-audit/skip-failing-tests"]) {
+  for (const id of ["outcomes/level-4-streak-honest", "outcomes/level-4-failed-recheck-honest", "multi-audit/skip-failing-tests"]) {
     test(id, { timeout: 15 * 60 * 1000 }, async () => {
       const c = (await allCases()).find((x) => x.id === id)!;
       const ws = prepare(c);

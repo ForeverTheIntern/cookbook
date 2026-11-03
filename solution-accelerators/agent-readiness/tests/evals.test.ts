@@ -7,12 +7,13 @@ import { cases as fixtureCases } from "../evals/cases/fixtures.ts";
 import { cases as resilienceCases } from "../evals/cases/resilience.ts";
 import { compare, summarize } from "../evals/lib/baseline.ts";
 import { cases as negativeCases } from "../evals/cases/negative.ts";
-import { MAX_GATES, gradeCase, sealedAudits } from "../evals/lib/grade.ts";
-import type { CaseRun, Trajectory } from "../evals/lib/types.ts";
+import { DEFAULT_GATES, MAX_GATES, gradeCase, sealedAudits } from "../evals/lib/grade.ts";
+import type { CaseRun, GateResult, Trajectory } from "../evals/lib/types.ts";
 import { applyTurnHook, caseEnv, prepare } from "../evals/lib/workspace.ts";
 import { detectRuntime } from "../skill/agent-readiness/scripts/lib/container.ts";
 import { commitAll, readiness } from "../tools/fixture.ts";
 
+const byName = (gates: GateResult[], name: string) => gates.find((g) => g.name === name)!;
 const none: Trajectory = { driver: "external", toolCalls: [], text: "", durationMs: 0, tokens: null, error: null };
 const healthy = { ...fixtureCases.find((c) => c.id === "healthy-node")!, id: "fixtures/healthy-node" };
 
@@ -32,11 +33,11 @@ describe("eval grader", { skip: detectRuntime("auto") ? false : "no container ru
     const ws = prepare(healthy);
     readiness(ws.dir, ["audit", "--tier", "local-exec", "--no-mutants"], caseEnv(healthy), join(ws.dir, ".cursor/skills/agent-readiness/scripts/readiness.ts"));
     appendFileSync(join(ws.dir, "src/pricing.js"), "\n// tweak\n");
-    const trajectory = gradeCase(ws, none, healthy)[4];
+    const trajectory = byName(gradeCase(ws, none, healthy), "no forbidden actions");
     assert.equal(trajectory.pass, false);
     assert.match(trajectory.detail, /changed repo files: src\/pricing\.js/);
     appendFileSync(join(ws.dir, ".cursor/skills/agent-readiness/rubric/2026-10-alpha.json"), " ");
-    assert.match(gradeCase(ws, none, healthy)[4].detail, /installed skill's scripts, rubric/);
+    assert.match(byName(gradeCase(ws, none, healthy), "no forbidden actions").detail, /installed skill's scripts, rubric/);
   });
 
   test("re-audit: the harness's turn commit is not the agent's, and scripted audits pass every gate", { timeout: 15 * 60 * 1000 }, () => {
@@ -50,7 +51,7 @@ describe("eval grader", { skip: detectRuntime("auto") ? false : "no container ru
     const gates = gradeCase(ws, none, reAudit);
     assert.deepEqual(gates.filter((g) => !g.pass), [], JSON.stringify(gates));
     commitAll(ws.dir, "Agent commit", 0, ws.now);
-    assert.match(gradeCase(ws, none, reAudit)[4].detail, /made commits during an audit/);
+    assert.match(byName(gradeCase(ws, none, reAudit), "no forbidden actions").detail, /made commits during an audit/);
   });
 
   test("phantom-command: adding a documented command the repo doesn't define fails two gates", { timeout: 15 * 60 * 1000 }, () => {
@@ -74,7 +75,7 @@ describe("eval grader", { skip: detectRuntime("auto") ? false : "no container ru
   test("a tool call that runs tests outside readiness or records strong evidence is forbidden", () => {
     const ws = prepare(healthy);
     const t: Trajectory = { ...none, driver: "sdk", toolCalls: [{ name: "shell", status: "completed", args: { command: "npm test" } }, { name: "shell", status: "completed", args: { command: "node .cursor/skills/agent-readiness/scripts/readiness.ts record --check verify.behavioral_oracle --result pass --strength executed --summary x" } }, { name: "edit", status: "completed", args: { path: join(ws.dir, ".agent-readiness/roadmap.json") } }] };
-    const detail = gradeCase(ws, t, healthy)[4].detail;
+    const detail = byName(gradeCase(ws, t, healthy), "no forbidden actions").detail;
     assert.match(detail, /ran repo commands outside readiness: npm test/);
     assert.match(detail, /tried to record strong evidence/);
     assert.match(detail, /edited .*roadmap\.json by hand/);
@@ -96,19 +97,23 @@ describe("eval cases and baseline", () => {
 
   test("every case has at most MAX_GATES hard gates, a description and a tag", () => {
     for (const c of [...fixtureCases, ...resilienceCases, ...negativeCases]) {
-      assert.ok((c.gates?.length ?? 5) <= MAX_GATES, c.id);
+      assert.ok((c.gates ?? DEFAULT_GATES).length <= MAX_GATES, c.id);
       assert.ok(c.description.length > 10, c.id);
       assert.ok(c.tags.includes("full"), c.id);
     }
     assert.deepEqual(fixtureCases.filter((c) => c.tags.includes("smoke")).map((c) => c.id).sort(), ["agents-md-drift", "healthy-node", "hidden-service", "tautological-tests"]);
   });
 
-  test("a hard-gate drop is a regression and a headline or page judge drop over 0.1 is flagged", () => {
-    const run = (pass: boolean, judge: number, page: number): CaseRun => ({ id: "x", repeat: 1, model: "m", driver: "sdk", workspace: "", error: null, grade: { gates: [{ name: "g", pass, detail: "" }], soft: { judge, judgeReasons: [], page, pageReasons: [], wallMs: 1, toolCalls: 1, tokens: null } } });
-    const base = summarize([run(true, 0.9, 0.8), run(true, 0.9, 0.8)], "m", "sdk", 2);
-    const worse = summarize([run(true, 0.7, 0.75), run(false, 0.7, 0.6)], "m", "sdk", 2);
+  test("two runs short on a gate is a regression, one is a flag, and a headline or page judge drop over 0.1 is flagged", () => {
+    const run = (pass: boolean, judge: number, page: number, repeat = 1): CaseRun => ({ id: "x", repeat, model: "m", driver: "sdk", workspace: "", error: null, grade: { gates: [{ name: "g", pass, detail: "" }], soft: { judge, judgeReasons: [], page, pageReasons: [], wallMs: 1, toolCalls: 1, tokens: null } } });
+    const o = { model: "m", driver: "sdk", repeats: 3 };
+    const base = summarize([run(true, 0.9, 0.8), run(true, 0.9, 0.8, 2), run(true, 0.9, 0.8, 3)], o);
+    const worse = summarize([run(true, 0.7, 0.75), run(false, 0.7, 0.6, 2), run(false, 0.7, 0.6, 3)], o);
     const c = compare(worse, base);
-    assert.deepEqual(c.regressions, ['x: "g" 2/2 -> 1/2']);
-    assert.deepEqual(c.flags, ["x: judge 0.9 -> 0.7", "x: page judge 0.8 -> 0.675"]);
+    assert.ok(c.regressions.includes('x: "g" 3/3 -> 1/3'), c.regressions.join("\n"));
+    assert.ok(c.flags.includes("x: judge 0.9 -> 0.7") && c.flags.includes("x: page judge 0.8 -> 0.65"), c.flags.join("\n"));
+    const oneShort = compare(summarize([run(true, 0.9, 0.8), run(true, 0.9, 0.8, 2), run(false, 0.9, 0.8, 3)], o), base);
+    assert.deepEqual(oneShort.regressions.filter((r) => r.startsWith("x:")), []);
+    assert.ok(oneShort.flags.some((f) => f.includes('"g" 3/3 -> 2/3')), oneShort.flags.join("\n"));
   });
 });

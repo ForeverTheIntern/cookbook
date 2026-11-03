@@ -1,49 +1,27 @@
-import { readFileSync } from "node:fs";
-import { join } from "node:path";
-import { actor, CLI } from "./attacks.ts";
-import type { Actor } from "./attacks.ts";
+import { dirname, join } from "node:path";
+import { CLI, actor } from "./attacks.ts";
 import type { EvalCase, Trajectory, Workspace } from "./types.ts";
 import { applyTurnHook } from "./workspace.ts";
 
-export { CLI };
-export const GIT_COMMIT = "git -c user.name='Contributor A' -c user.email=a@example.com -c commit.gpgsign=false commit -q";
-
-export type Step = (a: Actor, ws: Workspace) => void;
-
-export function must(r: { code: number; out: string }, what: string): string {
-  if (r.code !== 0) throw new Error(`${what} failed: ${r.out.slice(-800)}`);
-  return r.out;
+// The scripted control arm: what the scripts produce with no agent. Each turn applies the case's
+// hook and runs one `readiness audit` at the tier the prompt names, with no narration and no fix.
+// The agent's lift over it is what the agent adds; on a remediation case it should fail the fix gates.
+export function tierOf(prompt: string): string {
+  return /permission tier ([a-z-]+)/i.exec(prompt)?.[1] ?? "local-exec";
 }
 
-// Plays one step per turn, each after its turn's hook, recording calls the way the SDK driver does.
-export function play(steps: Step[]): (ws: Workspace, c: EvalCase) => Trajectory {
-  return (ws, c) => {
-    if (steps.length !== c.turns.length) throw new Error(`${c.id}: ${steps.length} scripted steps for ${c.turns.length} turns`);
-    const a = actor(ws, c);
-    steps.forEach((step, i) => {
-      applyTurnHook(ws, c.turns[i]);
-      step(a, ws);
-    });
-    return a.t;
-  };
+export function scriptedArgs(ws: Workspace, c: EvalCase, prompt: string): string[] {
+  const args = ["audit", "--tier", tierOf(prompt)];
+  if (c.prs) args.push("--outcomes-input", join(dirname(ws.dir), "prs.json"));
+  return [...args, ...(c.scriptedArgs ?? [])];
 }
 
-// A scripted control: the honest path through an agent case, with the same setup, turn hooks and
-// gates, so a case that fails even when everything is done right shows up without an API key.
-// Tagged negative because it runs with `--tag negative`, like honest-fix: no agent, no key.
-export function control(c: EvalCase, steps: Step[], why: string): EvalCase {
-  return { ...c, id: `${c.id}-scripted`, tags: ["full", "negative"], description: `Scripted control for ${c.id}: ${why}`, attack: play(steps) };
-}
-
-// Edits a repo file through the actor, so the write is recorded as a tool call.
-export function edit(a: Actor, ws: Workspace, file: string, from: string, to: string): void {
-  const f = join(ws.dir, file);
-  const text = readFileSync(f, "utf8");
-  if (!text.includes(from)) throw new Error(`${file} has no ${JSON.stringify(from)}`);
-  a.write(f, text.replace(from, to));
-}
-
-export function commitAndAudit(a: Actor, message: string, tier = "local-exec"): void {
-  must(a.sh(`git add -A && ${GIT_COMMIT} -m ${JSON.stringify(message)}`), "commit");
-  must(a.sh(`${CLI} audit --tier ${tier}`), "audit");
+export function scriptedAudit(ws: Workspace, c: EvalCase): Trajectory {
+  const a = actor(ws, c);
+  for (const turn of c.turns) {
+    applyTurnHook(ws, turn);
+    const r = a.sh(`${CLI} ${scriptedArgs(ws, c, turn.prompt).map((x) => (/^[\w./:-]+$/.test(x) ? x : JSON.stringify(x))).join(" ")}`);
+    if (r.code !== 0) a.t.error = `readiness audit exited ${r.code}: ${r.out.trim().split("\n").slice(-2).join(" ")}`;
+  }
+  return a.t;
 }

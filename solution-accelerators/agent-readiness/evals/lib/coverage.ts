@@ -3,7 +3,7 @@ import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { strengthRank, loadRubric } from "../../skill/agent-readiness/scripts/lib/rubric.ts";
 import type { Audit, HistoryLine, ReportJson, SafetyFinding } from "../../skill/agent-readiness/scripts/lib/types.ts";
-import { CLI, commitAll, expected, materializePrs, readiness } from "../../tools/fixture.ts";
+import { CLI, commitAll, materializePrs, readiness } from "../../tools/fixture.ts";
 import { historyLines, latestReport } from "./grade.ts";
 import { cleanRepo, graderAudit, graderLevel, graderProblem, headOf } from "./reaudit.ts";
 import { cliLog } from "./trajectory.ts";
@@ -178,13 +178,6 @@ export function scenarioLevelsMatch(want: ScenarioLevels, name = "scenario level
     return { name, pass: sameJson(got, want), detail: `got ${JSON.stringify(got)}${sameJson(got, want) ? "" : `, expected ${JSON.stringify(want)}`}` };
   };
 }
-
-// The scenario levels expected.json gives for the case's run.
-export const scenarioLevelsGate: Gate = (ws, t, c) => {
-  const exp = expected(c.fixture);
-  const run = exp.runs.find((x) => x.name === (c.expectedRun ?? "default")) ?? exp.runs[0];
-  return scenarioLevelsMatch(run.scenarioLevels ?? {}, "scenario levels match expected.json")(ws, t, c);
-};
 
 export function scenarioRecorded(id: string, components: string[]): Gate {
   return (ws) => {

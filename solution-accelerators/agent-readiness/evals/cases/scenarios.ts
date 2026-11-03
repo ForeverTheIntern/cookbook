@@ -1,6 +1,6 @@
-import { CLI, control, must } from "../lib/controls.ts";
-import { scenarioLevelsGate, scenarioLevelsMatch, scenarioRecorded } from "../lib/coverage.ts";
-import { levelsGate, sealedGate, topGate, trajectory } from "../lib/grade.ts";
+import { CLI, honestPath, must } from "../lib/honest.ts";
+import { scenarioLevelsMatch, scenarioRecorded } from "../lib/coverage.ts";
+import { expectedJsonGate, levelsGate, narrationGate, reportGate, sealedGate, trajectory } from "../lib/grade.ts";
 import type { EvalCase } from "../lib/types.ts";
 
 // Scenarios requested in plain words at intake. The agent picks the scenario and the components;
@@ -12,7 +12,7 @@ const repoWide: EvalCase = {
   tags: ["full"],
   description: "Asked about repo-wide changes, the agent adds the repo_wide scenario. The standard level stays 2; the scenario, which also needs pinned toolchains and a frozen install, is 1.",
   turns: [{ prompt: "Audit this repo for agents doing repo-wide changes, permission tier local-exec." }],
-  gates: [sealedGate, levelsGate, scenarioLevelsGate, topGate, trajectory],
+  gates: [sealedGate, expectedJsonGate, reportGate, narrationGate, trajectory],
 };
 
 const someComponents: EvalCase = {
@@ -21,7 +21,7 @@ const someComponents: EvalCase = {
   tags: ["full"],
   description: "The user wants agents fixing bugs in two of three packages. The bug_fixes scenario covers only worker and shared, the standard levels and repo rollup don't move, and shared, held at Level 1 by stale instructions, meets the bug-fix bar.",
   turns: [{ prompt: "Run an agent readiness audit, permission tier local-exec. We only want agents fixing bugs in worker and shared." }],
-  gates: [sealedGate, levelsGate, scenarioRecorded("bug_fixes", ["worker", "shared"]), scenarioLevelsMatch({ worker: { bug_fixes: 1 }, shared: { bug_fixes: 2 } }), trajectory],
+  gates: [sealedGate, levelsGate, scenarioRecorded("bug_fixes", ["worker", "shared"]), scenarioLevelsMatch({ worker: { bug_fixes: 1 }, shared: { bug_fixes: 2 } }), narrationGate, trajectory],
 };
 
 const steps = (scenario: string, components?: string) => [
@@ -34,7 +34,7 @@ const steps = (scenario: string, components?: string) => [
 
 export const cases: EvalCase[] = [
   repoWide,
-  control(repoWide, [(a) => steps("repo_wide").forEach((s) => must(a.sh(s), s))], "add repo_wide at intake, then replay and seal."),
+  honestPath(repoWide, [(a) => steps("repo_wide").forEach((s) => must(a.sh(s), s))], "add repo_wide at intake, then replay and seal."),
   someComponents,
-  control(someComponents, [(a) => steps("bug_fixes", "worker,shared").forEach((s) => must(a.sh(s), s))], "add bug_fixes for worker and shared after the scan, then replay and seal."),
+  honestPath(someComponents, [(a) => steps("bug_fixes", "worker,shared").forEach((s) => must(a.sh(s), s))], "add bug_fixes for worker and shared after the scan, then replay and seal."),
 ];

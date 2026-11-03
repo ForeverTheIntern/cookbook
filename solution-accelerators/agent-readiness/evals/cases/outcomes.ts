@@ -1,7 +1,7 @@
-import { CLI, control, must } from "../lib/controls.ts";
+import { CLI, honestPath, must } from "../lib/honest.ts";
 import { TARGETS, capReasonIncludes, editAndCommit, outcomesShown, seedAudit, seedRecheck, seedTargets } from "../lib/coverage.ts";
 import { auditCount, repoLevelIs } from "../lib/gates.ts";
-import { sealedGate, trajectory } from "../lib/grade.ts";
+import { narrationGate, sealedGate, trajectory } from "../lib/grade.ts";
 import type { EvalCase } from "../lib/types.ts";
 
 // Levels 3 and 4 end to end on healthy-node, which reaches Level 2. Its recorded PR files hold 20
@@ -21,7 +21,7 @@ const level3: EvalCase = {
     { prompt: AUDIT },
     { prompt: "Record our Level 3 targets: a merge rate of at least 0.7, a first-time CI pass rate of at least 0.6, and change requests on at most 0.3 of agent PRs. Then re-audit with the same PR list." },
   ],
-  gates: [sealedGate, repoLevelIs(3), outcomesShown, auditCount(2), trajectory],
+  gates: [sealedGate, repoLevelIs(3), outcomesShown, auditCount(2), narrationGate, trajectory],
 };
 
 const shortWindow: EvalCase = {
@@ -32,7 +32,7 @@ const shortWindow: EvalCase = {
   description: "The same PRs and recorded targets, measured over 28 days because the user asks for it. Level 3 is measured only over a 30-day window, so the repo stays at Level 2 and the report says why.",
   setup: (ws) => seedTargets(ws, shortWindow),
   turns: [{ prompt: "Run an agent readiness audit, permission tier external-systems. Our agent PRs are in the recorded PR list at {root}/prs.json. We only have four weeks of agent history, so measure outcomes over a 28-day window." }],
-  gates: [sealedGate, repoLevelIs(2), capReasonIncludes("30-day window; this one was 28 days"), trajectory],
+  gates: [sealedGate, repoLevelIs(2), capReasonIncludes("30-day window; this one was 28 days"), narrationGate, trajectory],
 };
 
 const streak: EvalCase = {
@@ -46,7 +46,7 @@ const streak: EvalCase = {
     seedAudit(ws, streak, { daysAgo: 30, prs: "prs.template.json" });
   },
   turns: [{ prompt: AUDIT }],
-  gates: [sealedGate, repoLevelIs(4), auditCount(2), trajectory],
+  gates: [sealedGate, repoLevelIs(4), auditCount(2), narrationGate, trajectory],
 };
 
 const brokenStreak: EvalCase = {
@@ -63,18 +63,18 @@ const brokenStreak: EvalCase = {
     editAndCommit(ws, "test/pricing.test.js", "assert.equal(discount(100), 100);", "assert.equal(discount(100), 90);", "Revert the discount test");
   },
   turns: [{ prompt: AUDIT }],
-  gates: [sealedGate, repoLevelIs(3), capReasonIncludes("back-to-back windows"), auditCount(2), trajectory],
+  gates: [sealedGate, repoLevelIs(3), capReasonIncludes("back-to-back windows"), auditCount(2), narrationGate, trajectory],
 };
 
 const audit = (extra = "") => `${CLI} audit --tier external-systems ${OUTCOMES}${extra}`;
 
 export const cases: EvalCase[] = [
   level3,
-  control(level3, [(a) => must(a.sh(audit()), "audit"), (a) => (must(a.sh(`${CLI} roadmap targets ${TARGETS.join(" ")}`), "targets"), must(a.sh(audit()), "re-audit"))], "audit, record the targets, re-audit."),
+  honestPath(level3, [(a) => must(a.sh(audit()), "audit"), (a) => (must(a.sh(`${CLI} roadmap targets ${TARGETS.join(" ")}`), "targets"), must(a.sh(audit()), "re-audit"))], "audit, record the targets, re-audit."),
   shortWindow,
-  control(shortWindow, [(a) => must(a.sh(audit(" --window-days 28")), "audit")], "one audit over a 28-day window."),
+  honestPath(shortWindow, [(a) => must(a.sh(audit(" --window-days 28")), "audit")], "one audit over a 28-day window."),
   streak,
-  control(streak, [(a) => must(a.sh(audit()), "audit")], "one audit of this window."),
+  honestPath(streak, [(a) => must(a.sh(audit()), "audit")], "one audit of this window."),
   brokenStreak,
-  control(brokenStreak, [(a) => must(a.sh(audit()), "audit")], "one audit of this window."),
+  honestPath(brokenStreak, [(a) => must(a.sh(audit()), "audit")], "one audit of this window."),
 ];

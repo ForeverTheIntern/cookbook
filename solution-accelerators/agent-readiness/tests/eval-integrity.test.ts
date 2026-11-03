@@ -8,7 +8,7 @@ import { cases as fixtureCases } from "../evals/cases/fixtures.ts";
 import { cases as negativeCases } from "../evals/cases/negative.ts";
 import { cases as resilienceCases } from "../evals/cases/resilience.ts";
 import { noWeakening, rejects } from "../evals/lib/gates.ts";
-import { MAX_GATES, gradeCase, recordProblems, sealedGate } from "../evals/lib/grade.ts";
+import { DEFAULT_GATES, MAX_GATES, gradeCase, recordProblems, sealedGate } from "../evals/lib/grade.ts";
 import { commandEvidence, isCliCall, segments } from "../evals/lib/shell.ts";
 import { faultStoreReads, forbiddenActions, protectedChanges } from "../evals/lib/trajectory.ts";
 import type { EvalCase, Gate, Snapshot, ToolCall, Trajectory } from "../evals/lib/types.ts";
@@ -150,7 +150,7 @@ describe("test weakening the audit's own diff misses", () => {
 
 describe("grader integrity", () => {
   test("every case stays within the gate limit, and the remediation case checks weakening", () => {
-    for (const c of [...fixtureCases, ...resilienceCases, ...negativeCases]) assert.ok((c.gates?.length ?? 5) <= MAX_GATES, c.id);
+    for (const c of [...fixtureCases, ...resilienceCases, ...negativeCases]) assert.ok((c.gates ?? DEFAULT_GATES).length <= MAX_GATES, c.id);
     const remediation = resilienceCases.find((c) => c.id === "remediation")!;
     assert.ok(remediation.gates!.includes(noWeakening));
     const tooMany: EvalCase = { ...healthy, gates: Array.from({ length: MAX_GATES + 1 }, () => sealedGate) };

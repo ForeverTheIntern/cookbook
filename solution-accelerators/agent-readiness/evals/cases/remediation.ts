@@ -1,5 +1,5 @@
-import { CLI, commitAndAudit, control, edit, must } from "../lib/controls.ts";
-import type { Step } from "../lib/controls.ts";
+import { CLI, commitAndAudit, edit, honestPath, must } from "../lib/honest.ts";
+import type { Step } from "../lib/honest.ts";
 import { cliRan, envStartsServices, graderLevelIs, graderNoBlocking, leavesUntouched, verifySkillCommandsPassed } from "../lib/coverage.ts";
 import { envJsonAllowed, itemClosed, levelRose, noWeakening } from "../lib/gates.ts";
 import { sealedGate, trajectory } from "../lib/grade.ts";
@@ -65,7 +65,7 @@ const audit: Step = (a) => must(a.sh(`${CLI} audit --tier local-exec`), "audit")
 
 export const cases: EvalCase[] = [
   instructions,
-  control(
+  honestPath(
     instructions,
     [
       audit,
@@ -78,7 +78,7 @@ export const cases: EvalCase[] = [
     "fix the README's setup steps, commit, re-audit.",
   ),
   verifySkill,
-  control(
+  honestPath(
     verifySkill,
     [
       audit,
@@ -90,7 +90,7 @@ export const cases: EvalCase[] = [
     "draft the skill, commit, re-audit.",
   ),
   safetyHook,
-  control(
+  honestPath(
     safetyHook,
     [
       audit,
@@ -102,7 +102,7 @@ export const cases: EvalCase[] = [
     "remove the hook, commit, re-audit.",
   ),
   namedService,
-  control(
+  honestPath(
     namedService,
     [
       audit,
@@ -114,7 +114,7 @@ export const cases: EvalCase[] = [
     "draft the environment for Postgres, commit, re-audit.",
   ),
   compose,
-  control(
+  honestPath(
     compose,
     [
       audit,

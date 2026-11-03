@@ -157,7 +157,7 @@ describe("CLI", { concurrency: 4 }, () => {
     assert.equal(report.actions[0].startNow, true);
     assert.match(report.executive.gaps[0].blocks, /^Can start now; blocks Level 2 for admin-web/);
     assert.equal(report.maturity.outcome, "blocked", "real results exist, and Level 1 still needs a clean container");
-    assert.equal(report.executive.heading, "Level 1 unproven on this machine: every Level 1 check that ran passed");
+    assert.equal(report.executive.heading, "Level 1 unproven on this machine: no Level 1 check failed, and 3 were blocked here", "install, build and test, each blocked without a container");
     assert.ok(report.components.included.every((c: { level: number; capReasons: { state: string }[] }) => c.level === 0 && c.capReasons.every((x) => x.state === "blocked")), JSON.stringify(report.components.included));
   });
 

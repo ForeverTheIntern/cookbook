@@ -225,6 +225,14 @@ describe("judges", () => {
     assert.match(headlinePrompt(loadBase("slugify")), /toolchain isn't supported needs no rerun advice/);
   });
 
+  test("the judge sees the rubric's scale, so the computed heading's level name and \"of 4\" are backed", () => {
+    for (const p of [headlinePrompt(loadBase("hidden-service")), pagePrompt(loadBase("hidden-service"))]) {
+      assert.match(p, /Scale, from the rubric \(Level 0 to Level 4; "of 4" in the heading counts from it\): Level 0 Not bootable: A clean checkout can't install, build and pass its tests\. Level 1 Bootable: /);
+      assert.match(p, /Heading \(computed\): Level 0 of 4, not bootable/);
+    }
+    assert.match(headlinePrompt(loadBase("healthy-node")), /grade it for clarity only, and count the word limit on the headline alone/);
+  });
+
   test("a judge reply without a numeric score is null, not zero", () => {
     assert.deepEqual(parseJudge('{"score": 0.7, "reasons": ["ok"]}'), { score: 0.7, reasons: ["ok"] });
     assert.equal(parseJudge("I can't grade this").score, null);

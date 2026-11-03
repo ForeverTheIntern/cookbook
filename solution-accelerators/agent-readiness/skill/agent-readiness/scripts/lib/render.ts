@@ -671,7 +671,7 @@ export function buildReport(input: RenderInput): ReportJson {
         : none
           ? `Not assessed: ${audit.tier === "read-only" ? "the read-only tier runs no repo code" : "no check could run on this machine"}`
           : !none && unprovenLevel1(L, input.rollup.couldBe, caps)
-            ? "Level 1 unproven on this machine: every Level 1 check that ran passed"
+            ? unprovenHeading(caps)
             : `Level ${L} of 4, ${rubric.scale[L].plain}${outcome === "blocked" ? `; Level ${L + 1} is blocked on this machine` : ""}`,
       headline: narr.headline ?? headlineFor(input, ready, setByShare),
       numbers: stats3(input),
@@ -764,6 +764,13 @@ function plantedFaultsRecord(audit: Audit): string {
 }
 
 // Held at Level 0 only because this machine couldn't check Level 1: nothing that ran failed.
+// Every Level 1 condition left is blocked here, and a blocked step may have run (a build cut off by
+// the network), so the heading says none failed rather than that every one that ran passed.
+export function unprovenHeading(caps: { condition: string; state: string }[]): string {
+  const n = new Set(caps.filter((c) => c.state === "blocked").map((c) => c.condition)).size;
+  return `Level 1 unproven on this machine: no Level 1 check failed, and ${n} ${n === 1 ? "was" : "were"} blocked here`;
+}
+
 export function unprovenLevel1(level: Level | null, couldBe: Level | null, caps: { state: string }[]): boolean {
   return level === 0 && couldBe === 1 && caps.length > 0 && caps.every((c) => c.state === "blocked");
 }

@@ -66,6 +66,28 @@ describe("failures from the audit's own environment are blocked, not the repo's"
     assert.equal(diagnose("connect ECONNREFUSED 127.0.0.1:5432", false, "test").cause, "service", "a local service is still a service");
   });
 
+  test("a package mirror's HTTP error during an install is blocked, not the repo's: apt's 403 from deb.debian.org", () => {
+    const apt = [
+      "Err:1 http://deb.debian.org/debian bookworm InRelease",
+      "  403  Forbidden [IP: 151.101.2.132 80]",
+      "Reading package lists...",
+      "E: Failed to fetch http://deb.debian.org/debian/pool/main/p/python3.11/python3.11-venv_3.11.2-6+deb12u6_amd64.deb  403  Forbidden [IP: 151.101.2.132 80]",
+      "E: Unable to fetch some archives, maybe run apt-get update or try with --fix-missing?",
+      "bash: line 1: python3: command not found",
+    ].join("\n");
+    const d = diagnose(apt, false, "install");
+    assert.deepEqual(d, { cause: "network", detail: "a package mirror refusing the download (HTTP 403 from deb.debian.org)" }, "the refused download, not the tool it left missing");
+    assert.equal(environmentLimit({ ...container, imageSource: "repo" }, cmd("install", "."), d, []), "the install hit a package mirror refusing the download (HTTP 403 from deb.debian.org)", "even in the repo's own image");
+    const http = (out: string) => diagnose(out, false, "install").detail;
+    assert.equal(http("npm error code E403\nnpm error 403 403 Forbidden - GET https://registry.npmjs.org/left-pad - Forbidden"), "a package mirror refusing the download (HTTP 403 from registry.npmjs.org)");
+    assert.equal(http('error An unexpected error occurred: "https://registry.yarnpkg.com/left-pad/-/left-pad-1.3.0.tgz: Request failed \\"503 Service Unavailable\\"".'), "a package mirror refusing the download (HTTP 503 from registry.yarnpkg.com)");
+    assert.equal(http("ERROR: HTTP error 403 while getting https://files.pythonhosted.org/packages/ab/requests-2.31.0-py3-none-any.whl"), "a package mirror refusing the download (HTTP 403 from files.pythonhosted.org)");
+    assert.equal(http("ERR_PNPM_FETCH_429  GET https://registry.npmjs.org/react: Too Many Requests - 429"), "a package mirror refusing the download (HTTP 429 from registry.npmjs.org)");
+    assert.equal(diagnose("npm error code E404\nnpm error 404 Not Found - GET https://registry.npmjs.org/left-pda - Not found", false, "install").cause, "unknown", "a missing package can be the repo's typo");
+    assert.equal(diagnose("npm error code E401\nnpm error 401 Unauthorized - GET https://npm.example.com/@acme%2fui", false, "install").cause, "registry");
+    assert.equal(environmentLimit(container, cmd("test"), diagnose(apt, false, "test"), []), undefined, "tests that download run with the network off");
+  });
+
   test("a sibling workspace package the audit didn't build first", () => {
     const pkgs = [{ name: "@fx/core", path: "packages/core" }, { name: "@fx/app", path: "packages/app" }];
     const missing = diagnose("Error [ERR_MODULE_NOT_FOUND]: Cannot find module '/work/node_modules/@fx/core/dist/index.js' imported from /work/packages/app/scripts/build.mjs\n    at finalizeResolution (node:internal)\n  code: 'ERR_MODULE_NOT_FOUND'", false, "build");

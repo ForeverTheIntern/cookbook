@@ -13,7 +13,7 @@ Run the CLI from the repository root:
 node --experimental-strip-types --no-warnings .cursor/skills/agent-readiness/scripts/readiness.ts <command>
 ```
 
-It needs Node 22.14 or later and no packages. Below, `readiness` means that command.
+It needs Node 22.14 or later and no packages. Below, `readiness` means that command. Type it out in full each time; don't wrap it in a shell function, alias or variable.
 
 ## Rules
 

@@ -272,8 +272,29 @@ function extractFunctions(cmd: string): { text: string; bodies: string[] } {
   const bodies: string[] = [];
   let out = "";
   let quote: string | null = null;
+  const heredocs: string[] = [];
   for (let i = 0; i < cmd.length; i++) {
     const ch = cmd[i];
+    // A heredoc body is data: copied as is, so its quotes and any `name()` in it change nothing.
+    if (!quote && ch === "\n" && heredocs.length) {
+      out += ch;
+      for (const tag of heredocs.splice(0)) {
+        const m = cmd.slice(i + 1).match(new RegExp(`(^|\\n)\\t*${tag}[ \\t]*(?=\\n|$)`));
+        const end = m ? i + 1 + m.index! + m[0].length : cmd.length;
+        out += cmd.slice(i + 1, end);
+        i = end - 1;
+      }
+      continue;
+    }
+    if (!quote && ch === "<" && cmd[i + 1] === "<" && cmd[i + 2] !== "<") {
+      const m = cmd.slice(i + 2).match(/^-?\s*(['"]?)(\w+)\1/);
+      if (m) {
+        heredocs.push(m[2]);
+        out += cmd.slice(i, i + 2 + m[0].length);
+        i += 1 + m[0].length;
+        continue;
+      }
+    }
     if (quote) {
       out += ch;
       if (ch === "\\" && quote === '"') out += cmd[++i] ?? "";
@@ -286,7 +307,7 @@ function extractFunctions(cmd: string): { text: string; bodies: string[] } {
       continue;
     }
     const before = out.trimEnd();
-    const atStart = (before === "" || /[;&|\n(){]$/.test(before) || /(^|\s)(then|do|else|elif)$/.test(before)) && /[\s;&|\n(){]$|^$/.test(out);
+    const atStart = (before === "" || /[;&|\n(){]$/.test(before) || /\n[ \t]*$/.test(out) || /(^|\s)(then|do|else|elif)$/.test(before)) && /[\s;&|\n(){]$|^$/.test(out);
     const m = atStart && /\S/.test(ch) ? cmd.slice(i).match(FUNCTION_HEAD) : null;
     if (m) {
       const name = m[1] ?? m[2];
@@ -440,74 +461,100 @@ export function writesOutsideRepo(target: string, c: { cwd: string; links: Map<s
 function walk(segs: Segment[], bodies: string[], ctx: Context, defs: Definitions, via: string | null, args: string[] | null, depth: number): Expanded[] {
   const out: Expanded[] = [];
   let cwd = ctx.cwd;
+  let oldCwd = ctx.cwd;
+  const pushed: string[] = [];
+  // A subshell's `cd` ends with it. segments() marks the last command inside "( ... )" with end ")".
+  const subshells: string[] = [];
   let nest = 0;
   let parens = 0;
   for (const s of segs) {
-    if (s.sep === "(") parens++;
-    if (s.sep === ")") parens = Math.max(0, parens - 1);
-    let w = [...s.words];
-    for (;;) {
-      if (OPENERS.has(w[0])) nest++;
-      else if (CLOSERS.has(w[0])) nest = Math.max(0, nest - 1);
-      else if (!MIDDLES.has(w[0])) break;
-      w = w.slice(1);
+    if (s.sep === "(") {
+      parens++;
+      subshells.push(cwd);
     }
-    if (!w.length) continue;
-    const certain = nest === 0 && parens === 0 && ["start", ";", "\n", ";;"].includes(s.sep) && !["|", "|&", "&", "("].includes(s.end);
-    const fn = w[0].match(/^__readiness_fn_(\d+)__$/);
-    if (fn) {
-      const [name, body] = bodies[Number(fn[1])].split("\0");
-      setDefinition(defs.functions, name, body, certain);
-      continue;
-    }
-    const taint = w[0].match(/^__readiness_taint_(.+)__$/);
-    if (taint) {
-      defs.functions.set(taint[1], null);
-      continue;
-    }
-    if (args) w = w.flatMap((x) => (x === "$@" || x === "$*" ? args : [x.replace(/\$\{?([1-9])\}?/g, (_m, n: string) => args[Number(n) - 1] ?? "")]));
-    w = w.flatMap((x) => expandVars(x, defs, cwd));
-    const writes = s.writes.map((x) => expandVars(x, defs, cwd).join(" "));
-    const here = () => ({ writes, cwd, tmpdir: typeof lookup("TMPDIR", defs, cwd) === "string" ? (lookup("TMPDIR", defs, cwd) as string) : null, links: new Map(defs.links) });
-    const decl = DECLARE.has(w[0]) ? w.slice(1).filter((x) => !x.startsWith("-")) : w;
-    if (decl.length && decl.every((x) => ASSIGN.test(x))) {
-      for (const x of decl) {
-        const [, name, value] = x.match(ASSIGN)!;
-        const v = pathMarkers(value, ctx.repo, cwd);
-        setDefinition(defs.vars, name, /\$\(|`|\$\{?[A-Za-z_]/.test(v) ? null : v, certain);
+    try {
+      let w = [...s.words];
+      for (;;) {
+        if (OPENERS.has(w[0])) nest++;
+        else if (CLOSERS.has(w[0])) nest = Math.max(0, nest - 1);
+        else if (!MIDDLES.has(w[0])) break;
+        w = w.slice(1);
       }
-      continue;
-    }
-    if (DECLARE.has(w[0])) continue;
-    if (w[0] === "unset") {
-      const which = w.includes("-f") ? [defs.functions] : w.includes("-v") ? [defs.vars] : [defs.vars, defs.functions];
-      for (const name of w.slice(1).filter((x) => !x.startsWith("-"))) for (const m of which) certain ? m.delete(name) : m.set(name, null);
-      continue;
-    }
-    if ((w[0] === "source" || w[0] === ".") && !SETUP_SOURCES.test(w[1] ?? "")) {
-      for (const m of [defs.functions, defs.vars]) for (const k of m.keys()) m.set(k, null);
-    }
-    const p = program(w);
-    if (p[0] === "ln") recordLink(p, defs, cwd);
-    if (p[0] === "cd" || p[0] === "pushd") {
-      const dir = p[1];
-      if (dir && !/^\$\{?[A-Za-z_]/.test(dir)) cwd = at({ ...ctx, cwd }, dir === "~" ? (process.env.HOME ?? "/") : dir);
-      out.push({ words: w, ...here(), cwd, via, known: true });
-      continue;
-    }
-    if (p.length && defs.functions.has(p[0])) {
-      const body = defs.functions.get(p[0]);
-      if (body === null || body === undefined || depth >= 4) {
-        out.push({ words: w, ...here(), via, known: false });
+      if (!w.length) continue;
+      const certain = nest === 0 && parens === 0 && ["start", ";", "\n", ";;"].includes(s.sep) && !["|", "|&", "&", "("].includes(s.end);
+      const fn = w[0].match(/^__readiness_fn_(\d+)__$/);
+      if (fn) {
+        const [name, body] = bodies[Number(fn[1])].split("\0");
+        setDefinition(defs.functions, name, body, certain);
         continue;
       }
-      const inner = extractFunctions(body);
-      const calls = walk(segments(inner.text), inner.bodies, { ...ctx, cwd }, defs, `function ${p[0]}`, p.slice(1), depth + 1);
-      out.push(...calls.map((c) => ({ ...c, writes: [...c.writes, ...writes] })));
-      continue;
+      const taint = w[0].match(/^__readiness_taint_(.+)__$/);
+      if (taint) {
+        defs.functions.set(taint[1], null);
+        continue;
+      }
+      if (args) w = w.flatMap((x) => (x === "$@" || x === "$*" ? args : [x.replace(/\$\{?([1-9])\}?/g, (_m, n: string) => args[Number(n) - 1] ?? "")]));
+      w = w.flatMap((x) => expandVars(x, defs, cwd));
+      const writes = s.writes.map((x) => expandVars(x, defs, cwd).join(" "));
+      const here = () => ({ writes, cwd, tmpdir: typeof lookup("TMPDIR", defs, cwd) === "string" ? (lookup("TMPDIR", defs, cwd) as string) : null, links: new Map(defs.links) });
+      const decl = DECLARE.has(w[0]) ? w.slice(1).filter((x) => !x.startsWith("-")) : w;
+      if (decl.length && decl.every((x) => ASSIGN.test(x))) {
+        for (const x of decl) {
+          const [, name, value] = x.match(ASSIGN)!;
+          const v = pathMarkers(value, ctx.repo, cwd);
+          setDefinition(defs.vars, name, /\$\(|`|\$\{?[A-Za-z_]/.test(v) ? null : v, certain);
+        }
+        continue;
+      }
+      if (DECLARE.has(w[0])) continue;
+      if (w[0] === "unset") {
+        const which = w.includes("-f") ? [defs.functions] : w.includes("-v") ? [defs.vars] : [defs.vars, defs.functions];
+        for (const name of w.slice(1).filter((x) => !x.startsWith("-"))) for (const m of which) certain ? m.delete(name) : m.set(name, null);
+        continue;
+      }
+      if ((w[0] === "source" || w[0] === ".") && !SETUP_SOURCES.test(w[1] ?? "")) {
+        for (const m of [defs.functions, defs.vars]) for (const k of m.keys()) m.set(k, null);
+      }
+      const p = program(w);
+      if (p[0] === "ln") recordLink(p, defs, cwd);
+      if (["cd", "pushd", "popd"].includes(p[0])) {
+        // A command substitution runs in a subshell, so its `cd` doesn't move the command around it.
+        if (s.sep !== "$(") {
+          const dir = p.slice(1).find((x) => !/^-[LPe@]$/.test(x));
+          const home = process.env.HOME ?? "/";
+          let next: string | null = null;
+          if (p[0] === "popd") next = pushed.pop() ?? null;
+          else if (dir === undefined || dir === "~") next = p[0] === "cd" ? home : null;
+          else if (dir === "-" || /^\$\{?OLDPWD\}?$/.test(dir)) next = oldCwd;
+          else if (!/^\$\{?[A-Za-z_]/.test(dir)) next = at({ ...ctx, cwd }, dir.replace(/^~(?=\/)/, home));
+          if (next !== null) {
+            if (p[0] === "pushd") pushed.push(cwd);
+            oldCwd = cwd;
+            cwd = next;
+          }
+        }
+        out.push({ words: w, ...here(), cwd, via, known: true });
+        continue;
+      }
+      if (p.length && defs.functions.has(p[0])) {
+        const body = defs.functions.get(p[0]);
+        if (body === null || body === undefined || depth >= 4) {
+          out.push({ words: w, ...here(), via, known: false });
+          continue;
+        }
+        const inner = extractFunctions(body);
+        const calls = walk(segments(inner.text), inner.bodies, { ...ctx, cwd }, defs, `function ${p[0]}`, p.slice(1), depth + 1);
+        out.push(...calls.map((c) => ({ ...c, writes: [...c.writes, ...writes] })));
+        continue;
+      }
+      // A variable still unexpanded here is unset, tainted or built at run time: nothing to follow.
+      out.push({ words: w, ...here(), via, known: !(p.length > 0 && /^\$\{?[A-Za-z_]/.test(p[0])) });
+    } finally {
+      if (s.end === ")" && subshells.length) {
+        parens = Math.max(0, parens - 1);
+        cwd = subshells.pop()!;
+      }
     }
-    // A variable still unexpanded here is unset, tainted or built at run time: nothing to follow.
-    out.push({ words: w, ...here(), via, known: !(p.length > 0 && /^\$\{?[A-Za-z_]/.test(p[0])) });
   }
   return out;
 }
@@ -658,8 +705,80 @@ const DOCKER_READS = new Set(["info", "version", "ps", "images", "inspect", "con
 const VERSION_QUERY = /^(--version|-v|-V|version)$/;
 const FIND_ACTIONS = /^-(exec|execdir|ok|okdir|delete|fprint|fprint0|fprintf|fls)$/;
 // sed's w and W commands and the s///w flag write a file; e and s///e run a command.
-const SED_ADDR = String.raw`(?:\d+|\$|\/(?:[^\/\\]|\\.)*\/)`;
-const SED_WRITES = new RegExp(String.raw`(^|[;{}\n])\s*(?:${SED_ADDR}(?:\s*,\s*${SED_ADDR})?)?\s*!?\s*[wWe](\s|$)|s(?<d>[^\w\s\\])(?:(?!\k<d>).)*\k<d>(?:(?!\k<d>).)*\k<d>[a-zA-Z0-9]*[we]`);
+// Does a sed script write a file (w, W, s///w) or run a command (e, s///e)? It reads the script
+// command by command, so text inside an s command's pattern or replacement is never a command.
+// A script it can't read counts as writing.
+export function sedScriptWrites(script: string): boolean {
+  let i = 0;
+  const n = script.length;
+  const spaces = () => {
+    while (i < n && /[ \t]/.test(script[i])) i++;
+  };
+  // Reads up to an unescaped delimiter; false when there is none.
+  const part = (d: string): boolean => {
+    while (i < n && script[i] !== d) {
+      if (script[i] === "\\") i++;
+      if (script[i] === "\n" && d !== "\n") return false;
+      i++;
+    }
+    if (i >= n) return false;
+    i++;
+    return true;
+  };
+  const address = (): boolean => {
+    if (/\d/.test(script[i] ?? "")) {
+      while (i < n && /[\d~+]/.test(script[i])) i++;
+    } else if (script[i] === "$") i++;
+    else if (script[i] === "/" || script[i] === "\\") {
+      const d = script[i] === "\\" ? script[++i] : "/";
+      i++;
+      if (!part(d)) return false;
+      while (/[IM]/.test(script[i] ?? "")) i++;
+    }
+    return true;
+  };
+  while (i < n) {
+    while (i < n && /[\s;]/.test(script[i])) i++;
+    if (i >= n) break;
+    if (script[i] === "}" || script[i] === "{") {
+      i++;
+      continue;
+    }
+    if (!address()) return true;
+    spaces();
+    if (script[i] === ",") {
+      i++;
+      spaces();
+      if (!address()) return true;
+      spaces();
+    }
+    if (script[i] === "!") {
+      i++;
+      spaces();
+    }
+    const cmd = script[i++];
+    if (cmd === undefined) break;
+    if (cmd === "{") continue;
+    if (cmd === "s" || cmd === "y") {
+      const d = script[i++];
+      if (!d || /[\s\\]/.test(d) || !part(d) || !part(d)) return true;
+      if (cmd === "s") {
+        const flags = script.slice(i).match(/^[a-zA-Z0-9]*/)![0];
+        if (/[we]/.test(flags)) return true;
+        i += flags.length;
+      }
+      continue;
+    }
+    if (cmd === "w" || cmd === "W" || cmd === "e") return true;
+    if ("aicrRbtT:#".includes(cmd)) {
+      // Text, a file to read or a label: the rest of the line (a label also ends at ;).
+      while (i < n && script[i] !== "\n" && !("btT:".includes(cmd) && script[i] === ";")) i++;
+      continue;
+    }
+    if (!"pPdDnNgGhHxlqQz=F".includes(cmd)) return true;
+  }
+  return false;
+}
 // awk can run commands (system, pipes, getline from a command) and print to files.
 const AWK_EFFECTS = /\bsystem\s*\(|\bprintf?\b[^;}]*(>|\|)|\|\s*getline|\|&|\bclose\s*\(/;
 
@@ -689,6 +808,10 @@ function sideEffect(c: Expanded, repo: string): string | null {
     const made = mktempPath(w, { ...emptyDefinitions(), vars: new Map([["TMPDIR", c.tmpdir]]) }, c.cwd);
     return made && writesOutsideRepo(made, c, repo) ? null : `\`${line}\` may create a file inside the repo`;
   }
+  if (p === "rm" || p === "unlink") {
+    const bad = args.filter((x) => !x.startsWith("-")).find((f) => !writesOutsideRepo(f, c, repo));
+    return bad === undefined ? null : `\`${line}\` deletes ${bad} inside the repo`;
+  }
   if (p === "find") {
     const action = args.find((a) => FIND_ACTIONS.test(a));
     return action ? `\`${line}\` uses ${action}` : null;
@@ -709,7 +832,7 @@ function sideEffect(c: Expanded, repo: string): string | null {
       else if (!a.startsWith("-")) rest.push(a);
     }
     if (!scripts.length && rest.length) scripts.push(rest.shift()!);
-    if (scripts.some((x) => SED_WRITES.test(x))) return `\`${line}\` writes a file or runs a command from its script`;
+    if (scripts.some((x) => sedScriptWrites(x))) return `\`${line}\` writes a file or runs a command from its script`;
     const bad = inPlace ? (rest.length ? rest.find((f) => !writesOutsideRepo(f, c, repo)) : "standard input") : undefined;
     return bad ? `\`${line}\` edits ${bad} in place inside the repo` : null;
   }

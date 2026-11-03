@@ -1,7 +1,7 @@
 import { createHash, randomBytes } from "node:crypto";
 import { spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, readdirSync, realpathSync, statSync, writeFileSync } from "node:fs";
-import { dirname, isAbsolute, join, relative, resolve } from "node:path";
+import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 
 export const SKILL_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..", "..");
@@ -186,4 +186,14 @@ export function median(values: number[]): number | null {
 
 export function round1(n: number): number {
   return Math.round(n * 10) / 10;
+}
+
+// The file's path with every symlink resolved, relative to the tree, or null when it leaves the tree.
+export function inTreePath(tree: string, file: string): string | null {
+  try {
+    const rel = relative(realpathSync(tree), realpathSync(join(tree, file)));
+    return rel.startsWith("..") || isAbsolute(rel) ? null : rel.split(sep).join("/");
+  } catch {
+    return null;
+  }
 }

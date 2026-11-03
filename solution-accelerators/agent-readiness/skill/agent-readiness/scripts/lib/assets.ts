@@ -2,7 +2,7 @@ import { join } from "node:path";
 import { ghJson } from "./gh.ts";
 import { ELEVATED } from "./static.ts";
 import type { Asset, InstructionItem, ScanBound } from "./types.ts";
-import { addDays, git, listFiles, readText, today } from "./util.ts";
+import { addDays, git, inTreePath, listFiles, readText, today } from "./util.ts";
 
 const KINDS: { re: RegExp; kind: Asset["kind"] }[] = [
   { re: /(^|\/)(AGENTS|CLAUDE)\.md$/, kind: "agents_md" },
@@ -67,9 +67,14 @@ export function refreshAssetStatus(assets: Asset[], items: InstructionItem[]): v
 export function inventory(repo: string, tree: string, items: InstructionItem[], bound?: ScanBound): Asset[] {
   const files = listFiles(tree, { includeHidden: true }).filter((f) => !f.startsWith(".cursor/skills/agent-readiness/"));
   const assets: Asset[] = [];
+  const listed = new Set(files);
   for (const file of files) {
     const hit = KINDS.find((k) => k.re.test(file));
     if (!hit) continue;
+    // A skill folder symlinked to another, such as .claude/skills -> .agents/skills, is one asset,
+    // listed at the path git tracks.
+    const real = inTreePath(tree, file);
+    if (real !== file && real !== null && listed.has(real) && KINDS.some((k) => k.re.test(real))) continue;
     const fm = hit.kind === "skill" ? frontmatterOk(readText(join(tree, file))) : undefined;
     const elevated = hit.kind === "environment" ? elevatedSetup(join(tree, file)) : undefined;
     const { status, ok } = statusFor({ kind: hit.kind, path: file, frontmatterOk: fm, elevated }, items);

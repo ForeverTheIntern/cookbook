@@ -40,7 +40,7 @@ On a large repo the scan has a time bound (`--budget-scan`, 3 minutes by default
 | `task-graph` | A package that needs a sibling package built first | a build or test that fails because a sibling workspace package's module is missing | the audit builds packages one by one, not in Turbo's or Nx's order | `fixtures/turbo-depends-on-build`, `spree/spree@cdd9a02` |
 | `windows` | Windows without Docker or Podman | `process.platform` is `win32` and no container runtime answers | the host fallback runs bash; run the audit in WSL 2 or with Docker Desktop | `tests/supported.test.ts` |
 
-A Python, PHP or Ruby app next to a root `package.json` is listed with its own share of changes. When the root package has no tests of its own, it isn't assessed either, so the audit never says the repo "has no tests" because it looked only at release tooling. A sibling package that wasn't built first, and a network, TLS or proxy error or a package mirror's HTTP error during install or build, are reported as blocked, never as a repo defect.
+A Python, PHP or Ruby app next to a root `package.json` is listed with its own share of changes. When the root package has no test script, it goes with that app and isn't assessed on its own either; the report says so, so the audit never says the repo "has no tests" because it looked only at release tooling. A sibling package that wasn't built first, and a network, TLS or proxy error or a package mirror's HTTP error during install or build, are reported as blocked, never as a repo defect.
 
 ## Not assessed
 
@@ -80,13 +80,13 @@ Anything else that still changes the repo's files fails the commands condition (
 
 ## Vendored agent skills
 
-Commands in a third-party skill copied into `.agents/skills`, `.claude/skills` or `.cursor/skills` are listed as skipped and never run, because they document that tool, not this repo. A skill counts as vendored when:
+Commands in a third-party skill copied into `.agents/skills`, `.claude/skills` or `.cursor/skills` are listed as skipped and never run, and the paths they name aren't checked, because they document that tool, not this repo. A skill counts as vendored when:
 
 - `skills-lock.json` at the repo root lists it, as the `skills` CLI writes;
 - a `LICENSE` file ships in its folder, or its frontmatter has a `license` field; or
 - its frontmatter names a `source`, `repository` or `upstream`.
 
-A first-party skill has none of these, and its commands are checked and replayed like any other instruction. The same skill reached twice, through a symlink or as an identical copy, is checked once.
+A first-party skill has none of these, and its commands are checked and replayed like any other instruction. The same skill reached twice, through a symlink or as an identical copy, is checked once. A skill folder symlinked to another, such as `.claude/skills/x` pointing at `.agents/skills/x`, is listed once as an agent asset, at the path git tracks.
 
 ## Services tests need
 

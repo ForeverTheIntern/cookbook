@@ -67,10 +67,11 @@ function frozenInstall(pm: Profile["packageManager"], tree: string, path: string
         : { command: `uv sync${all}${groups}`, reason: "no uv.lock, so the install can't be frozen" };
     }
     case "poetry": {
-      if (!exists(join(dir, "poetry.lock"))) return { command: `${POETRY_ENV} poetry install --no-interaction`, reason: "no poetry.lock, so the install can't be frozen" };
+      if (!exists(join(dir, "poetry.lock"))) return { command: `${POETRY_ENV} poetry install --no-interaction -v`, reason: "no poetry.lock, so the install can't be frozen" };
       // Both refuse a poetry.lock that no longer matches pyproject.toml; Poetry 2 renamed install --sync to sync.
+      // -v prints the cause behind "All attempts to connect to pypi.org failed", such as a PermissionError.
       const major = Number(poetryVersion(dir)?.split(".")[0] ?? 2);
-      return { command: `${POETRY_ENV} poetry ${major >= 2 ? "sync" : "install --sync"} --no-interaction`, reason: "frozen install from poetry.lock, with every non-optional group" };
+      return { command: `${POETRY_ENV} poetry ${major >= 2 ? "sync" : "install --sync"} --no-interaction -v`, reason: "frozen install from poetry.lock, with every non-optional group" };
     }
     case "pip": {
       // The test runner is often only in requirements-dev.txt.
@@ -420,14 +421,36 @@ export function toolSetup(profile: Profile, tree: string): ToolSetup[] {
   return out;
 }
 
+const DEFAULT_PYTHON = "3.12";
+
+// The lowest Python a project's requires-python, or Poetry's python dependency, allows.
+export function requiredPython(dir: string): string | null {
+  const text = pyproject(dir);
+  const poetry = text.match(/^\[tool\.poetry\.dependencies\][^\n]*\n([\s\S]*?)(?=^\[|(?![\s\S]))/m)?.[1] ?? "";
+  const spec = text.match(/^requires-python\s*=\s*["']([^"']+)["']/m)?.[1] ?? poetry.match(/^python\s*=\s*["']([^"']+)["']/m)?.[1];
+  const m = spec?.match(/(?:>=|\^|~=|==|~)\s*(\d+)\.(\d+)/);
+  return m ? `${m[1]}.${m[2]}` : null;
+}
+
+const newer = (a: string, b: string) => {
+  const [x, y] = [a, b].map((v) => v.split(".").map(Number));
+  return x[0] !== y[0] ? x[0] > y[0] : x[1] > y[1];
+};
+
+// The default Python, or a newer one when a project needs it, so the image satisfies requires-python.
+function pythonFor(dirs: string[]): string {
+  return dirs.map(requiredPython).filter((v): v is string => v !== null).reduce((best, v) => (newer(v, best) ? v : best), DEFAULT_PYTHON);
+}
+
 export function containerImage(profile: Profile, tree: string): string {
   const isPy = profile.packageManager === "pip" || profile.packageManager === "uv" || profile.packageManager === "poetry";
   if (isPy) {
     const pv = exists(join(tree, ".python-version")) ? readText(join(tree, ".python-version")).trim().match(/^(\d+\.\d+)/)?.[1] : null;
-    return profile.packageManager === "uv" ? `ghcr.io/astral-sh/uv:python${pv ?? "3.12"}-bookworm-slim` : `python:${pv ?? "3.12"}-slim`;
+    const version = pv ?? pythonFor([tree]);
+    return profile.packageManager === "uv" ? `ghcr.io/astral-sh/uv:python${version}-bookworm-slim` : `python:${version}-slim`;
   }
   const standalone = profile.components.filter((c) => c.packageManager && c.path !== ".");
-  if (!profile.packageManager && standalone.length > 0 && standalone.every((c) => c.language === "py")) return "python:3.12-slim";
+  if (!profile.packageManager && standalone.length > 0 && standalone.every((c) => c.language === "py")) return `python:${pythonFor(standalone.map((c) => join(tree, c.path)))}-slim`;
   let major: string | null = null;
   for (const dir of [".", ...standalone.filter((c) => c.language !== "py").map((c) => c.path)]) {
     for (const f of [".nvmrc", ".node-version"]) {

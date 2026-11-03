@@ -35,7 +35,7 @@ export const NETWORK_ENV = ["HTTP_PROXY", "HTTPS_PROXY", "NO_PROXY", "http_proxy
 export const CA_ENV = ["NODE_EXTRA_CA_CERTS", "SSL_CERT_FILE", "SSL_CERT_DIR", "REQUESTS_CA_BUNDLE", "PIP_CERT"];
 
 export function startArgs(name: string, image: string, hostDir: string, registryEnv: string[], env: Record<string, string | undefined> = process.env, pathExists: (p: string) => boolean = existsSync): string[] {
-  const args = ["run", "-d", "--name", name, "-v", `${hostDir}:/work`, "-w", "/work", "-e", "CI=1", "-e", "HOME=/tmp/home"];
+  const args = ["run", "-d", "--name", name, "-v", `${hostDir}:/work`, "-w", "/work", "-e", "CI=1", "-e", `HOME=${HOME_DIR}`];
   for (const key of registryEnv) args.push("-e", key);
   for (const key of NETWORK_ENV) if (env[key]) args.push("-e", key);
   for (const key of CA_ENV) {
@@ -58,6 +58,19 @@ export function hostUser(): string | null {
   const uid = process.getuid?.();
   const gid = process.getgid?.();
   return uid === undefined || uid === 0 ? null : `${uid}:${gid}`;
+}
+
+// The home every command shares, and the one the audit's own setup uses as the image's user, so
+// pip, npm and the rest leave their caches there instead of root-owned files in the shared one.
+export const HOME_DIR = "/tmp/home";
+export const SETUP_HOME = "/tmp/readiness-setup-home";
+
+export function imageUserArgs(name: string, command: string): string[] {
+  return ["exec", "-e", `HOME=${SETUP_HOME}`, name, "bash", "-lc", `mkdir -p ${SETUP_HOME} && ${command}`];
+}
+
+export function homeCommand(user: string | null): string {
+  return `mkdir -p ${HOME_DIR} && chmod 1777 ${HOME_DIR}${user ? ` && chown -R ${user} ${HOME_DIR}` : ""}`;
 }
 
 export function disconnectArgs(name: string, network = "bridge"): string[] {
@@ -88,7 +101,7 @@ export class ContainerSession {
   start(): { ok: boolean; output: string } {
     const env = { ...process.env } as Record<string, string>;
     const r = spawnSync(this.runtime.bin, startArgs(this.name, this.image, this.hostDir, this.registryEnv), { encoding: "utf8", env, timeout: 300000 });
-    if (r.status === 0) this.asImageUser("mkdir -p /tmp/home && chmod 1777 /tmp/home");
+    if (r.status === 0) this.reclaimHome();
     return { ok: r.status === 0, output: (r.stdout ?? "") + (r.stderr ?? "") };
   }
 
@@ -97,17 +110,25 @@ export class ContainerSession {
     const user = opts.imageUser ? null : this.user;
     const argv = [this.runtime.bin, ...execArgs(this.name, command, cwd, user)].map((a) => `'${a.replace(/'/g, `'\\''`)}'`).join(" ");
     const out = await runCommand(argv, process.cwd(), process.env as Record<string, string>, timeoutSec);
-    if (opts.imageUser && this.user) this.asImageUser(`chown -R ${this.user} /work`);
+    if (opts.imageUser && this.user) {
+      this.asImageUser(`chown -R ${this.user} /work`);
+      this.reclaimHome();
+    }
     return out;
   }
 
   asImageUser(command: string, timeoutMs = 300000): { ok: boolean; output: string } {
-    const r = spawnSync(this.runtime.bin, ["exec", this.name, "bash", "-lc", command], { encoding: "utf8", timeout: timeoutMs, maxBuffer: 16 * 1024 * 1024 });
+    const r = spawnSync(this.runtime.bin, imageUserArgs(this.name, command), { encoding: "utf8", timeout: timeoutMs, maxBuffer: 16 * 1024 * 1024 });
     return { ok: r.status === 0, output: (r.stdout ?? "") + (r.stderr ?? "") };
   }
 
+  // Gives the shared home, and the caches a setup step left in it, back to the ordinary user.
+  reclaimHome(): void {
+    this.asImageUser(homeCommand(this.user));
+  }
+
   enableCorepack(): void {
-    spawnSync(this.runtime.bin, ["exec", this.name, "bash", "-lc", "command -v corepack >/dev/null && corepack enable >/dev/null 2>&1 || true"], { encoding: "utf8", timeout: 60000 });
+    this.asImageUser("command -v corepack >/dev/null && corepack enable >/dev/null 2>&1 || true", 60000);
   }
 
   // Podman attaches to "podman" rather than "bridge", and rootless networking lists no network at

@@ -15,7 +15,7 @@
       "safety": "pass",
       "outcome": "proven",
       "contract": {
-        "cmd-repo-install": "POETRY_VIRTUALENVS_IN_PROJECT=true poetry install --sync --no-interaction",
+        "cmd-repo-install": "POETRY_VIRTUALENVS_IN_PROJECT=true poetry install --sync --no-interaction -v",
         "cmd-poetry-only-test": ".venv/bin/python -m unittest discover -s tests -t ."
       }
     }

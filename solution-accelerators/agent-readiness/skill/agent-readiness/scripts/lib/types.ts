@@ -122,7 +122,7 @@ export interface Evidence {
 }
 
 export interface Diagnosis {
-  cause: "service" | "credential" | "registry" | "missing_tool" | "missing_module" | "network" | "timeout" | "compile" | "unknown";
+  cause: "service" | "credential" | "registry" | "missing_tool" | "missing_module" | "network" | "permission" | "timeout" | "compile" | "unknown";
   detail: string;
   service?: string;
 }

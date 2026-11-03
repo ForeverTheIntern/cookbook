@@ -56,8 +56,42 @@ const NETWORK: { re: RegExp; detail: string }[] = [
   { re: /ProxyError|407 Proxy Authentication|tunneling socket could not be established|proxy[^\n]{0,40}(refused|error|failed)/i, detail: "a proxy error on the network" },
   { re: /CERT_|certificate verify failed|unable to (get|verify) (the )?(local issuer|first) certificate|self[- ]signed certificate|SSLError|SSL: [A-Z_]+|ERR_SSL|SSL routines|tlsv1 alert|TLS handshake|Client network socket disconnected before secure TLS/i, detail: "a TLS or certificate error on the network" },
   { re: /ENOTFOUND|EAI_AGAIN|getaddrinfo|Temporary failure in name resolution|Could not resolve host/, detail: "it tried to reach the network" },
-  { re: /ECONNRESET|ETIMEDOUT|ENETUNREACH|EHOSTUNREACH|Network is unreachable|socket hang up|\bfetch failed\b|Connection reset by peer|Failed to connect to|Max retries exceeded with url|NewConnectionError|ReadTimeoutError|request to https?:\/\/\S+ failed|ECONNREFUSED (?!127\.0\.0\.1|::1|localhost)[\d.]+:\d+/, detail: "a network connection failed" },
+  { re: /ECONNRESET|ETIMEDOUT|ENETUNREACH|EHOSTUNREACH|Network is unreachable|socket hang up|\bfetch failed\b|Connection reset by peer|Failed to connect to|Max retries exceeded with url|NewConnectionError|ReadTimeoutError|request to https?:\/\/\S+ failed|ECONNREFUSED (?!127\.0\.0\.1|::1|localhost)[\d.]+:\d+|All attempts to connect to [\w.-]+ failed/, detail: "a network connection failed" },
 ];
+
+// A home or cache directory the audit's user can't write, such as one a setup step run as root
+// left behind. Poetry reports it as "All attempts to connect to pypi.org failed" with the
+// PermissionError only in its verbose output; npm says its cache holds root-owned files.
+const PERMISSION = /\bEACCES\b|\bEPERM\b|PermissionError|Permission denied/;
+const HOME_OR_CACHE = /(\/tmp\/home\b|\/root\b|\/home\/[^/\s'"]+\/\.|\.cache\/|\/\.npm\b|\/\.bun\/|\/\.yarn\/berry|pypoetry|corepack|ms-playwright|\/\.local\/)/;
+
+export function permissionLimit(output: string): string | null {
+  const text = output.replace(/\x1b\[[0-9;]*m/g, "");
+  if (/cache folder contains root-owned files/.test(text)) return "the npm cache in the home directory belongs to another user";
+  if (/Connection broken: PermissionError\(13/.test(text)) return "a permission error on a cache or home directory, which the tool reported as a failed connection";
+  const lines = text.split("\n");
+  for (let i = 0; i < lines.length; i++) {
+    if (!PERMISSION.test(lines[i])) continue;
+    const near = lines.slice(Math.max(0, i - 2), i + 5).join("\n");
+    const path = near.match(new RegExp(String.raw`(?:^|[\s'"=(])(\/[^\s'",)]*${HOME_OR_CACHE.source}[^\s'",)]*)`, "m"))?.[1];
+    if (path) return `the audit's user can't write ${path.replace(/[:.]+$/, "")}, a home or cache directory`;
+  }
+  return null;
+}
+
+// The Python the image has doesn't satisfy the project's requires-python, as pip, uv and Poetry say it.
+export function pythonMismatch(output: string): string | null {
+  const m =
+    output.match(/requires a different Python: [\d.]+ not in '([^']+)'/) ??
+    output.match(/No interpreter found for Python ([^\s]+)/) ??
+    output.match(/current Python version \([\d.]+\) does not satisfy Python([^\s,]+)/) ??
+    output.match(/Python version [\d.]+ is not supported by the project \(([^)]+)\)/) ??
+    output.match(/Current Python version \([\d.]+\) is not allowed by the project \(([^)]+)\)/);
+  return m ? `Python ${m[1].replace(/^\s*/, "")} is not installed` : null;
+}
+
+// Playwright's browsers are a separate download (`playwright install`) that the image doesn't have.
+const PLAYWRIGHT = /Executable doesn't exist at [^\n]*ms-playwright|Looks like Playwright (?:Test or Playwright )?was just installed or updated|Please run the following command to download new browsers/;
 
 export function networkFailure(output: string): string | null {
   return NETWORK.find((n) => n.re.test(output))?.detail ?? mirrorRefused(output);
@@ -97,6 +131,11 @@ export function mirrorRefused(output: string): string | null {
 
 export function diagnose(output: string, timedOut: boolean, phase: string): Diagnosis {
   if (timedOut) return { cause: "timeout", detail: `the ${phase} step ran out of time` };
+  const permission = permissionLimit(output);
+  if (permission) return { cause: "permission", detail: permission };
+  const python = pythonMismatch(output);
+  if (python) return { cause: "missing_tool", detail: python };
+  if (PLAYWRIGHT.test(output)) return { cause: "missing_tool", detail: "Playwright's browsers are not installed" };
   const refused = output.match(/ECONNREFUSED (?:127\.0\.0\.1|::1|localhost|\[::1\]):(\d+)|connect(?:ion)? refused[^\n]*?:(\d{2,5})/i);
   if (refused) {
     const port = refused[1] ?? refused[2];

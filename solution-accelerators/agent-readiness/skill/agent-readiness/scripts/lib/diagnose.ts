@@ -95,7 +95,20 @@ export function mirrorRefused(output: string): string | null {
   return null;
 }
 
-export function diagnose(output: string, timedOut: boolean, phase: string): Diagnosis {
+// Node, TypeScript and Python name a missing module one way; bundlers and Vite another. The first
+// group that matched is the module.
+const MISSING_MODULE = [
+  /Cannot find (?:module|package) '([^'\n]+)'/,
+  /ModuleNotFoundError: No module named '([^'\n]+)'/,
+  /ERR_MODULE_NOT_FOUND[^\n']*'([^'\n]+)'/,
+  /Could not resolve ["']([^"'\n]+)["']/,
+  /[Ff]ailed to resolve (?:entry for package|import) ["']([^"'\n]+)["']/,
+  /Module not found: Error: Can't resolve '([^'\n]+)'/,
+  /["']([^"'\n]+)["'] is imported by [^\n]+, but could not be resolved/,
+];
+
+export function diagnose(rawOutput: string, timedOut: boolean, phase: string): Diagnosis {
+  const output = rawOutput.replace(/\x1b\[[0-9;]*m/g, "");
   if (timedOut) return { cause: "timeout", detail: `the ${phase} step ran out of time` };
   const refused = output.match(/ECONNREFUSED (?:127\.0\.0\.1|::1|localhost|\[::1\]):(\d+)|connect(?:ion)? refused[^\n]*?:(\d{2,5})/i);
   if (refused) {
@@ -117,8 +130,8 @@ export function diagnose(output: string, timedOut: boolean, phase: string): Diag
   if (/ensurepip is not available|No module named venv\b/.test(output)) return { cause: "missing_tool", detail: "python3-venv is not installed" };
   const tool = output.match(/(?:^|\n)(?:[^\n:]*: line \d+: |[^\n:]*: \d+: |(?:ba)?sh: )?([\w.+-]+): (?:command )?not found/);
   if (tool) return { cause: "missing_tool", detail: `${tool[1]} is not installed` };
-  const mod = output.match(/Cannot find (?:module|package) '([^'\n]+)'|ModuleNotFoundError: No module named '([^'\n]+)'|ERR_MODULE_NOT_FOUND[^\n']*'([^'\n]+)'/);
-  if (mod) return { cause: "missing_module", detail: `module ${mod[1] ?? mod[2] ?? mod[3]} is missing` };
+  const mod = MISSING_MODULE.map((re) => output.match(re)).filter((m): m is RegExpMatchArray => m !== null).sort((a, b) => (a.index ?? 0) - (b.index ?? 0))[0];
+  if (mod) return { cause: "missing_module", detail: `module ${mod[1]} is missing` };
   const network = networkFailure(output);
   if (network) return { cause: "network", detail: network };
   if (/SyntaxError|error TS\d{4}|IndentationError/.test(output)) return { cause: "compile", detail: "the code doesn't compile" };

@@ -371,9 +371,10 @@ export function discoverLayout(tree: string, files: string[], repoName = basenam
   if (exists(join(tree, "package.json"))) {
     const apps = rootApps(tree, files, repoName);
     const jsRoot = comps.find((c) => c.path === "." && c.manifest === "package.json");
-    // A root package with no tests of its own isn't the repo's product when another app sits at the root.
+    // A root package without a test script of its own goes with the app at the root, such as Django or
+    // Laravel: it isn't assessed apart from that app, so its missing tests never read as the repo's.
     if (jsRoot && apps.length && !(jsRoot.scripts.test && !/no test specified/.test(jsRoot.scripts.test))) {
-      jsRoot.notAssessedReason = `it has no tests of its own, and the ${apps[0].toolchain} app next to it isn't supported yet`;
+      jsRoot.notAssessedReason = `it goes with the ${apps[0].toolchain} app at the root, which isn't supported yet, so it isn't assessed on its own`;
     }
     for (const app of apps) {
       if (comps.some((c) => c.id === app.id)) app.id = sanitizeId(`${app.id}-${ROOT_APP_MANIFESTS.find((r) => r.stack === app.stack)!.suffix}`);

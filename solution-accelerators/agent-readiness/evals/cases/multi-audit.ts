@@ -86,7 +86,7 @@ const joins: EvalCase = {
   id: "new-component-joins",
   fixture: "monorepo-mixed",
   tags: ["full"],
-  description: "After one audit, a billing package with a failing test and about 17% of recent changes is added. Under 2026-11-alpha a component the last audit didn't have joins the active set at once, so billing helps set the repo level in the re-audit.",
+  description: "After one audit, a billing package with a failing test and about 19% of recent changes is added. Under 2026-11-alpha a component the last audit didn't have joins the active set at once, so billing helps set the repo level in the re-audit.",
   setup: (ws) => seedAudit(ws, joins),
   turns: [{ prompt: "We added a billing package. Re-audit, permission tier local-exec.", before: addBilling }],
   gates: [sealedGate, auditCount(2), levelsMatch({ level: 0, levels: { api: 0, worker: 1, shared: 1, billing: 0 } }, "billing is assessed at Level 0 next to the others"), joinsAtOnce("billing"), narrationGate, trajectory],

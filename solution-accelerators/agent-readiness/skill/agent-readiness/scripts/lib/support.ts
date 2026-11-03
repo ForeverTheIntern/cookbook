@@ -22,7 +22,7 @@ export const SUPPORTED_DOC = "references/supported.md";
 
 export const STACKS: Stack[] = [
   { id: "npm", label: "Node with npm", kind: "stack", tier: "supported", proof: ["fixtures/healthy-node", "sindresorhus/slugify@3b17b2e"] },
-  { id: "npm-workspaces", label: "npm workspaces", kind: "stack", tier: "supported", proof: ["fixtures/monorepo-mixed"] },
+  { id: "npm-workspaces", label: "npm workspaces", kind: "stack", tier: "supported", proof: ["fixtures/monorepo-mixed", "fixtures/sampled-scope"] },
   { id: "pnpm", label: "Node with pnpm", kind: "stack", tier: "supported", proof: ["fixtures/standalone-nested-mixed", "t3-oss/create-t3-turbo@8f945b7"] },
   { id: "yarn", label: "Node with Yarn 1", kind: "stack", tier: "supported", proof: ["fixtures/yarn-classic"] },
   { id: "pip", label: "Python with pip", kind: "stack", tier: "supported", proof: ["fixtures/python-unpinned"] },

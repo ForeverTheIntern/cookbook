@@ -97,8 +97,8 @@ export function targetsMet(rubric: Rubric, targets: Targets, outcomes: { agent: 
   const reasons: string[] = [];
   if (a.opened < floor) reasons.push(`only ${a.opened} agent PRs in the window; at least ${floor} are needed`);
   if (outcomes.control.opened === 0) reasons.push("no other PRs in the window to compare with");
-  // Under 2026-11-alpha a first-time CI rate needs as many finished CI runs as any other rate.
-  if (rubric.level4.rule === "streak" && a.firstTimeCiKnown < rubric.outcomes.minRateN) reasons.push(`only ${a.firstTimeCiKnown} agent PRs have a finished first CI run; at least ${rubric.outcomes.minRateN} are needed for a rate`);
+  // Under a measured window a first-time CI rate needs as many finished CI runs as any other rate.
+  if (rubric.level3.rule === "measured-window" && a.firstTimeCiKnown < rubric.outcomes.minRateN) reasons.push(`only ${a.firstTimeCiKnown} agent PRs have a finished first CI run; at least ${rubric.outcomes.minRateN} are needed for a rate`);
   const merge = a.opened ? a.merged / a.opened : 0;
   const first = a.firstTimeCiKnown ? a.firstTimeCiPass / a.firstTimeCiKnown : 0;
   const cr = a.opened ? a.changesRequested / a.opened : 1;
@@ -114,7 +114,7 @@ export function outcomeLevel(rubric: Rubric, input: OutcomeLevelInput): { level:
   if (!input.outcomes) return { level: null, reasons: ["outcomes weren't measured in this audit"] };
   if (input.outcomes.truncated) return { level: null, reasons: ["the PR window held more PRs than gh returns at once, so Level 3 isn't measured from a partial window"] };
   const days = input.outcomes.windowDays;
-  if (rubric.level4.rule === "streak" && days !== undefined && days !== rubric.outcomes.windowDays) return { level: null, reasons: [`Level 3 is measured over a ${rubric.outcomes.windowDays}-day window; this one was ${days} days`] };
+  if (rubric.level3.rule === "measured-window" && days !== undefined && days !== rubric.outcomes.windowDays) return { level: null, reasons: [`Level 3 is measured over a ${rubric.outcomes.windowDays}-day window; this one was ${days} days`] };
   const t = targetsMet(rubric, input.targets, input.outcomes);
   if (!t.met) return { level: null, reasons: t.reasons };
   if (rubric.level4.rule === "streak") return streakLevel(rubric, input.outcomes.agent, input.level3Run ?? []);

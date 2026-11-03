@@ -4,8 +4,8 @@ import { join } from "node:path";
 import { describe, test } from "node:test";
 import type { Audit, ReportJson } from "../skill/agent-readiness/scripts/lib/types.ts";
 import { claimsNotInTree } from "../evals/lib/claims.ts";
-import { goldenProblems, loadGoldens, rankViolations } from "../evals/lib/goldens.ts";
-import type { GoldenSet } from "../evals/lib/goldens.ts";
+import { goldenProblems, levelViolations, loadGoldens, loadLastRun, rankViolations, scoringDigest, staleResults } from "../evals/lib/goldens.ts";
+import type { GoldenResult, GoldenSet, LastRun } from "../evals/lib/goldens.ts";
 import { materialize, readiness } from "../tools/fixture.ts";
 
 function audited(fixture: string): { repo: string; report: ReportJson; audit: Audit } {
@@ -33,6 +33,46 @@ describe("public goldens", () => {
     assert.deepEqual(rankViolations(set, { "a:x": 4, "b:y": 3, "c:z": 2, "d:w": 0 }), [], "exact scores don't matter, only the order");
     assert.deepEqual(rankViolations(set, { "a:x": 1, "b:y": 1, "c:z": 1, "d:w": 0 }), ["a:x is Level 1, which should be above b:y at Level 1", "a:x is Level 1, which should be above c:z at Level 1"]);
     assert.match(rankViolations(set, { "a:x": 2, "b:y": null, "c:z": 1, "d:w": 0 })[0], /both need a level/);
+  });
+
+  test("exact levels are asserted for the stable goldens, and a level off by one fails", () => {
+    const set = loadGoldens();
+    const exact = Object.fromEntries(set.goldens.flatMap((g) => Object.entries(g.expect.levels ?? {}).map(([c, l]) => [`${g.id}:${c}`, l])));
+    assert.deepEqual({ slugify: exact["slugify:slugify"], starlette: exact["starlette:starlette"], express: exact["express:express"] }, { slugify: 2, starlette: 2, express: 1 });
+    const slugify = set.goldens.find((g) => g.id === "slugify")!;
+    assert.deepEqual(levelViolations(slugify, { slugify: 2 }), []);
+    assert.deepEqual(levelViolations(slugify, { slugify: 1 }), ["slugify:slugify is Level 1, expected Level 2"], "a regression that moves every repo down one level still keeps the ranking");
+    assert.deepEqual(levelViolations(slugify, { slugify: null }), ["slugify:slugify is no level, expected Level 2"]);
+    assert.deepEqual(levelViolations(slugify, {}), ["slugify:slugify has no result"]);
+  });
+
+  test("a result recorded under other scoring, at another SHA, or missing is stale", () => {
+    const set = loadGoldens();
+    const result = (id: string, scoring: string): GoldenResult => ({ id, sha: set.goldens.find((g) => g.id === id)!.sha, minutes: 0, repoLevel: null, outcome: "proven", levels: {}, excluded: [], failures: [], scoring, commit: "x" });
+    const run: LastRun = { ranAt: "", results: set.goldens.map((g) => result(g.id, "d1")), violations: [], pending: [] };
+    assert.deepEqual(staleResults(set, run, "d1"), []);
+    assert.deepEqual(staleResults(set, run, "d2").map((s) => s.id), set.goldens.map((g) => g.id), "changing score.ts or levels.ts makes every result stale");
+    const moved: LastRun = { ...run, results: run.results.map((r, i) => (i === 0 ? { ...r, sha: "0".repeat(40) } : r)).slice(0, -1) };
+    assert.deepEqual(staleResults(set, moved, "d1").map((s) => s.why.split(",")[0]), ["recorded at 0000000", "no recorded result"]);
+    assert.notEqual(scoringDigest(), "", "the digest covers the scoring files");
+  });
+
+  // The freshness check: last-run.json must show what the current score.ts and levels.ts give. A
+  // result `npm run goldens -- --only` couldn't rerun (no network for PyPI, say) is listed as pending
+  // and shows here as a TODO; `npm run goldens -- --check` fails on it, so the release gate does.
+  for (const p of loadLastRun()?.pending ?? []) test(`golden ${p.id} is pending a rerun`, { todo: p.reason }, () => {});
+
+  test("last-run.json is fresh against score.ts and levels.ts, and the recorded run holds every assertion", () => {
+    const set = loadGoldens();
+    const run = loadLastRun();
+    const pending = new Map((run?.pending ?? []).map((p) => [p.id, p.reason]));
+    const stale = staleResults(set, run).filter((s) => !pending.has(s.id));
+    assert.deepEqual(stale, [], "rerun the goldens (`npm run goldens`) after changing scripts/lib/score.ts or scripts/lib/levels.ts");
+    const current = run!.results.filter((r) => !pending.has(r.id));
+    assert.deepEqual(current.flatMap((r) => r.failures.map((f) => `${r.id}: ${f}`)), []);
+    assert.deepEqual(set.goldens.filter((g) => !pending.has(g.id)).flatMap((g) => levelViolations(g, run!.results.find((r) => r.id === g.id)?.levels ?? {})), []);
+    const levels = Object.fromEntries(run!.results.flatMap((r) => Object.entries(r.levels).map(([c, l]) => [`${r.id}:${c}`, l])));
+    assert.deepEqual(rankViolations(set, levels), []);
   });
 
   test("goldenProblems catches a short SHA, a copyleft license and a missing toolchain", () => {

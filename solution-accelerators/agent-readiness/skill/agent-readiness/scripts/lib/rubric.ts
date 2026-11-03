@@ -37,7 +37,9 @@ export interface Rubric {
   level2: CondId[];
   scenarios: { id: ScenarioId; label: string; level2: CondId[] }[];
   changes?: string[];
-  level3: { minAgentPRs: number; absoluteMinAgentPRs: number; windowDays: number; rule?: string };
+  // "measured-window" (from 2026-11-alpha): the window is exactly outcomes.windowDays long, and a
+  // first-time CI rate needs outcomes.minRateN finished runs. Without it, neither is checked.
+  level3: { minAgentPRs: number; absoluteMinAgentPRs: number; windowDays: number; rule?: "measured-window"; floor?: string };
   // "streak" (from 2026-11-alpha): consecutiveWindows back-to-back windows at Level 3 or above.
   // Without it, the 2026-10-alpha rule: compare with the last audit at Level 3 or above.
   level4: { consecutiveWindows: number; volumeMultiplier: number; rule?: "streak" };

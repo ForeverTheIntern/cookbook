@@ -1,7 +1,7 @@
 import { partialCoverage } from "../skill/agent-readiness/scripts/lib/levels.ts";
 import { buildReport } from "../skill/agent-readiness/scripts/lib/render.ts";
 import { updateRoadmap } from "../skill/agent-readiness/scripts/lib/roadmap.ts";
-import { loadRubric } from "../skill/agent-readiness/scripts/lib/rubric.ts";
+import { latestRubricVersion, loadRubric } from "../skill/agent-readiness/scripts/lib/rubric.ts";
 import { compute } from "../skill/agent-readiness/scripts/lib/seal.ts";
 import { noRealResults } from "../skill/agent-readiness/scripts/lib/score.ts";
 import type { Audit, Component, ContractCommand, Diagnosis, Evidence, HistoryLine, InstructionItem, OutcomesSnapshot, ReportJson, SafetyFinding, ScenarioSpec, Targets, Where } from "../skill/agent-readiness/scripts/lib/types.ts";
@@ -42,6 +42,8 @@ export interface AuditSpec {
   lockfile?: R;
   outcomes?: OutcomesSnapshot | null;
   createdAt?: string;
+  // The rubric new audits use unless a test names an older one.
+  rubric?: string;
 }
 
 export function makeAudit(spec: AuditSpec): Audit {
@@ -75,7 +77,7 @@ export function makeAudit(spec: AuditSpec): Audit {
     repo: { name: "example-org/example", commit: "abc1234def", dirtyTree: false },
     scenarios: spec.scenarios ?? [],
     tier: "local-exec",
-    rubric: "2026-10-alpha",
+    rubric: spec.rubric ?? latestRubricVersion(),
     skill: { version: "0.1.0", scriptsDigest: "0".repeat(64), rubricDigest: "0".repeat(64), release: null },
     seed: { value: "seed", pinned: false },
     environment: { containerRuntime: "docker", image: "node:22-bookworm-slim", registryEnv: [], inheritEnv: false },

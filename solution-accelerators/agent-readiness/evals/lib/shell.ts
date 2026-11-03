@@ -3,12 +3,17 @@ import { tmpdir } from "node:os";
 import { basename, dirname, isAbsolute, join, relative, resolve } from "node:path";
 
 // Just enough of a shell parser to tell which program each part of an agent's command runs, so
-// the trajectory gate judges programs rather than words. It doesn't expand variables or globs.
+// the trajectory gate judges programs rather than words. It follows the shell functions and
+// variables a command defines (see expand()), but not globs or other expansions.
 
 export interface Segment {
   words: string[];
   // Targets of output redirects (`>`, `>>`, `&>`), so a read-only program that writes a file isn't benign.
   writes: string[];
+  // The operators before and after this simple command: "start", "end", ";", "&&", "|", "(", "\n" and
+  // so on, or "$(" inside a command substitution. They tell whether a definition always takes effect.
+  sep: string;
+  end: string;
 }
 
 const OPERATORS = ["&&", "||", ";;", ";", "|&", "|", "&", "\n", "(", ")"];
@@ -57,6 +62,7 @@ export function segments(cmd: string): Segment[] {
   let inWord = false;
   let redirect: "write" | "read" | null = null;
   const heredocs: string[] = [];
+  let lastOp = "start";
   const endWord = () => {
     if (!inWord) return;
     if (redirect === "write") writes.push(word);
@@ -65,17 +71,19 @@ export function segments(cmd: string): Segment[] {
     word = "";
     inWord = false;
   };
-  const endSegment = () => {
+  const endSegment = (op: string) => {
     endWord();
-    if (words.length || writes.length) out.push({ words, writes });
+    if (words.length || writes.length) out.push({ words, writes, sep: lastOp, end: op });
     words = [];
     writes = [];
+    lastOp = op;
   };
-  const sub = (inner: string) => out.push(...segments(inner));
+  const sub = (inner: string) => out.push(...segments(inner).map((x) => ({ ...x, sep: "$(", end: "$(" })));
   // `$(pwd)` stays recognisable so a CLI path built from it still resolves; other substitutions don't.
   const substitution = (inner: string) => {
     sub(inner);
-    return inner.trim() === "pwd" ? "$(pwd)" : "$(...)";
+    const t = inner.trim();
+    return t === "pwd" ? "$(pwd)" : t === "git rev-parse --show-toplevel" ? "$(toplevel)" : "$(...)";
   };
   for (let i = 0; i < cmd.length; i++) {
     const ch = cmd[i];
@@ -161,7 +169,7 @@ export function segments(cmd: string): Segment[] {
     }
     const op = OPERATORS.find((o) => cmd.startsWith(o, i));
     if (op) {
-      endSegment();
+      endSegment(op);
       if (op === "\n" && heredocs.length) {
         for (const tag of heredocs.splice(0)) {
           const rest = cmd.slice(i + 1);
@@ -178,7 +186,7 @@ export function segments(cmd: string): Segment[] {
     word += ch;
     inWord = true;
   }
-  endSegment();
+  endSegment("end");
   return out;
 }
 
@@ -209,6 +217,217 @@ export interface Context {
   // The repository the agent works in, and the directory the command runs from.
   repo: string;
   cwd: string;
+  // Shell functions and variables defined by earlier commands in the same shell session.
+  defs?: Definitions;
+}
+
+// Shell functions and variables an agent defines, in the order its commands define them. A name
+// mapped to null was defined in a way this parser can't follow (inside a condition or subshell
+// over an earlier value, from a command substitution, or by sourcing an unknown file), so nothing
+// that runs through it counts as a CLI call.
+export interface Definitions {
+  functions: Map<string, string | null>;
+  vars: Map<string, string | null>;
+}
+
+export function emptyDefinitions(): Definitions {
+  return { functions: new Map(), vars: new Map() };
+}
+
+function copyDefinitions(d: Definitions | undefined): Definitions {
+  return { functions: new Map(d?.functions), vars: new Map(d?.vars) };
+}
+
+const NAME = String.raw`[A-Za-z_][\w:.-]*`;
+const FUNCTION_HEAD = new RegExp(String.raw`^(?:function\s+(${NAME})\s*(?:\(\s*\))?|(${NAME})\s*\(\s*\))\s*`);
+
+// The end of a `{ ... }` body that starts after `open`, skipping quotes and `${...}`.
+function bodyEnd(text: string, open: number): number {
+  let depth = 1;
+  for (let i = open + 1; i < text.length; i++) {
+    const ch = text[i];
+    if (ch === "\\") i++;
+    else if (ch === "'") i = Math.max(i, text.indexOf("'", i + 1));
+    else if (ch === '"') {
+      for (i++; i < text.length && text[i] !== '"'; i++) if (text[i] === "\\") i++;
+    } else if (ch === "$" && text[i + 1] === "{") {
+      depth++;
+      i++;
+    } else if (ch === "{" && /[\s;&|(]/.test(text[i - 1] ?? " ") && /\s/.test(text[i + 1] ?? " ")) depth++;
+    else if (ch === "}" && --depth === 0) return i;
+  }
+  return -1;
+}
+
+// Replaces each function definition at the start of a command with a placeholder word, so the
+// definition keeps its place in the command's order. A `name()` this can't read taints the name.
+function extractFunctions(cmd: string): { text: string; bodies: string[] } {
+  const bodies: string[] = [];
+  let out = "";
+  let quote: string | null = null;
+  for (let i = 0; i < cmd.length; i++) {
+    const ch = cmd[i];
+    if (quote) {
+      out += ch;
+      if (ch === "\\" && quote === '"') out += cmd[++i] ?? "";
+      else if (ch === quote) quote = null;
+      continue;
+    }
+    if (ch === "'" || ch === '"') {
+      quote = ch;
+      out += ch;
+      continue;
+    }
+    const before = out.trimEnd();
+    const atStart = (before === "" || /[;&|\n(){]$/.test(before) || /(^|\s)(then|do|else|elif)$/.test(before)) && /[\s;&|\n(){]$|^$/.test(out);
+    const m = atStart && /\S/.test(ch) ? cmd.slice(i).match(FUNCTION_HEAD) : null;
+    if (m) {
+      const name = m[1] ?? m[2];
+      const open = i + m[0].length;
+      const end = cmd[open] === "{" ? bodyEnd(cmd, open) : -1;
+      if (end > 0) {
+        bodies.push(`${name}\0${cmd.slice(open + 1, end)}`);
+        out += ` __readiness_fn_${bodies.length - 1}__ `;
+        i = end;
+      } else {
+        out += ` __readiness_taint_${name}__ `;
+        i += m[0].length - 1;
+      }
+      continue;
+    }
+    out += ch;
+  }
+  return { text: out, bodies };
+}
+
+const OPENERS = new Set(["if", "while", "until", "for", "case", "select", "{"]);
+const MIDDLES = new Set(["then", "do", "else", "elif", "!"]);
+const CLOSERS = new Set(["fi", "done", "esac", "}"]);
+const DECLARE = new Set(["export", "local", "declare", "typeset", "readonly"]);
+// Files an agent sources to set up its shell; they define no wrapper the gate needs to follow.
+const SETUP_SOURCES = /(^|\/)(eval\.env|nvm\.sh|activate|\.bashrc|\.bash_profile|\.profile|\.zshrc|\.zprofile)$/;
+const ASSIGN = /^([A-Za-z_][A-Za-z0-9_]*)=([\s\S]*)$/;
+
+// A definition that may not have run (inside a condition, after `&&` or `||`, in a subshell or a
+// pipeline) keeps a new name, since an unset name runs nothing, but taints one that had a value.
+function setDefinition(map: Map<string, string | null>, name: string, value: string | null, certain: boolean): void {
+  if (certain || value === null) map.set(name, value);
+  else if (!map.has(name)) map.set(name, /^node(js)?$/.test(name) ? null : value);
+  else if (map.get(name) !== value) map.set(name, null);
+}
+
+function expandVars(word: string, vars: Map<string, string | null>): string[] {
+  const exact = word.match(/^\$\{?([A-Za-z_][A-Za-z0-9_]*)\}?$/);
+  if (exact && vars.has(exact[1])) {
+    const v = vars.get(exact[1]);
+    return typeof v === "string" ? (segments(v)[0]?.words ?? []) : [word];
+  }
+  return [word.replace(/\$\{?([A-Za-z_][A-Za-z0-9_]*)\}?/g, (m, n: string) => {
+    const v = vars.get(n);
+    return typeof v === "string" && !/\s/.test(v) ? v : m;
+  })];
+}
+
+// One simple command as the shell would run it, after the functions and variables it goes through.
+export interface Expanded {
+  words: string[];
+  writes: string[];
+  cwd: string;
+  // The function the command came from, or null when it was typed directly.
+  via: string | null;
+  // False when it runs through a name whose definition couldn't be followed.
+  known: boolean;
+}
+
+function walk(segs: Segment[], bodies: string[], ctx: Context, defs: Definitions, via: string | null, args: string[] | null, depth: number): Expanded[] {
+  const out: Expanded[] = [];
+  let cwd = ctx.cwd;
+  let nest = 0;
+  let parens = 0;
+  for (const s of segs) {
+    if (s.sep === "(") parens++;
+    if (s.sep === ")") parens = Math.max(0, parens - 1);
+    let w = [...s.words];
+    for (;;) {
+      if (OPENERS.has(w[0])) nest++;
+      else if (CLOSERS.has(w[0])) nest = Math.max(0, nest - 1);
+      else if (!MIDDLES.has(w[0])) break;
+      w = w.slice(1);
+    }
+    if (!w.length) continue;
+    const certain = nest === 0 && parens === 0 && ["start", ";", "\n", ";;"].includes(s.sep) && !["|", "|&", "&", "("].includes(s.end);
+    const fn = w[0].match(/^__readiness_fn_(\d+)__$/);
+    if (fn) {
+      const [name, body] = bodies[Number(fn[1])].split("\0");
+      setDefinition(defs.functions, name, body, certain);
+      continue;
+    }
+    const taint = w[0].match(/^__readiness_taint_(.+)__$/);
+    if (taint) {
+      defs.functions.set(taint[1], null);
+      continue;
+    }
+    if (args) w = w.flatMap((x) => (x === "$@" || x === "$*" ? args : [x.replace(/\$\{?([1-9])\}?/g, (_m, n: string) => args[Number(n) - 1] ?? "")]));
+    w = w.flatMap((x) => expandVars(x, defs.vars));
+    const decl = DECLARE.has(w[0]) ? w.slice(1).filter((x) => !x.startsWith("-")) : w;
+    if (decl.length && decl.every((x) => ASSIGN.test(x))) {
+      for (const x of decl) {
+        const [, name, value] = x.match(ASSIGN)!;
+        setDefinition(defs.vars, name, /\$\(|`|\$\{?[A-Za-z_]/.test(value) ? null : value, certain);
+      }
+      continue;
+    }
+    if (DECLARE.has(w[0])) continue;
+    if (w[0] === "unset") {
+      const which = w.includes("-f") ? [defs.functions] : w.includes("-v") ? [defs.vars] : [defs.vars, defs.functions];
+      for (const name of w.slice(1).filter((x) => !x.startsWith("-"))) for (const m of which) certain ? m.delete(name) : m.set(name, null);
+      continue;
+    }
+    if ((w[0] === "source" || w[0] === ".") && !SETUP_SOURCES.test(w[1] ?? "")) {
+      for (const m of [defs.functions, defs.vars]) for (const k of m.keys()) m.set(k, null);
+    }
+    const p = program(w);
+    if (p[0] === "cd" || p[0] === "pushd") {
+      const dir = p[1];
+      if (dir && !/^\$\{?[A-Za-z_]/.test(dir)) cwd = at({ ...ctx, cwd }, dir === "~" ? (process.env.HOME ?? "/") : dir);
+      out.push({ words: w, writes: s.writes, cwd, via, known: true });
+      continue;
+    }
+    if (p.length && defs.functions.has(p[0])) {
+      const body = defs.functions.get(p[0]);
+      if (body === null || body === undefined || depth >= 4) {
+        out.push({ words: w, writes: s.writes, cwd, via, known: false });
+        continue;
+      }
+      const inner = extractFunctions(body);
+      const calls = walk(segments(inner.text), inner.bodies, { ...ctx, cwd }, defs, `function ${p[0]}`, p.slice(1), depth + 1);
+      out.push(...calls.map((c) => ({ ...c, writes: [...c.writes, ...s.writes] })));
+      continue;
+    }
+    // A variable still unexpanded here is unset, tainted or built at run time: nothing to follow.
+    out.push({ words: w, writes: s.writes, cwd, via, known: !(p.length > 0 && /^\$\{?[A-Za-z_]/.test(p[0])) });
+  }
+  return out;
+}
+
+// Splits `cmd` into the simple commands it runs, following the functions and variables it and
+// ctx.defs define, and returns the definitions in effect after it. ctx.defs isn't changed.
+export function expand(cmd: string, ctx: Context): { calls: Expanded[]; defs: Definitions } {
+  const defs = copyDefinitions(ctx.defs);
+  const { text, bodies } = extractFunctions(cmd);
+  return { calls: walk(segments(text), bodies, ctx, defs, null, null, 0), defs };
+}
+
+// The definitions in effect before each command of a session, oldest first. A persistent shell
+// keeps functions and variables between tool calls; a fresh one has none, so following them is
+// at worst too generous to a wrapper that would have failed to run.
+export function sessionDefinitions(commands: (string | null)[], ctx: Context): Definitions[] {
+  let defs = copyDefinitions(ctx.defs);
+  return commands.map((cmd) => {
+    const before = defs;
+    if (cmd) defs = expand(cmd, { ...ctx, defs }).defs;
+    return before;
+  });
 }
 
 export const CLI_PATH = ".cursor/skills/agent-readiness/scripts/readiness.ts";
@@ -216,7 +435,7 @@ export const CLI_PATH = ".cursor/skills/agent-readiness/scripts/readiness.ts";
 const CLI_NODE_FLAGS = /^--(experimental-strip-types|experimental-transform-types|no-warnings|disable-warning(=\S+)?|max-old-space-size=\d+|enable-source-maps)$/;
 
 function at(ctx: Context, p: string): string {
-  const q = p.replace(/^(\$\(pwd\)|\$\{PWD\}|\$PWD)(?=\/|$)/, ctx.cwd);
+  const q = p.replace(/^(\$\(pwd\)|\$\{PWD\}|\$PWD)(?=\/|$)/, ctx.cwd).replace(/^\$\(toplevel\)(?=\/|$)/, ctx.repo);
   return isAbsolute(q) ? q : resolve(ctx.cwd, q);
 }
 
@@ -313,40 +532,45 @@ export function repoEvidence(words: string[], ctx: Context): string | null {
   return null;
 }
 
-// Each simple command in `cmd` that runs repo code outside the readiness scripts, following `cd`.
+// Each simple command in `cmd` that runs repo code outside the readiness scripts, following `cd`
+// and the functions and variables it goes through.
 export function commandEvidence(cmd: string, ctx: Context): string[] {
   const out: string[] = [];
-  let cwd = ctx.cwd;
-  for (const s of segments(cmd)) {
-    const w = program(s.words);
-    if (w[0] === "cd" || w[0] === "pushd") {
-      if (w[1] && !w[1].startsWith("$")) cwd = at({ ...ctx, cwd }, w[1] === "~" ? process.env.HOME ?? "/" : w[1]);
-      continue;
-    }
-    const why = repoEvidence(s.words, { ...ctx, cwd });
-    if (why) out.push(why);
+  for (const c of expand(cmd, ctx).calls) {
+    if (!c.known) continue;
+    const why = repoEvidence(c.words, { ...ctx, cwd: c.cwd });
+    if (why) out.push(c.via ? `${why} (in ${c.via})` : why);
   }
   return out;
 }
 
 const READ_ONLY = new Set(["cd", "pushd", "popd", "source", ".", "export", "set", "unset", "echo", "printf", "cat", "head", "tail", "less", "more", "ls", "pwd", "true", "false", "sleep", "wc", "grep", "egrep", "rg", "jq", "sort", "uniq", "test", "[", "which", "type", "date", "clear", "column", "cut", "tr", "basename", "dirname", "realpath", "readlink", "stat", "file", "diff"]);
 
+// The substitutions a wrapper may use to build the CLI's path.
+const PATH_LOOKUP = /^(pwd|git rev-parse --show-toplevel)$/;
+
 // A call the protected-file rule lets change .agent-readiness/: one that runs the readiness CLI and,
-// besides it, only read-only commands with no file redirects. A call made only of git commands is
-// also let through; what git can restore there, the seal and the record cross-check catch.
+// besides it, only read-only commands with no file redirects. The CLI may be called through a shell
+// function or variable, as long as the function's body does nothing but `cd` and call the CLI. A
+// call made only of git commands is also let through; what git can restore there, the seal and the
+// record cross-check catch.
 export function cliOnly(cmd: string, ctx: Context): "cli" | "git" | null {
-  const segs = segments(cmd);
+  const calls = expand(cmd, ctx).calls;
   let cli = false;
-  let gitOnly = segs.length > 0;
-  let cwd = ctx.cwd;
-  for (const s of segs) {
-    const w = program(s.words);
-    if (w[0] === "cd" && w[1]) cwd = at({ ...ctx, cwd }, w[1]);
-    const benignWrites = s.writes.every((f) => /^\/dev\/(null|stdout|stderr)$/.test(f));
-    if (isCliCall(s.words, { ...ctx, cwd })) {
+  let gitOnly = calls.length > 0;
+  for (const c of calls) {
+    if (!c.known) return null;
+    const w = program(c.words);
+    const benignWrites = c.writes.every((f) => /^\/dev\/(null|stdout|stderr)$/.test(f));
+    if (isCliCall(c.words, { ...ctx, cwd: c.cwd })) {
+      if (c.via && !benignWrites) return null;
       cli = true;
       gitOnly = false;
       continue;
+    }
+    if (c.via) {
+      if ((w[0] === "cd" || w[0] === "pushd" || PATH_LOOKUP.test(w.join(" "))) && benignWrites) continue;
+      return null;
     }
     if (w.length && basename(w[0]) === "git" && benignWrites) continue;
     gitOnly = false;

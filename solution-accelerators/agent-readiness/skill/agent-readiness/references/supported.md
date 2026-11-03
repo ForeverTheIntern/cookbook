@@ -6,14 +6,14 @@ A running list of the stacks and machines the audit has been checked on, and of 
 - **Not yet supported:** the scan recognises it and gives no level for it, because a specific piece is missing. The report says "isn't supported yet" with the reason, and links here.
 - **Not assessed:** the scan lists it by name with its share of recent changes, and gives no level. The audit has no install, test or planted-fault support for it. For a machine, nothing has proved how the audit behaves on it.
 
-A component outside the supported tier never sets the repo level. When it holds a share of recent changes, part 1 of the report says how much. The two sections after the tiers say how supported tools and agent assets are handled: lint and format tools run check-only, and vendored skills are skipped. Anything not listed here hasn't been tried: the scan may not recognise it, so check part 4 of the report for what it found.
+A component outside the supported tier never sets the repo level. When it holds a share of recent changes, part 1 of the report says how much. The sections after the tiers say how supported tools, agent assets and services are handled: lint and format tools run check-only, vendored skills are skipped, and the environment draft starts Postgres and Redis. Anything not listed here hasn't been tried: the scan may not recognise it, so check part 4 of the report for what it found.
 
 ## Supported
 
 | Id | Stack or machine | What the scan looks for | Notes | Proven by |
 |---|---|---|---|---|
 | `npm` | Node with npm | `package.json`, with `package-lock.json` for a frozen install | | `fixtures/healthy-node`, `sindresorhus/slugify@3b17b2e` |
-| `npm-workspaces` | npm workspaces | `workspaces` in the root `package.json` | | `fixtures/monorepo-mixed` |
+| `npm-workspaces` | npm workspaces | `workspaces` in the root `package.json` | | `fixtures/monorepo-mixed`, `fixtures/sampled-scope` |
 | `pnpm` | Node with pnpm | `pnpm-lock.yaml`, `pnpm-workspace.yaml` or a `pnpm@` pin | | `fixtures/standalone-nested-mixed`, `t3-oss/create-t3-turbo@8f945b7` |
 | `yarn` | Node with Yarn 1 | `yarn.lock` from Yarn 1, or a `yarn@1` pin | | `fixtures/yarn-classic` |
 | `pip` | Python with pip | `requirements.txt`, `pyproject.toml` or `setup.py` | | `fixtures/python-unpinned` |
@@ -26,6 +26,8 @@ A component outside the supported tier never sets the repo level. When it holds 
 | `host-fallback` | No container runtime on Linux or macOS | no Docker or Podman answers | setup runs in a scrubbed copy on the host, so Level 1 can't be proved there | `fixtures/declared-image-missing-toolchain`, `fixtures/sudo-start` |
 
 The frozen installs are `npm ci`, `pnpm install --frozen-lockfile`, `yarn install --frozen-lockfile` (Yarn 1) or `--immutable` (Yarn 2 or later), `bun install --frozen-lockfile`, `uv sync --frozen` and `poetry sync` (`poetry install --sync` before Poetry 2). The audit's images don't ship Bun or Poetry, so before the install it adds the version the repo pins, with the network on. Bun's version comes from `packageManager` or `engines.bun`, and Poetry's from the header of `poetry.lock`. When it can't add one, for example because the registry is blocked, the install is blocked on this machine rather than failed, and the report gives no level for it. A repo's own declared image never gets a tool added: one missing there is the repo's to add.
+
+A repo with more than six supported components is sampled: the six with the largest share of recent changes are assessed, and the rest are listed with their share as left out. Part 1 says what the level doesn't cover, and confidence drops to medium (`fixtures/sampled-scope`).
 
 On a large repo the scan has a time bound (`--budget-scan`, 3 minutes by default), and the replay has `--budget-component` and `--budget-total`. No command runs past what is left of the budget. A step the budget cuts off is blocked, not failed, whether it's the scan's secret check, an install, a test run or planted faults. So is an install that runs past its own 10-minute limit. Part 1's coverage line says what was sampled.
 
@@ -85,6 +87,18 @@ Commands in a third-party skill copied into `.agents/skills`, `.claude/skills` o
 - its frontmatter names a `source`, `repository` or `upstream`.
 
 A first-party skill has none of these, and its commands are checked and replayed like any other instruction. The same skill reached twice, through a symlink or as an identical copy, is checked once.
+
+## Services tests need
+
+When tests fail because nothing answers on a local port, the diagnosis names the service: Postgres (5432), MySQL (3306), Redis (6379), MongoDB, Elasticsearch, RabbitMQ, Kafka or Memcached. `readiness draft-env --remediate` drafts install and start scripts for Postgres and Redis. It takes them from the diagnosis and from the images in a root `compose.yml` or `docker-compose.yml`, and starts them without Docker, since an agent's machine may have none. When the repo has a `.env.example`, the install script copies it to `.env` if there is none. `--service postgres,redis` replaces both lists.
+
+| Service | Drafted by `draft-env` | Proven by |
+|---|---|---|
+| Postgres | yes: apt's `postgresql`, started and waited for with `pg_isready` | `fixtures/hidden-service`, `fixtures/compose-services` |
+| Redis | yes: apt's `redis-server`, started and waited for with `redis-cli ping` | `fixtures/compose-services` |
+| MySQL, MongoDB, Elasticsearch, RabbitMQ, Kafka, Memcached | no: diagnosed only | none yet |
+
+The drafted install uses apt, so the audit proves it only where Debian's package mirrors are reachable.
 
 ## Adding an entry
 

@@ -15,12 +15,12 @@ import { SCAN_BOUND_MINUTES, sampledScope } from "./lib/scope.ts";
 import { validateAgainst } from "./lib/schema.ts";
 import { blockedBy, componentStates } from "./lib/score.ts";
 import { buildSealedReport, recheck, seal, verifySeal } from "./lib/seal.ts";
-import { renderEnvFiles, renderVerifySkill, serviceKey, writeFiles } from "./lib/skill.ts";
+import { composeServices, renderEnvFiles, renderVerifySkill, serviceKey, writeFiles } from "./lib/skill.ts";
 import { staticSignals } from "./lib/signals.ts";
 import { instructionItems, safetyScan } from "./lib/static.ts";
 import type { Audit, CommandKind, Narration, Result, Roadmap, ScanBound, ScenarioId, ScenarioSpec, Strength, Tier } from "./lib/types.ts";
 import { addDays, exists, fail, git, nowIso, randomHex, readJson, readText, sha256, today, writeJson } from "./lib/util.ts";
-import { commitReader, initAudit, loadDraft, paths, refreshTree, releaseManifest, resolveRepo, saveDraft, scratchTree } from "./lib/workspace.ts";
+import { commitReader, currentDraftId, initAudit, loadDraft, paths, refreshTree, releaseManifest, resolveRepo, saveDraft, scratchTree } from "./lib/workspace.ts";
 
 const BOOLEAN = new Set(["force", "remediate", "inherit-env", "no-mutants", "no-instructions", "no-outcomes", "json", "push", "allow-eval", "allow-unkeyed", "dockerfile", "instructions", "strict", "help"]);
 
@@ -449,6 +449,15 @@ function cmdHistory(a: Args): void {
   else for (const h of lines) log(`${h.date} ${h.kind.padEnd(7)} ${h.result.padEnd(6)} ${h.id} repo ${h.noLevel ? "not assessed" : h.repoLevel}${h.note ? ` (${h.note})` : ""}`);
 }
 
+// Targets are scored by the audit they apply to: the open draft, else the last sealed audit. Only
+// a repo with neither falls back to the rubric new audits use.
+function auditRubric(p: ReturnType<typeof paths>): string | undefined {
+  const draft = currentDraftId(p);
+  if (draft) return loadDraft(p.repo, draft).audit.rubric;
+  const last = readHistory(p).filter((h) => h.kind === "audit").at(-1);
+  return last?.rubric;
+}
+
 function cmdRoadmap(a: Args): void {
   const p = paths(repoOf(a));
   const sub = a.positional[1] ?? "show";
@@ -462,7 +471,7 @@ function cmdRoadmap(a: Args): void {
     return;
   }
   if (sub === "targets") {
-    const rubric = loadRubric();
+    const rubric = loadRubric(auditRubric(p));
     const minPrs = Number(str(a, "min-prs", String(rubric.level3.minAgentPRs)));
     if (minPrs < rubric.level3.absoluteMinAgentPRs) fail(`--min-prs can't go below ${rubric.level3.absoluteMinAgentPRs}.`);
     rm.targets = { mergeRate: Number(str(a, "merge-rate")), firstPass: Number(str(a, "first-pass")), maxChangesRequested: Number(str(a, "max-changes-requested")), minAgentPrs: minPrs };
@@ -500,10 +509,14 @@ function cmdDraftEnv(a: Args): void {
   const repo = repoOf(a);
   const audit = latestOrDraft(repo, opt(a, "audit"));
   const fromDiag = [...new Set(audit.evidence.filter((e) => e.diagnosis?.cause === "service" && e.diagnosis.service).map((e) => serviceKey(e.diagnosis!.service!)).filter((s): s is string => Boolean(s)))];
-  const services = opt(a, "service") ? csv(opt(a, "service")) : fromDiag;
-  const env = renderEnvFiles(audit, services, { dockerfile: Boolean(a.flags.dockerfile) });
+  const compose = composeServices(repo);
+  const services = opt(a, "service") ? csv(opt(a, "service")) : [...new Set([...fromDiag, ...(compose?.services ?? [])])];
+  const envExample = exists(join(repo, ".env.example"));
+  const env = renderEnvFiles(audit, services, { dockerfile: Boolean(a.flags.dockerfile), envExample });
   const written = writeFiles(repo, env.files, Boolean(a.flags.force));
   log(`Wrote ${written.join(", ")}${services.length ? ` for ${services.join(", ")}` : ""}.`);
+  if (compose?.services.length && !opt(a, "service")) log(`${compose.file} runs ${compose.services.join(", ")}; the start script starts ${compose.services.length === 1 ? "it" : "them"} without Docker.`);
+  if (envExample) log("The install script copies .env.example to .env when there is no .env, so tests get its local defaults.");
   log("Commit these on a branch, then run a new audit to prove them. Committing .cursor/environment.json doesn't change a Cloud Agent environment by itself: a team admin has to point the environment at it.");
 }
 

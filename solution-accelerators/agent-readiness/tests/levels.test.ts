@@ -5,18 +5,22 @@ import { loadRubric } from "../skill/agent-readiness/scripts/lib/rubric.ts";
 import { compute } from "../skill/agent-readiness/scripts/lib/seal.ts";
 import { componentStates } from "../skill/agent-readiness/scripts/lib/score.ts";
 import type { HistoryLine } from "../skill/agent-readiness/scripts/lib/types.ts";
-import { instruction, makeAudit, outcomes, reportFor, stats } from "./helpers.ts";
+import { instruction, makeAudit as makeAuditAt, outcomes, reportFor, stats } from "./helpers.ts";
+import type { AuditSpec } from "./helpers.ts";
 
-const rubric = loadRubric("2026-10-alpha");
+// Every rule here holds under both rubrics; where 2026-11-alpha changed a rule, the test says which.
+for (const version of ["2026-10-alpha", "2026-11-alpha"]) describe(`rubric ${version}`, () => {
+const rubric = loadRubric(version);
+const makeAudit = (spec: AuditSpec) => makeAuditAt({ rubric: version, ...spec });
 
-function levelsOf(spec: Parameters<typeof makeAudit>[0], comp: string) {
+function levelsOf(spec: AuditSpec, comp: string) {
   const audit = makeAudit(spec);
   const s = statesOf(componentStates(audit, rubric, comp));
   return { standard: componentLevel(rubric, s), first_pr: componentLevel(rubric, s, "first_pr"), bug_fixes: componentLevel(rubric, s, "bug_fixes"), repo_wide: componentLevel(rubric, s, "repo_wide") };
 }
 
 function line(id: string, shares: Record<string, number>, active: string[], levels: Record<string, 0 | 1 | 2 | 3 | 4> = {}): HistoryLine {
-  return { id, kind: "audit", date: "2026-10-01", commit: "x", rubric: "2026-10-alpha", scriptsDigest: "x", result: "sealed", levels, repoLevel: 0, scenarioLevels: {}, shares, active, seedPinned: false };
+  return { id, kind: "audit", date: "2026-10-01", commit: "x", rubric: version, scriptsDigest: "x", result: "sealed", levels, repoLevel: 0, scenarioLevels: {}, shares, active, seedPinned: false };
 }
 
 describe("standard level", () => {
@@ -157,8 +161,11 @@ describe("outcome levels", () => {
 
   test("Level 4 needs agent PR volume to double without change requests rising", () => {
     const prev = stats(20, 18, 16, 2);
-    assert.equal(outcomeLevel(rubric, { level2: true, targets, outcomes: window(stats(42, 38, 34, 4)), previousAtLevel3: prev }).level, 4);
-    assert.equal(outcomeLevel(rubric, { level2: true, targets, outcomes: window(stats(42, 38, 34, 10)), previousAtLevel3: prev }).level, 3);
+    // 2026-10-alpha compares with the last audit at Level 3; 2026-11-alpha with the first window of the run.
+    const earlier = { previousAtLevel3: prev, level3Run: [prev] };
+    assert.equal(outcomeLevel(rubric, { level2: true, targets, outcomes: window(stats(42, 38, 34, 4)), ...earlier }).level, 4);
+    assert.equal(outcomeLevel(rubric, { level2: true, targets, outcomes: window(stats(42, 38, 34, 10)), ...earlier }).level, 3);
+    assert.equal(outcomeLevel(rubric, { level2: true, targets, outcomes: window(stats(42, 38, 34, 4)), previousAtLevel3: null, level3Run: [] }).level, 3, "with no earlier window at Level 3, the first is Level 3");
   });
 
   test("Levels 3 and 4 are measured per component, on the agent PRs that touch it", () => {
@@ -188,4 +195,5 @@ describe("recheck rule", () => {
     assert.equal(capAt(2, 1), 1);
     assert.equal(capAt(0, 1), 0);
   });
+});
 });

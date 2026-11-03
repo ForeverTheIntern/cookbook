@@ -99,7 +99,18 @@ export function serviceKey(label: string): string | null {
   return null;
 }
 
-export function renderEnvFiles(audit: Audit, services: string[], opts: { dockerfile: boolean }): EnvFiles {
+export const COMPOSE_FILES = ["compose.yml", "compose.yaml", "docker-compose.yml", "docker-compose.yaml"];
+
+// The supported services a compose file at the repo root runs, by image, in file order. Agents get
+// them started directly; the compose file itself isn't run, since an agent VM may have no Docker.
+export function composeServices(repo: string): { file: string; services: string[] } | null {
+  const file = COMPOSE_FILES.find((f) => exists(join(repo, f)));
+  if (!file) return null;
+  const images = [...readText(join(repo, file)).matchAll(/^\s*image:\s*["']?([^\s"'#]+)/gm)].map((m) => m[1]);
+  return { file, services: [...new Set(images.map((i) => serviceKey(i.split("/").pop()!.split(":")[0])).filter((s): s is string => Boolean(s)))] };
+}
+
+export function renderEnvFiles(audit: Audit, services: string[], opts: { dockerfile: boolean; envExample?: boolean }): EnvFiles {
   // The readiness installs, never the repo's declared one: after a first draft that is this very
   // script, and calling it from itself would never end.
   const installs = audit.contract.filter((c) => c.kind === "install" && c.source === "readiness");
@@ -112,7 +123,9 @@ export function renderEnvFiles(audit: Audit, services: string[], opts: { dockerf
   });
   const sudo = 'SUDO=""; if [ "$(id -u)" != "0" ] && command -v sudo >/dev/null 2>&1; then SUDO="sudo"; fi';
   const aptLine = svc.length ? `if ! dpkg -s ${svc.map((s) => s.apt).join(" ")} >/dev/null 2>&1; then\n  $SUDO apt-get update -qq\n  DEBIAN_FRONTEND=noninteractive $SUDO apt-get install -y -qq ${svc.map((s) => s.apt).join(" ")} >/dev/null\nfi\n` : "";
-  const installSh = `#!/usr/bin/env bash\n# Installs what agents need to build and test this repo. Safe to rerun.\nset -euo pipefail\n${sudo}\n${aptLine}${installLines}\n`;
+  // The example's values are the local defaults tests expect; an existing .env is never overwritten.
+  const envLine = opts.envExample ? "[ -f .env ] || cp .env.example .env\n" : "";
+  const installSh = `#!/usr/bin/env bash\n# Installs what agents need to build and test this repo. Safe to rerun.\nset -euo pipefail\n${sudo}\n${aptLine}${envLine}${installLines}\n`;
   const startLines = svc.map((s) => `${s.start}\nfor i in $(seq 1 30); do\n  if ${s.ready}; then break; fi\n  sleep 1\n  if [ "$i" = 30 ]; then echo "${s.label} didn't become ready" >&2; exit 1; fi\ndone`).join("\n");
   const startSh = `#!/usr/bin/env bash\n# Starts the local services tests need and waits until they are ready. Safe to rerun.\nset -euo pipefail\n${sudo}\n${startLines || "true"}\n`;
   const env: Record<string, unknown> = { name: `${audit.repo.name} agents`, install: "bash scripts/agent-install.sh", start: "bash scripts/agent-start.sh" };

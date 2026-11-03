@@ -4,7 +4,10 @@
     "Level 4 needs consecutiveWindows back-to-back audit windows at Level 3 or above; a window below Level 3 starts the count again, and growth is measured against the first window of the run.",
     "Level 3's floor is stated with its minimum: at least 20 agent PRs in the window, and never fewer than 10 even when the team lowers the minimum.",
     "Medium effort sits left of the matrix midpoint, and impact is placed relative to the largest action, so the top action is never in Later.",
-    "A component the last audit didn't have joins the active set at once instead of waiting a second audit."
+    "A component the last audit didn't have joins the active set at once instead of waiting a second audit.",
+    "Level 3 is measured only over a window of exactly outcomes.windowDays (30) days; a longer or shorter window gives no Level 3.",
+    "A first-time CI pass rate counts toward Level 3 only when at least outcomes.minRateN (5) agent PRs have a finished first CI run.",
+    "The repo-level rule now states its fallback: when no assessed component reaches 10% of changes, the largest sets the level. 2026-10-alpha applied the same fallback without stating it."
   ],
   "scale": [
     { "level": 0, "name": "Not bootable", "plain": "not bootable", "meaning": "A clean checkout can't install, build and pass its tests.", "measuredBy": "audit" },
@@ -115,7 +118,7 @@
     { "id": "features", "label": "Features and refactors", "level2": ["commands", "faults", "safety", "instructions"] },
     { "id": "repo_wide", "label": "Repo-wide changes", "level2": ["commands", "faults", "safety", "toolchain", "lockfile"] }
   ],
-  "level3": { "minAgentPRs": 20, "absoluteMinAgentPRs": 10, "windowDays": 30, "rule": "at least 20 agent PRs in the window, and never fewer than 10 even when the team lowers the minimum" },
+  "level3": { "minAgentPRs": 20, "absoluteMinAgentPRs": 10, "windowDays": 30, "rule": "measured-window", "floor": "at least 20 agent PRs in the window, and never fewer than 10 even when the team lowers the minimum" },
   "level4": { "consecutiveWindows": 2, "volumeMultiplier": 2, "rule": "streak" },
   "components": {
     "maxAssessed": 6,

@@ -25,7 +25,8 @@ export function prepare(c: EvalCase, opts: { skill?: boolean } = {}): Workspace 
   const ws: Workspace = { dir, fixture: c.fixture, now, skillDigestBefore: skillDigest(), headBefore: "" };
   if (c.setup) {
     c.setup(ws);
-    commitAll(dir, "Case setup", 0, now);
+    // A setup that commits its own steps can leave nothing for this commit.
+    if (execFileSync("git", ["status", "--porcelain"], { cwd: dir, encoding: "utf8" }).trim()) commitAll(dir, "Case setup", 0, now);
   }
   ws.headBefore = execFileSync("git", ["rev-parse", "HEAD"], { cwd: dir, encoding: "utf8" }).trim();
   if (c.prs) copyFileSync(materializePrs(c.fixture, now, c.prs), join(root, "prs.json"));

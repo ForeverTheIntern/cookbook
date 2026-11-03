@@ -88,8 +88,9 @@ export function diagnose(output: string, timedOut: boolean, phase: string): Diag
   if (network) return { cause: "network", detail: network };
   if (/SyntaxError|error TS\d{4}|IndentationError/.test(output)) return { cause: "compile", detail: "the code doesn't compile" };
   const lines = output.split("\n").map((l) => l.trim()).filter(Boolean);
-  const noise = /^(npm (error|ERR!|warn)|ELIFECYCLE|error Command failed|>\s|\$ |command failed|at |# )/i;
+  // node --test's TAP block lists code, failureType and the like after the error itself.
+  const noise = /^(npm (error|ERR!|warn)|ELIFECYCLE|error Command failed|>\s|\$ |command failed|at |# |(code|failureType|type|location|duration_ms|stack): )/i;
   const meaningful = lines.filter((l) => !noise.test(l));
   const errLine = [...meaningful].reverse().find((l) => /error|fail|assert|exception|remove|missing|expected/i.test(l)) ?? meaningful[meaningful.length - 1] ?? lines[lines.length - 1] ?? "no output";
-  return { cause: "unknown", detail: errLine.slice(0, 160) };
+  return { cause: "unknown", detail: errLine.replace(/^error: '(.*)'$/, "$1").slice(0, 160) };
 }

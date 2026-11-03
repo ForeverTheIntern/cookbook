@@ -53,8 +53,26 @@ describe("rubric 2026-11-alpha", () => {
 
   test("the 10-PR floor is stated wherever the 20 is", () => {
     assert.match(next.scale[3].meaning, /at least 20 agent PRs in the window \(never fewer than 10\)/);
-    assert.match(next.level3.rule ?? "", /never fewer than 10/);
+    assert.match(next.level3.floor ?? "", /never fewer than 10/);
     assert.equal(next.level3.absoluteMinAgentPRs, 10);
+  });
+
+  test("the exact window and the first-CI floor hang on level3.rule, not on the Level 4 rule, and are listed as changes", () => {
+    const base = { level2: true, targets, previousAtLevel3: null, level3Run: [] };
+    const fewCi = { agent: { ...stats(25, 22, 1, 2), firstTimeCiKnown: 1 }, control, windowDays: 30 };
+    const shortWindow = { agent: stats(25, 22, 20, 2), control, windowDays: 28 };
+    assert.equal(next.level3.rule, "measured-window");
+    assert.equal(outcomeLevel(next, { ...base, outcomes: fewCi }).level, null);
+    assert.equal(outcomeLevel(next, { ...base, outcomes: shortWindow }).level, null);
+    const streakOnly = { ...next, level3: { ...next.level3, rule: undefined } };
+    assert.equal(outcomeLevel(streakOnly, { ...base, outcomes: shortWindow }).level, 3, "a future rubric that keeps the streak but drops the flag drops both checks");
+    const flagOnly = { ...prior, level3: { ...prior.level3, rule: "measured-window" as const } };
+    assert.match(outcomeLevel(flagOnly, { ...base, outcomes: shortWindow }).reasons[0], /30-day window; this one was 28 days/, "the checks don't need the streak rule");
+    assert.match(outcomeLevel(flagOnly, { ...base, outcomes: fewCi }).reasons.join(" "), /only 1 agent PRs have a finished first CI run/);
+    const changes = (next.changes ?? []).join("\n");
+    assert.match(changes, /exactly outcomes\.windowDays/);
+    assert.match(changes, /finished first CI run/);
+    assert.equal(prior.level3.rule, undefined, "2026-10-alpha never checked either");
   });
 
   test("at Level 3 the next line says what Level 4 needs, not the Level 3 bar again", () => {
@@ -76,7 +94,7 @@ describe("rubric 2026-11-alpha", () => {
 
   test("the only recommended action is never filed under Later; under 2026-10-alpha it could be", () => {
     const spec = { components: [{ id: "worker", share: 0.3, faults: "fail" as const }, { id: "web", share: 0.7, faults: "pass" as const }] };
-    const old = reportFor(makeAudit(spec));
+    const old = reportFor(makeAudit({ ...spec, rubric: "2026-10-alpha" }));
     const top = (r: ReturnType<typeof reportFor>) => r.matrix.points.find((p) => p.itemId === "faults:worker")!;
     assert.equal(top(old).y, 0.3);
     assert.ok(top(old).x >= 0.5 && top(old).y < 0.5, "2026-10-alpha put a medium fix with a 30% share in the Later corner");

@@ -73,6 +73,7 @@ export function setupLine(r: ReportJson): string[] {
 export function evidenceBlock(r: ReportJson): string[] {
   const comps = r.components.included;
   const lines = [
+    `Scale, from the rubric (Level 0 to Level ${r.scale.length - 1}; "of ${r.scale.length - 1}" in the heading counts from it): ${r.scale.map((x) => `Level ${x.level} ${x.name}: ${x.meaning}`).join(" ")}`,
     `Repo level: ${r.maturity.level} (${r.maturity.outcome}); set by ${r.maturity.setBy.join(", ") || "none"}.`,
     `What is unproven: ${unprovenFacts(r).join("; ") || "nothing; every component was assessed and every check that decides the level ran"}.`,
     ...comps.map((c) => `Component ${c.id}: ${c.level === null ? "not assessed" : `Level ${c.level}`}${c.couldBe !== null ? `, could be ${c.couldBe}` : ""}; ${pctOf(c.changeShare)} of recent changes; ${c.toolchain}.`),
@@ -91,7 +92,7 @@ export function headlinePrompt(r: ReportJson): string {
   return [
     `You grade the headline of a repository readiness report. ${REPLY}`,
     "The reader is an engineering director: tests, builds, CI, pull requests, lockfiles, containers and package names are plain words to them.",
-    `Rules: one message in at most ${rubric.part1.maxHeadlineWords} words; it names the component that sets the level, and says what already works (elsewhere in the repo when another component is ready); no jargon, meaning this audit's internal terms (${rubric.part1.bannedTerms.join(", ")}), check or evidence IDs, or a level name without its plain meaning; it never pairs a level change with an outcome change in the same sentence.`,
+    `Rules: one message in at most ${rubric.part1.maxHeadlineWords} words; it names the component that sets the level, and says what already works (elsewhere in the repo when another component is ready); no jargon, meaning this audit's internal terms (${rubric.part1.bannedTerms.join(", ")}), check or evidence IDs, or a level name without its plain meaning; it never pairs a level change with an outcome change in the same sentence. The heading is computed from the levels and the scale in the evidence: grade it for clarity only, and count the word limit on the headline alone.`,
     BARE_LEVEL,
     TRUTH,
     UNPROVEN_HEADLINE,
@@ -100,7 +101,7 @@ export function headlinePrompt(r: ReportJson): string {
     "",
     `Facts: component levels: ${comps.map((c) => `${c.id} ${c.level === null ? "not assessed" : `Level ${c.level}`}`).join(", ") || "none assessed"}. The lowest active component sets the repo level: ${r.maturity.setBy.join(", ") || "none"}. Ready for agents (Level 2 or above): ${ready.join(", ") || "none"}.`,
     untrusted("evidence the scripts recorded", evidenceBlock(r)),
-    untrusted("report text to grade", [`Heading: ${r.executive.heading}`, `Headline: ${r.executive.headline}`]),
+    untrusted("report text to grade", [`Heading (computed): ${r.executive.heading}`, `Headline: ${r.executive.headline}`]),
   ].join("\n");
 }
 

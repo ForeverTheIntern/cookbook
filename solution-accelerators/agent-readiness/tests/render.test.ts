@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, test } from "node:test";
 import { computeOutcomes, describeRate, rate } from "../skill/agent-readiness/scripts/lib/outcomes.ts";
-import { allowedNumbers, danglingEvidence, renderMarkdown, scaleLine, validatePart1 } from "../skill/agent-readiness/scripts/lib/render.ts";
+import { allowedNumbers, danglingEvidence, renderMarkdown, scaleLine, unprovenHeading, validatePart1 } from "../skill/agent-readiness/scripts/lib/render.ts";
 import { loadRubric } from "../skill/agent-readiness/scripts/lib/rubric.ts";
 import { consistencyErrors, sealStatusFor } from "../skill/agent-readiness/scripts/lib/seal.ts";
 import { skillDigest } from "../skill/agent-readiness/scripts/lib/workspace.ts";
@@ -210,13 +210,33 @@ describe("part 1 rules", () => {
     assert.match(sealStatusFor(skillDigest()), /bundled with this copy; the published release isn't checked here/);
   });
 
+  test("the heading is true in every state: unproven, blocked, a missing test script, nothing assessed", () => {
+    // Every remaining Level 1 condition blocked: a blocked step may have run, so none "passed".
+    assert.equal(unprovenHeading([{ condition: "clean.install", state: "blocked" }, { condition: "clean.build", state: "blocked" }, { condition: "clean.test", state: "blocked" }, { condition: "clean.test", state: "blocked" }]), "Level 1 unproven on this machine: no Level 1 check failed, and 3 were blocked here");
+    assert.equal(unprovenHeading([{ condition: "clean.build", state: "blocked" }]), "Level 1 unproven on this machine: no Level 1 check failed, and 1 was blocked here", "a build the network cut off");
+    // No test script: by the rubric's definition a clean checkout that can't pass its tests is Level 0.
+    const noTests = reportFor(makeAudit({ components: [{ id: "app", share: 1, test: "missing", faults: "not_run" }] }));
+    assert.equal(noTests.executive.heading, "Level 0 of 4, not bootable");
+    assert.equal(noTests.scale[0].meaning, "A clean checkout can't install, build and pass its tests.", "the judge is shown this meaning, so not bootable reads as defined");
+    // A failing test is Level 0 too, and a Level 2 repo says so; none of them claims a check passed.
+    for (const spec of [{ id: "app", share: 1, test: "fail" as const, faults: "not_run" as const }, { id: "app", share: 1, faults: "pass" as const }]) {
+      const h = reportFor(makeAudit({ components: [spec] })).executive.heading;
+      assert.match(h, /^Level [0-4] of 4, (not bootable|bootable|verifiable)$/, h);
+    }
+    const none = reportFor(makeAudit({ components: [{ id: "infra", share: 1, assessed: false }] })).executive.heading;
+    assert.match(none, /^Not assessed: /);
+    for (const h of [noTests.executive.heading, none]) assert.doesNotMatch(h, /that ran passed/);
+  });
+
   test("an unproven level isn't reported as nothing blocking, and repo-wide conditions name no component", () => {
     const audit = makeAudit({ components: [{ id: "app", share: 1, where: "fresh_copy", faults: "pass" }] });
     audit.environment.containerRuntime = null;
     const r = reportFor(audit);
     const ex = r.executive;
     assert.equal(r.maturity.outcome, "blocked");
-    assert.equal(ex.heading, "Level 1 unproven on this machine: every Level 1 check that ran passed", "an app that boots is never called not bootable");
+    assert.match(ex.heading, /^Level 1 unproven on this machine: no Level 1 check failed, and [1-9]\d* (was|were) blocked here$/, "an app that boots is never called not bootable");
+    const blocked = r.maturity.capReasons.filter((c) => c.state === "blocked");
+    assert.equal(ex.heading, unprovenHeading(blocked));
     assert.equal(r.maturity.unproven, true);
     assert.equal(r.components.included[0].unproven, true);
     assert.doesNotMatch(scaleLine(r), /\[/, "the scale marks no level it couldn't prove");

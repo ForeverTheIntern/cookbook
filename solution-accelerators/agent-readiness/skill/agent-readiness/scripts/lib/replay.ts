@@ -144,6 +144,8 @@ export function environmentLimit(ex: Pick<Executor, "where" | "image" | "imageSo
     if (ex.imageSource !== "repo") return `${d.detail} in the audit's image (${ex.image})`;
   }
   if (d.cause === "network" && ONLINE_KINDS.has(cmd.kind)) return `the ${cmd.kind} hit ${d.detail}`;
+  // The audit picks the user commands run as and the home they share, so this is never the repo's.
+  if (d.cause === "permission") return `${d.detail} on this machine`;
   // A large repo's install can outlast the audit's limit on a slow machine or disk driver.
   if (d.cause === "timeout" && cmd.kind === "install") return `the install ran past the audit's ${Math.max(1, Math.round(cmd.timeoutSec / 60))}-minute limit on this machine`;
   if (d.cause === "missing_module") {
@@ -540,6 +542,7 @@ export function makeExecutor(audit: Audit, copyDir: string, runtimePref: string,
           log(added.ok ? `Added ${t.spec} to the image for the frozen install.` : `Couldn't add ${t.spec} to the image, so its install will be blocked: ${tail(added.output, 300)}`);
         }
       }
+      session.reclaimHome();
       return containerExecutor(session, copyDir, imageSource);
     }
     log(`Could not start a container: ${started.output.trim().split("\n").pop()}`);
@@ -682,6 +685,12 @@ export async function replayInstructions(audit: Audit, ex: Executor, copyDir: st
       item.result = "not_run";
       item.reason = "not replayed: it uses sudo, which the audit never runs on the host";
       item.blocked = "it uses sudo, which the audit never runs on the host";
+      continue;
+    }
+    if (why?.cause === "permission") {
+      item.result = "not_run";
+      item.reason = `not replayed: ${why.detail} on this machine, an environment limit rather than a repo defect`;
+      item.blocked = `${why.detail} on this machine`;
       continue;
     }
     if (why?.cause === "missing_tool" && (ex.where !== "container" || ex.imageSource !== "repo")) {

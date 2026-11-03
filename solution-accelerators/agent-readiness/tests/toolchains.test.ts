@@ -46,15 +46,15 @@ describe("Poetry, Bun, Yarn 2 or later and uv workspaces are supported", () => {
   test("Poetry runs the frozen install of the Poetry that wrote the lock, into .venv", () => {
     const v1 = contractOf({ "pyproject.toml": "[tool.poetry]\nname = \"cleo\"\n\n[tool.poetry.group.dev.dependencies]\npytest = \"^8\"\n", "poetry.lock": poetryLock("1.8.3"), "cleo/__init__.py": "", "tests/test_a.py": "" });
     assert.deepEqual([v1.profile.components[0].stack, v1.profile.components[0].assessed], ["poetry", true]);
-    assert.equal(command(v1.contract, "cmd-repo-install"), "POETRY_VIRTUALENVS_IN_PROJECT=true poetry install --sync --no-interaction");
+    assert.equal(command(v1.contract, "cmd-repo-install"), "POETRY_VIRTUALENVS_IN_PROJECT=true poetry install --sync --no-interaction -v");
     assert.equal(command(v1.contract, "cmd-cleo-test"), ".venv/bin/python -m pytest -q");
     assert.deepEqual(toolSetup(v1.profile, v1.dir).map((t) => t.spec), ["poetry==1.8.3"]);
     assert.equal(containerImage(v1.profile, v1.dir), "python:3.12-slim");
     const v2 = contractOf({ "pyproject.toml": "[project]\nname = \"cleo\"\n\n[tool.poetry]\nrequires-poetry = \">=2.0\"\n", "poetry.lock": poetryLock("2.2.1"), "cleo/__init__.py": "" });
-    assert.equal(command(v2.contract, "cmd-repo-install"), "POETRY_VIRTUALENVS_IN_PROJECT=true poetry sync --no-interaction");
+    assert.equal(command(v2.contract, "cmd-repo-install"), "POETRY_VIRTUALENVS_IN_PROJECT=true poetry sync --no-interaction -v");
     assert.deepEqual(toolSetup(v2.profile, v2.dir).map((t) => t.spec), ["poetry==2.2.1"]);
     const unlocked = contractOf({ "pyproject.toml": "[tool.poetry]\nname = \"cleo\"\n", "cleo/__init__.py": "" });
-    assert.equal(command(unlocked.contract, "cmd-repo-install"), "POETRY_VIRTUALENVS_IN_PROJECT=true poetry install --no-interaction");
+    assert.equal(command(unlocked.contract, "cmd-repo-install"), "POETRY_VIRTUALENVS_IN_PROJECT=true poetry install --no-interaction -v");
     assert.match(unlocked.contract.find((c) => c.id === "cmd-repo-install")!.reason, /can't be frozen/);
   });
 

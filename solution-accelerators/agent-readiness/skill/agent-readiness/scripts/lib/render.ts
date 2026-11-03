@@ -3,6 +3,7 @@ import { describeRate, rate, windowLabel } from "./outcomes.ts";
 import { watchFor } from "./roadmap.ts";
 import type { Rubric } from "./rubric.ts";
 import type { CompStates } from "./score.ts";
+import { sampledScope } from "./scope.ts";
 import { blockedBy, checkCounts } from "./score.ts";
 import type { ComponentResult } from "./seal.ts";
 import { NOT_SUPPORTED, SUPPORTED_DOC } from "./support.ts";
@@ -462,6 +463,8 @@ function coverageLine(input: RenderInput): string {
   if (held.length) line += ` ${list(held.map((c) => c.id))} crossed ${share} of changes in this audit only; ${held.length > 1 ? "they set" : "it sets"} the repo level once ${held.length > 1 ? "they stay" : "it stays"} there for a second audit.`;
   if (fallback.length) line += ` No assessed component gets ${share} of changes, so the largest, ${fallback[0].id}, sets the repo level.`;
   if (input.partial.partial) line += ` Partial coverage: ${pct(input.partial.unassessedShare, 1)}% of changes aren't assessed.`;
+  const sampled = sampledScope(audit);
+  if (sampled) line += ` Sampled scope: ${sampled}.`;
   if (audit.tier !== "read-only" && !audit.environment.containerRuntime && audit.evidence.some((e) => e.where === "fresh_copy")) {
     const declared = audit.profile?.environmentJson?.build?.dockerfile;
     const blockedEv = audit.evidence.filter((e) => blockedBy(e) && e.diagnosis?.cause === "missing_tool");

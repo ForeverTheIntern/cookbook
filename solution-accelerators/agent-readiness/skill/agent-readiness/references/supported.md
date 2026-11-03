@@ -18,17 +18,22 @@ A component outside the supported tier never sets the repo level. When it holds 
 | `yarn` | Node with Yarn 1 | `yarn.lock` from Yarn 1, or a `yarn@1` pin | | `fixtures/yarn-classic` |
 | `pip` | Python with pip | `requirements.txt`, `pyproject.toml` or `setup.py` | | `fixtures/python-unpinned` |
 | `uv` | Python with uv | `uv.lock` in a single project | | `encode/starlette@2745bbc` |
+| `uv-workspace` | A uv workspace | `[tool.uv.workspace]` in a `pyproject.toml` | each member is a component; one frozen install syncs every member from the root uv.lock, with the dev group and any test group | `fixtures/uv-workspace` |
+| `poetry` | Poetry | `poetry.lock`, or `[tool.poetry]` in `pyproject.toml` | the audit adds the Poetry that wrote poetry.lock to its Python image, from PyPI, and installs into .venv | `fixtures/poetry-only`, `python-poetry/cleo@fd264ef` |
+| `bun` | Bun | `bun.lock`, `bun.lockb` or a `bun@` pin | the audit adds the pinned Bun to its Node image, from the npm registry | `fixtures/bun-lock`, `elysiajs/elysia@e037eca` |
+| `yarn-berry` | Yarn 2 or later | a `yarn@2` or later pin, `.yarnrc.yml`, or a Berry `yarn.lock` | Corepack runs the pinned Yarn, or Yarn hands over to the yarnPath release; the install is immutable | `fixtures/yarn-berry` |
 | `docker` | Docker | `docker info` | | `tests/fixtures.test.ts` |
 | `host-fallback` | No container runtime on Linux or macOS | no Docker or Podman answers | setup runs in a scrubbed copy on the host, so Level 1 can't be proved there | `fixtures/declared-image-missing-toolchain`, `fixtures/sudo-start` |
+
+The frozen installs are `npm ci`, `pnpm install --frozen-lockfile`, `yarn install --frozen-lockfile` (Yarn 1) or `--immutable` (Yarn 2 or later), `bun install --frozen-lockfile`, `uv sync --frozen` and `poetry sync` (`poetry install --sync` before Poetry 2). The audit's images don't ship Bun or Poetry, so before the install it adds the version the repo pins, with the network on. Bun's version comes from `packageManager` or `engines.bun`, and Poetry's from the header of `poetry.lock`. When it can't add one, for example because the registry is blocked, the install is blocked on this machine rather than failed, and the report gives no level for it. A repo's own declared image never gets a tool added: one missing there is the repo's to add.
+
+On a large repo the scan has a time bound (`--budget-scan`, 3 minutes by default), and the replay has `--budget-component` and `--budget-total`. No command runs past what is left of the budget. A step the budget cuts off is blocked, not failed, whether it's the scan's secret check, an install, a test run or planted faults. So is an install that runs past its own 10-minute limit. Part 1's coverage line says what was sampled.
 
 ## Not yet supported
 
 | Id | Stack or machine | What the scan looks for | Why not yet | Proven by |
 |---|---|---|---|---|
-| `poetry` | Poetry | `poetry.lock`, or `[tool.poetry]` in `pyproject.toml` | the audit's Python image has no Poetry | `fixtures/poetry-only`, `python-poetry/cleo@fd264ef` |
-| `bun` | Bun | `bun.lock`, `bun.lockb` or a `bun@` pin | the audit has no frozen Bun install and its images have no Bun | `fixtures/bun-lock`, `elysiajs/elysia@e037eca` |
-| `yarn-berry` | Yarn 2 or later | a `yarn@2` or later pin, `.yarnrc.yml`, or a Berry `yarn.lock` | the audit only runs Yarn 1's frozen install | `medusajs/medusa@e8762ca` |
-| `uv-workspace` | A uv workspace | `[tool.uv.workspace]` in a `pyproject.toml` | members need the root uv.lock and its dependency groups | `fastapi/full-stack-fastapi-template@f4bcfab` |
+| `yarn-berry-unpinned` | Yarn 2 or later with no version pin | Yarn 2 or later with neither a `packageManager` pin nor `yarnPath` | nothing says which Yarn to run: add packageManager to package.json or yarnPath to .yarnrc.yml | `tests/toolchains.test.ts` |
 | `python-behind-root-package` | A Python app next to a root package.json | a root `pyproject.toml`, `setup.py` or `requirements.txt` beside a root `package.json` | the audit runs one image per repo, and it picks Node's | `fixtures/python-behind-root-package`, `saleor/saleor@dfbf139` |
 | `task-graph` | A package that needs a sibling package built first | a build or test that fails because a sibling workspace package's module is missing | the audit builds packages one by one, not in Turbo's or Nx's order | `fixtures/turbo-depends-on-build`, `spree/spree@cdd9a02` |
 | `windows` | Windows without Docker or Podman | `process.platform` is `win32` and no container runtime answers | the host fallback runs bash; run the audit in WSL 2 or with Docker Desktop | `tests/supported.test.ts` |

@@ -89,19 +89,20 @@ describe("failures from the audit's own environment are blocked, not the repo's"
 });
 
 describe("stacks the audit doesn't support yet", () => {
-  test("Poetry, Bun, Yarn 2 and uv workspaces are recognised and not assessed", () => {
-    const cases: [Record<string, string>, RegExp][] = [
-      [{ "pyproject.toml": "[tool.poetry]\nname = \"cleo\"\n", "poetry.lock": "", "cleo/__init__.py": "" }, /^Poetry isn't supported yet/],
-      [{ "pyproject.toml": "[tool.poetry]\nname = \"cleo\"\n", "cleo/__init__.py": "" }, /^Poetry isn't supported yet/],
-      [{ "package.json": "{\"name\":\"elysia\",\"scripts\":{\"test\":\"bun test\"}}", "bun.lock": "{}" }, /^Bun isn't supported yet/],
-      [{ "package.json": "{\"name\":\"medusa\",\"packageManager\":\"yarn@4.1.0\",\"scripts\":{\"test\":\"jest\"}}", "yarn.lock": "__metadata:\n  version: 8\n" }, /^Yarn 2 or later isn't supported yet/],
-      [{ "pyproject.toml": "[project]\nname = \"app\"\n\n[tool.uv.workspace]\nmembers = [\"backend\"]\n", "uv.lock": "", "app.py": "" }, /^a uv workspace isn't supported yet/],
+  test("Poetry, Bun, Yarn 2 and uv workspaces are recognised and assessed; Yarn 2 with no pin isn't", () => {
+    const cases: [Record<string, string>, string, boolean][] = [
+      [{ "pyproject.toml": "[tool.poetry]\nname = \"cleo\"\n", "poetry.lock": "", "cleo/__init__.py": "" }, "poetry", true],
+      [{ "pyproject.toml": "[tool.poetry]\nname = \"cleo\"\n", "cleo/__init__.py": "" }, "poetry", true],
+      [{ "package.json": "{\"name\":\"elysia\",\"scripts\":{\"test\":\"bun test\"}}", "bun.lock": "{}" }, "bun", true],
+      [{ "package.json": "{\"name\":\"medusa\",\"packageManager\":\"yarn@4.1.0\",\"scripts\":{\"test\":\"jest\"}}", "yarn.lock": "__metadata:\n  version: 8\n" }, "yarn-berry", true],
+      [{ "package.json": "{\"name\":\"medusa\",\"scripts\":{\"test\":\"jest\"}}", "yarn.lock": "__metadata:\n  version: 8\n" }, "yarn-berry-unpinned", false],
+      [{ "pyproject.toml": "[project]\nname = \"app\"\n\n[tool.uv.workspace]\nmembers = [\"backend\"]\n", "uv.lock": "", "app.py": "" }, "uv-workspace", true],
     ];
-    for (const [files, reason] of cases) {
+    for (const [files, stack, assessed] of cases) {
       const dir = tree(files);
       const [c] = buildProfile(dir, dir, rubric).components;
-      assert.equal(c.assessed, false, JSON.stringify(files));
-      assert.match(c.notAssessedReason ?? "", reason);
+      assert.deepEqual([c.stack, c.assessed], [stack, assessed], JSON.stringify(files));
+      if (!assessed) assert.match(c.notAssessedReason ?? "", / isn't supported yet: /);
     }
     const yarn1 = tree({ "package.json": "{\"name\":\"a\",\"packageManager\":\"yarn@1.22.22\",\"scripts\":{\"test\":\"node --test\"}}", "yarn.lock": "# yarn lockfile v1\n" });
     assert.equal(buildProfile(yarn1, yarn1, rubric).components[0].assessed, true, "Yarn 1 is still supported");

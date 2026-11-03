@@ -117,8 +117,8 @@ export interface GitResult {
   stderr: string;
 }
 
-export function git(args: string[], cwd: string): GitResult {
-  const r = spawnSync("git", args, { cwd, encoding: "utf8", maxBuffer: 64 * 1024 * 1024 });
+export function git(args: string[], cwd: string, timeoutMs?: number): GitResult {
+  const r = spawnSync("git", args, { cwd, encoding: "utf8", maxBuffer: 64 * 1024 * 1024, ...(timeoutMs ? { timeout: Math.max(1, timeoutMs) } : {}) });
   return { ok: r.status === 0, stdout: r.stdout ?? "", stderr: r.stderr ?? "" };
 }
 
@@ -130,9 +130,11 @@ export function gitOrThrow(args: string[], cwd: string): string {
 
 const SKIP_DIRS = new Set([".git", "node_modules", ".agent-readiness", ".venv", "venv", "__pycache__", "dist", "build", "coverage"]);
 
+export const MAX_FILES = 50000;
+
 export function listFiles(root: string, opts: { includeHidden?: boolean; maxFiles?: number } = {}): string[] {
   const out: string[] = [];
-  const max = opts.maxFiles ?? 50000;
+  const max = opts.maxFiles ?? MAX_FILES;
   const walk = (dir: string) => {
     if (out.length >= max) return;
     let entries: string[];

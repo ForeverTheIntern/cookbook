@@ -3,7 +3,12 @@
   "workspaces": {
     "": {
       "name": "bun-lock",
+      "dependencies": {
+        "rounding": "file:./lib/rounding",
+      },
     },
   },
-  "packages": {},
+  "packages": {
+    "rounding": ["rounding@file:lib/rounding", {}],
+  }
 }

@@ -6,5 +6,8 @@
   "packageManager": "bun@1.2.19",
   "scripts": {
     "test": "bun test"
+  },
+  "dependencies": {
+    "rounding": "file:./lib/rounding"
   }
 }

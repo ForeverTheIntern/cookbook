@@ -419,3 +419,12 @@ The two columns use different drivers and judges, so read them as two baselines,
 - **New tests:** `tests/supported.test.ts` (supported.md matches the detectors; SKILL.md points at it) and the fixtures above, with expected.json.
 - **Remeasure:** not run yet. Egress to api.cursor.com is blocked on the machine that made the change, so before and after on these cases, and the full set for hard-gate drops, need an SDK run with `CURSOR_API_KEY`.
 - **Verdict:** pending.
+
+### Round 11 (pending measurement): Poetry, Bun, Yarn 2 or later and uv workspaces move to supported; sampled scope in the coverage line
+
+- **Fixtures:** poetry-only and bun-lock (now expected at Level 2, not "not supported yet"), yarn-berry and uv-workspace (new).
+- **Failure mode:** round 10 told the agent these stacks aren't supported, so a Poetry, Bun, Yarn 2 or uv workspace repo got no level. On a large repo, a scan or replay could run past any bound, and the report didn't say what it had only sampled.
+- **Lever:** scripts (lever 3) carry the change: frozen installs, the pinned tool added to the audit's image, uv workspace members as components, and time bounds on the scan, install and planted faults. The wording changes are `references/supported.md` (the tiers) and one "Sampled scope:" sentence in the coverage line, which appears only when something was sampled.
+- **New tests:** `tests/toolchains.test.ts`, plus the four fixtures' expected.json.
+- **Remeasure:** not run yet, for the same egress reason as round 10.
+- **Verdict:** pending.

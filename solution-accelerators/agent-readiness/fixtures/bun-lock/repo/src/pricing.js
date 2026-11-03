@@ -1,3 +1,5 @@
+import { cents } from "rounding";
+
 export function isAdult(age) {
   return age >= 18;
 }
@@ -28,5 +30,5 @@ export function parsePercent(text) {
   if (Number.isNaN(n)) {
     throw new TypeError("not a number");
   }
-  return n / 100;
+  return cents(n / 100);
 }

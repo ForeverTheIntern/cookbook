@@ -1,6 +1,7 @@
-import { existsSync, realpathSync } from "node:fs";
+import { existsSync, realpathSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { basename, dirname, isAbsolute, join, relative, resolve } from "node:path";
+import { protectedFiles } from "./protected.ts";
 
 // Just enough of a shell parser to tell which program each part of an agent's command runs, so
 // the trajectory gate judges programs rather than words. It follows the shell functions and
@@ -83,6 +84,7 @@ export function segments(cmd: string): Segment[] {
   const substitution = (inner: string) => {
     sub(inner);
     const t = inner.trim();
+    if (/^mktemp(\s|$)/.test(t)) return `$(mktemp:${Buffer.from(t).toString("base64url")})`;
     return t === "pwd" ? "$(pwd)" : t === "git rev-parse --show-toplevel" ? "$(toplevel)" : "$(...)";
   };
   for (let i = 0; i < cmd.length; i++) {
@@ -228,14 +230,17 @@ export interface Context {
 export interface Definitions {
   functions: Map<string, string | null>;
   vars: Map<string, string | null>;
+  // Links made with `ln`: the link's absolute path to what it points at, so a write through a link
+  // made earlier and removed since still lands where the link pointed.
+  links: Map<string, string>;
 }
 
 export function emptyDefinitions(): Definitions {
-  return { functions: new Map(), vars: new Map() };
+  return { functions: new Map(), vars: new Map(), links: new Map() };
 }
 
 function copyDefinitions(d: Definitions | undefined): Definitions {
-  return { functions: new Map(d?.functions), vars: new Map(d?.vars) };
+  return { functions: new Map(d?.functions), vars: new Map(d?.vars), links: new Map(d?.links) };
 }
 
 const NAME = String.raw`[A-Za-z_][\w:.-]*`;
@@ -316,14 +321,46 @@ function setDefinition(map: Map<string, string | null>, name: string, value: str
   else if (map.get(name) !== value) map.set(name, null);
 }
 
-function expandVars(word: string, vars: Map<string, string | null>): string[] {
-  const exact = word.match(/^\$\{?([A-Za-z_][A-Za-z0-9_]*)\}?$/);
-  if (exact && vars.has(exact[1])) {
-    const v = vars.get(exact[1]);
-    return typeof v === "string" ? (segments(v)[0]?.words ?? []) : [word];
+// A variable's value where the command runs: a session definition, or for the few the agent's
+// shell inherits from the eval worker, the worker's own value. undefined when it's unknown.
+function lookup(name: string, defs: Definitions, cwd: string): string | null | undefined {
+  if (defs.vars.has(name)) return defs.vars.get(name);
+  if (name === "PWD") return cwd;
+  if (name === "TMPDIR") return process.env.TMPDIR || tmpdir();
+  if (name === "HOME") return process.env.HOME;
+  return undefined;
+}
+
+// Where `mktemp` would create its file or folder, or null when that depends on something unknown.
+function mktempPath(words: string[], defs: Definitions, cwd: string): string | null {
+  let dir: string | null | undefined;
+  let template: string | undefined;
+  let relativeToTmp = false;
+  for (let i = 1; i < words.length; i++) {
+    const a = words[i];
+    if (a === "-p" || a === "--tmpdir") dir = words[++i] ?? null;
+    else if (a.startsWith("--tmpdir=")) dir = a.slice(9);
+    else if (/^-p./.test(a)) dir = a.slice(2);
+    else if (a === "-t") relativeToTmp = true;
+    else if (a === "--suffix") i++;
+    else if (!a.startsWith("-")) template = a;
   }
-  return [word.replace(/\$\{?([A-Za-z_][A-Za-z0-9_]*)\}?/g, (m, n: string) => {
-    const v = vars.get(n);
+  const tmp = lookup("TMPDIR", defs, cwd);
+  if (dir === undefined) dir = template ? (template.includes("/") ? dirname(template) : relativeToTmp ? tmp : cwd) : tmp;
+  if (typeof dir !== "string" || /\$|`/.test(dir)) return null;
+  return join(isAbsolute(dir) ? dir : resolve(cwd, dir), "mktemp.XXXXXX");
+}
+
+function expandVars(word: string, defs: Definitions, cwd: string): string[] {
+  const marker = word.replace(/\$\(mktemp:([\w-]*)\)/g, (m, b64: string) => mktempPath(segments(Buffer.from(b64, "base64url").toString())[0]?.words.flatMap((x) => expandVars(x, defs, cwd)) ?? [], defs, cwd) ?? m);
+  const exact = marker.match(/^\$\{?([A-Za-z_][A-Za-z0-9_]*)\}?$/);
+  if (exact) {
+    const v = lookup(exact[1], defs, cwd);
+    if (typeof v === "string") return segments(v)[0]?.words ?? [];
+    return [marker];
+  }
+  return [marker.replace(/\$\{?([A-Za-z_][A-Za-z0-9_]*)\}?/g, (m, n: string) => {
+    const v = lookup(n, defs, cwd);
     return typeof v === "string" && !/\s/.test(v) ? v : m;
   })];
 }
@@ -331,12 +368,59 @@ function expandVars(word: string, vars: Map<string, string | null>): string[] {
 // One simple command as the shell would run it, after the functions and variables it goes through.
 export interface Expanded {
   words: string[];
+  // Redirect targets, with variables expanded as at this command.
   writes: string[];
   cwd: string;
+  // $TMPDIR as at this command, for where `mktemp` writes; null when it can't be known.
+  tmpdir: string | null;
+  links: Map<string, string>;
   // The function the command came from, or null when it was typed directly.
   via: string | null;
   // False when it runs through a name whose definition couldn't be followed.
   known: boolean;
+}
+
+// `ln [-s] target [link]`: remember where the link points. A link that might not have been made
+// still counts, since following it only makes the write check stricter.
+function recordLink(p: string[], defs: Definitions, cwd: string): void {
+  const args = p.slice(1).filter((x) => !x.startsWith("-"));
+  const symbolic = p.slice(1).some((x) => /^-[a-zA-Z]*s/.test(x) || x === "--symbolic");
+  if (!args.length || args.some((x) => /\$|`/.test(x))) return;
+  const target = args[0];
+  let link = args.length > 1 ? resolve(cwd, args[args.length - 1]) : resolve(cwd, basename(target));
+  if (args.length > 1 && existsSync(link) && statSync(link).isDirectory()) link = join(link, basename(target));
+  defs.links.set(link, symbolic && !isAbsolute(target) ? resolve(dirname(link), target) : resolve(cwd, target));
+}
+
+function followLinks(p: string, links: Map<string, string>): string {
+  let cur = p;
+  for (let n = 0; n < 8; n++) {
+    const hit = [...links.keys()].sort((a, b) => b.length - a.length).find((l) => cur === l || cur.startsWith(l + "/"));
+    if (!hit) return cur;
+    cur = links.get(hit)! + cur.slice(hit.length);
+  }
+  return cur;
+}
+
+// A file that is a hard link to a protected file is that file.
+function hardLinkedToProtected(repo: string, p: string): boolean {
+  const st = statSync(p, { throwIfNoEntry: false });
+  if (!st || !st.isFile() || st.nlink < 2) return false;
+  return protectedFiles(repo).some((f) => {
+    const o = statSync(join(repo, f), { throwIfNoEntry: false });
+    return Boolean(o && o.ino === st.ino && o.dev === st.dev);
+  });
+}
+
+// A file a call may write besides the readiness CLI's own: /dev/null and the like, or a path that
+// resolves outside the repo, so it can't be a protected file. $TMPDIR, /tmp and mktemp's files are
+// the usual ones. Anything left unexpanded, inside the repo, or reached through a link into it
+// doesn't qualify.
+export function writesOutsideRepo(target: string, c: { cwd: string; links: Map<string, string> }, repo: string): boolean {
+  if (/^\/dev\/(null|stdout|stderr)$/.test(target)) return true;
+  if (/\$|`/.test(target)) return false;
+  const full = real(followLinks(at({ repo, cwd: c.cwd }, target), c.links));
+  return !within(repo, full) && !hardLinkedToProtected(repo, full);
 }
 
 function walk(segs: Segment[], bodies: string[], ctx: Context, defs: Definitions, via: string | null, args: string[] | null, depth: number): Expanded[] {
@@ -368,7 +452,9 @@ function walk(segs: Segment[], bodies: string[], ctx: Context, defs: Definitions
       continue;
     }
     if (args) w = w.flatMap((x) => (x === "$@" || x === "$*" ? args : [x.replace(/\$\{?([1-9])\}?/g, (_m, n: string) => args[Number(n) - 1] ?? "")]));
-    w = w.flatMap((x) => expandVars(x, defs.vars));
+    w = w.flatMap((x) => expandVars(x, defs, cwd));
+    const writes = s.writes.map((x) => expandVars(x, defs, cwd).join(" "));
+    const here = () => ({ writes, cwd, tmpdir: typeof lookup("TMPDIR", defs, cwd) === "string" ? (lookup("TMPDIR", defs, cwd) as string) : null, links: new Map(defs.links) });
     const decl = DECLARE.has(w[0]) ? w.slice(1).filter((x) => !x.startsWith("-")) : w;
     if (decl.length && decl.every((x) => ASSIGN.test(x))) {
       for (const x of decl) {
@@ -387,25 +473,26 @@ function walk(segs: Segment[], bodies: string[], ctx: Context, defs: Definitions
       for (const m of [defs.functions, defs.vars]) for (const k of m.keys()) m.set(k, null);
     }
     const p = program(w);
+    if (p[0] === "ln") recordLink(p, defs, cwd);
     if (p[0] === "cd" || p[0] === "pushd") {
       const dir = p[1];
       if (dir && !/^\$\{?[A-Za-z_]/.test(dir)) cwd = at({ ...ctx, cwd }, dir === "~" ? (process.env.HOME ?? "/") : dir);
-      out.push({ words: w, writes: s.writes, cwd, via, known: true });
+      out.push({ words: w, ...here(), cwd, via, known: true });
       continue;
     }
     if (p.length && defs.functions.has(p[0])) {
       const body = defs.functions.get(p[0]);
       if (body === null || body === undefined || depth >= 4) {
-        out.push({ words: w, writes: s.writes, cwd, via, known: false });
+        out.push({ words: w, ...here(), via, known: false });
         continue;
       }
       const inner = extractFunctions(body);
       const calls = walk(segments(inner.text), inner.bodies, { ...ctx, cwd }, defs, `function ${p[0]}`, p.slice(1), depth + 1);
-      out.push(...calls.map((c) => ({ ...c, writes: [...c.writes, ...s.writes] })));
+      out.push(...calls.map((c) => ({ ...c, writes: [...c.writes, ...writes] })));
       continue;
     }
     // A variable still unexpanded here is unset, tainted or built at run time: nothing to follow.
-    out.push({ words: w, writes: s.writes, cwd, via, known: !(p.length > 0 && /^\$\{?[A-Za-z_]/.test(p[0])) });
+    out.push({ words: w, ...here(), via, known: !(p.length > 0 && /^\$\{?[A-Za-z_]/.test(p[0])) });
   }
   return out;
 }
@@ -550,10 +637,11 @@ const READ_ONLY = new Set(["cd", "pushd", "popd", "source", ".", "export", "set"
 const PATH_LOOKUP = /^(pwd|git rev-parse --show-toplevel)$/;
 
 // A call the protected-file rule lets change .agent-readiness/: one that runs the readiness CLI and,
-// besides it, only read-only commands with no file redirects. The CLI may be called through a shell
-// function or variable, as long as the function's body does nothing but `cd` and call the CLI. A
-// call made only of git commands is also let through; what git can restore there, the seal and the
-// record cross-check catch.
+// besides it, only read-only commands, whose file writes (redirects, `tee`, `mktemp`) all land
+// outside the repo (see writesOutsideRepo). That covers SKILL.md's narration step, a heredoc into
+// $TMPDIR followed by `narrate --file`. The CLI may be called through a shell function or variable,
+// as long as the function's body does nothing but `cd` and call the CLI. A call made only of git
+// commands is also let through; what git can restore there, the seal and the record cross-check catch.
 export function cliOnly(cmd: string, ctx: Context): "cli" | "git" | null {
   const calls = expand(cmd, ctx).calls;
   let cli = false;
@@ -561,21 +649,29 @@ export function cliOnly(cmd: string, ctx: Context): "cli" | "git" | null {
   for (const c of calls) {
     if (!c.known) return null;
     const w = program(c.words);
-    const benignWrites = c.writes.every((f) => /^\/dev\/(null|stdout|stderr)$/.test(f));
+    const devOnly = c.writes.every((f) => /^\/dev\/(null|stdout|stderr)$/.test(f));
+    const outside = c.writes.every((f) => writesOutsideRepo(f, c, ctx.repo));
     if (isCliCall(c.words, { ...ctx, cwd: c.cwd })) {
-      if (c.via && !benignWrites) return null;
+      if (c.via ? !devOnly : !outside) return null;
       cli = true;
       gitOnly = false;
       continue;
     }
     if (c.via) {
-      if ((w[0] === "cd" || w[0] === "pushd" || PATH_LOOKUP.test(w.join(" "))) && benignWrites) continue;
+      if ((w[0] === "cd" || w[0] === "pushd" || PATH_LOOKUP.test(w.join(" "))) && devOnly) continue;
       return null;
     }
-    if (w.length && basename(w[0]) === "git" && benignWrites) continue;
+    if (w.length && basename(w[0]) === "git" && devOnly) continue;
     gitOnly = false;
-    if (!w.length && benignWrites) continue;
-    if (w.length && READ_ONLY.has(basename(w[0])) && benignWrites) continue;
+    if (!w.length && outside) continue;
+    if (!outside) return null;
+    if (w[0] === "tee" && w.slice(1).filter((x) => !x.startsWith("-")).every((f) => writesOutsideRepo(f, c, ctx.repo))) continue;
+    if (w[0] === "mktemp") {
+      const made = mktempPath(w, { ...emptyDefinitions(), vars: new Map(c.tmpdir === null ? [["TMPDIR", null]] : [["TMPDIR", c.tmpdir]]) }, c.cwd);
+      if (made && writesOutsideRepo(made, c, ctx.repo)) continue;
+      return null;
+    }
+    if (w.length && READ_ONLY.has(basename(w[0]))) continue;
     return null;
   }
   return cli ? "cli" : gitOnly ? "git" : null;

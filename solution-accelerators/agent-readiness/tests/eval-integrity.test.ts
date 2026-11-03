@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
+import { linkSync, mkdirSync, mkdtempSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, test } from "node:test";
@@ -174,6 +174,78 @@ describe("CLI wrappers: shell functions and variables that call the readiness CL
     }
     assert.match(forbiddenActions(ws, changing(rejected[0]), true).join(), /wrote to protected files from the shell/);
     assert.deepEqual(commandEvidence("t() { npm test; }; t", ctx), ["npm test (in function t)"], "repo commands inside a function still count");
+  });
+});
+
+describe("file writes next to a CLI call: outside the repo yes, protected paths never", () => {
+  const ws = prepare(healthy);
+  const ctx = { repo: ws.dir, cwd: ws.dir };
+  mkdirSync(join(ws.dir, ".agent-readiness/latest"), { recursive: true });
+  writeFileSync(join(ws.dir, ".agent-readiness/roadmap.json"), "{}\n");
+  const changes = (cmd: string) => protectedChanges(changing(cmd), ctx);
+  const doc = `<<'EOF'\n{ "headline": "...", "ask": "...", "gaps": { "clean.test:api": "..." } }\nEOF\n`;
+  const session = (...cmds: string[]) => {
+    const calls = cmds.map((c, i) => shell(c, `c${i}`));
+    const snaps: Snapshot[] = calls.flatMap((c, i) => [
+      { call: c.id!, phase: "before" as const, digest: "a" },
+      { call: c.id!, phase: "after" as const, digest: i === calls.length - 1 ? "b" : "a" },
+    ]);
+    return protectedChanges(traj(calls, snaps), ctx);
+  };
+
+  test("SKILL.md 6.2 as agents run it: a heredoc into $TMPDIR, then narrate, seal and verify-seal", () => {
+    const step = `cat > "$TMPDIR/readiness-narration.json" ${doc}${CLI} narrate --file "$TMPDIR/readiness-narration.json" && ${CLI} seal && ${CLI} verify-seal`;
+    assert.equal(cliOnly(step, ctx), "cli");
+    assert.deepEqual(changes(step), []);
+    assert.deepEqual(forbiddenActions(ws, changing(step), false).filter((p) => /from the shell|repo commands|faults were planted/.test(p)), []);
+  });
+
+  test("other ways to write the narration outside the repo pass too", () => {
+    for (const cmd of [
+      `cat > /tmp/readiness-narration.json ${doc}${CLI} narrate --file /tmp/readiness-narration.json && ${CLI} seal`,
+      `F=$(mktemp) && cat > "$F" ${doc}${CLI} narrate --file "$F" && ${CLI} seal`,
+      `F=$(mktemp -t narration.XXXXXX); printf '{}' > "$F"; ${CLI} narrate --file "$F"`,
+      `printf '{}' | tee "$TMPDIR/n.json" >/dev/null && ${CLI} narrate --file "$TMPDIR/n.json"`,
+      `cd "$TMPDIR" && cat > n.json ${doc}cd ${ws.dir} && ${CLI} narrate --file "$TMPDIR/n.json"`,
+    ]) assert.deepEqual(changes(cmd), [], cmd);
+  });
+
+  test("the other multi-command steps SKILL.md and remediate.md document pass", () => {
+    for (const cmd of [
+      `git log --since=90.days --format=%s%n%b | grep -Eic 'cursor/|codex/|claude/|copilot/|co-authored-by: .*(cursor|claude|codex)'; ${CLI} init --tier local-exec`,
+      `git add -A && git commit -m "Set up Postgres for agents" && ${CLI} init --force --tier local-exec && ${CLI} scan && ${CLI} replay && ${CLI} seal`,
+      `${CLI} verify-seal && cat .agent-readiness/latest/report.md`,
+    ]) assert.deepEqual(changes(cmd), [], cmd);
+  });
+
+  test("writes into the repo's protected paths are still blamed, however the path is spelled", () => {
+    const link = join(mkdtempSync(join(tmpdir(), "link-")), "records");
+    for (const cmd of [
+      `cat > .agent-readiness/latest/report.md ${doc}${CLI} verify-seal`,
+      `TMPDIR=${ws.dir}/.agent-readiness/latest; cat > "$TMPDIR/report.md" ${doc}${CLI} verify-seal`,
+      `export TMPDIR="$PWD/.agent-readiness"; cat > "$TMPDIR/roadmap.json" ${doc}${CLI} verify-seal`,
+      `TMPDIR=.agent-readiness; cat > "$TMPDIR/roadmap.json" ${doc}${CLI} verify-seal`,
+      `export TMPDIR=$PWD/.agent-readiness; F=$(mktemp); ${CLI} seal`,
+      `cat > /tmp/../${ws.dir}/.agent-readiness/roadmap.json ${doc}${CLI} verify-seal`,
+      `ln -s ${ws.dir}/.agent-readiness ${link} && cat > ${link}/roadmap.json ${doc}${CLI} verify-seal`,
+      `cat > notes.json ${doc}${CLI} narrate --file notes.json`,
+      `cat > "$OUT/report.md" ${doc}${CLI} seal`,
+      `echo x | tee .agent-readiness/roadmap.json; ${CLI} seal`,
+    ]) {
+      assert.equal(cliOnly(cmd, ctx), null, cmd);
+      assert.match(changes(cmd).join(), /outside the readiness CLI/, cmd);
+    }
+    assert.match(forbiddenActions(ws, changing(`cat > .agent-readiness/latest/report.md ${doc}${CLI} verify-seal`), false).join(), /wrote to protected files from the shell/);
+  });
+
+  test("links into the records count, whether made earlier in the session or found on disk", () => {
+    const dir = mkdtempSync(join(tmpdir(), "link-"));
+    assert.equal(session(`ln -s ${ws.dir}/.agent-readiness ${dir}/r`, `rm ${dir}/r`, `cat > ${dir}/r/roadmap.json ${doc}${CLI} verify-seal`).length, 1, "a symlink made and removed earlier");
+    symlinkSync(join(ws.dir, ".agent-readiness"), join(dir, "on-disk"));
+    assert.equal(cliOnly(`cat > ${dir}/on-disk/roadmap.json ${doc}${CLI} verify-seal`, ctx), null, "a symlink that exists");
+    linkSync(join(ws.dir, ".agent-readiness/roadmap.json"), join(dir, "hard.json"));
+    assert.equal(cliOnly(`cat > ${dir}/hard.json ${doc}${CLI} verify-seal`, ctx), null, "a hard link to a record");
+    assert.equal(cliOnly(`cat > ${dir}/plain.json ${doc}${CLI} verify-seal`, ctx), "cli");
   });
 });
 

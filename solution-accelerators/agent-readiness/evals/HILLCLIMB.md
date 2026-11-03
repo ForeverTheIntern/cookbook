@@ -408,3 +408,11 @@ The two columns use different drivers and judges, so read them as two baselines,
 - **New tests:** `tests/supported.test.ts` (supported.md matches the detectors; SKILL.md points at it) and the fixtures above, with expected.json.
 - **Remeasure:** not run yet. Egress to api.cursor.com is blocked on the machine that made the change, so before and after on these cases, and the full set for hard-gate drops, need an SDK run with `CURSOR_API_KEY`.
 - **Verdict:** pending.
+
+### Round 11 (pending measurement): coverage cases for Levels 3 and 4, multi-audit, scenarios and remediation
+
+- **Fixtures and cases:** 17 new agent cases in `cases/outcomes.ts`, `cases/multi-audit.ts`, `cases/scenarios.ts`, `cases/remediation.ts` and `cases/scope.ts`, each with a scripted control, plus the `compose-services` and `sampled-scope` fixtures. The `python-unpinned` fixture case now asks for the `repo_wide` scenario its expected.json adds, and grades the scenario's level.
+- **Failure mode:** these paths had no agent case, so a regression in what the agent does at Level 3 or 4, on a recheck or re-audit, or when fixing instructions, safety or services, went unmeasured.
+- **Levers touching what the agent reads:** `remediate.md` says `draft-env` reads services from a root compose file and copies `.env.example`, and that `--service` replaces both lists; `references/supported.md` gains a section on services tests need. The scripts do the rest.
+- **Remeasure:** not run. api.cursor.com is blocked on the machine that made the change. Every scripted control passes in Docker there except the three that need egress it doesn't have: `scenario-repo-wide` (PyPI), and `draft-env-service` and `compose-env` (Debian's package mirrors). The full set, with before and after on the changed fixture case, needs an SDK run with `CURSOR_API_KEY`, and the baseline needs re-recording to include the new cases.
+- **Verdict:** pending.

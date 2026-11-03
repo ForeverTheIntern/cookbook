@@ -112,21 +112,21 @@ npm run sample           # regenerate examples/ from the monorepo-mixed fixture
 npm run release-manifest # after changing the skill's scripts, rubric, schemas or templates
 ```
 
-Fifteen fixtures under `fixtures/`, each a tiny repo with one planted defect or repo shape and an `expected.json`, are the diagnostic ground truth. Five cover repo shapes from the field: tests that import a folder (`folder-import`), standalone apps next to .NET projects with no root package (`standalone-nested-mixed`), a setup that needs a tool only the declared image installs (`declared-image-missing-toolchain`), a start command that runs sudo (`sudo-start`), and a toolchain the rubric doesn't support (`unsupported-go-service`). Two of them also run with no container runtime. [AGENTS.md](AGENTS.md) holds the rule for adding checks and scenarios, and for turning field feedback bundles into fixtures.
+The 34 fixtures under `fixtures/`, each a tiny repo with one planted defect or repo shape and an `expected.json`, are the diagnostic ground truth. Five cover repo shapes from the field: tests that import a folder (`folder-import`), standalone apps next to .NET projects with no root package (`standalone-nested-mixed`), a setup that needs a tool only the declared image installs (`declared-image-missing-toolchain`), a start command that runs sudo (`sudo-start`), and a toolchain the rubric doesn't support (`unsupported-go-service`). Two of them also run with no container runtime. [AGENTS.md](AGENTS.md) holds the rule for adding checks and scenarios, and for turning field feedback bundles into fixtures.
 
 ### Skill evals
 
 The evals run the real Cursor agent on each fixture with a pinned prompt and grade what the scripts wrote: at most six hard gates per case (a sealed audit that `verify-seal` accepts and whose records agree, levels, top items, the part 1 rules, no forbidden action), plus two soft judge scores for part 1. The headline judge carries the bar of 0.8; the page judge is tracked. Gates that judge a fix don't trust the agent's `.agent-readiness/` at all: the grader audits the agent's final commit itself, outside the agent's workspace, with its own seed and seal key. [evals/README.md](evals/README.md#grader-integrity) explains how.
 
 - `npm run evals -- --tag smoke|full --repeats 3 --json out.json --junit out.xml --compare evals/baseline.json` drives the agent through `@cursor/sdk` and needs a `CURSOR_API_KEY`. CI runs this.
-- `npm run evals -- --tag negative` needs no key. Scripts play gamed fixes (a resealed forgery, a tampered seal, a test that hashes the source, a dropped database setup) and each case passes only if its gates reject them. An honest scripted fix next to them must pass, which needs a container runtime.
+- `npm run evals -- --tag negative` needs no key. Scripts play gamed fixes (a resealed forgery, a tampered seal, a test that hashes the source, a dropped database setup) and each case passes only if its gates reject them. An honest scripted fix next to them must pass, which needs a container runtime. Every coverage case (Levels 3 and 4, rechecks and re-audits, scenarios, remediation, sampled scope) has a scripted control too, which plays the honest path through the same setup and gates.
 - Without a key, any agent can be the driver: `--prepare` builds the workspaces and a manifest of prompts, the agent runs each prompt, `--grade <root>` grades one workspace, and `--collect <dir>` summarizes. `--rerender <root>` rebuilds a run's report with the current scripts, so a rendering change can be judged on earlier runs, and `--regrade <dir>` grades stored SDK runs again from their saved tool calls after a grader fix.
 
 [evals/baseline.json](evals/baseline.json) is the result CI compares against, and [evals/HILLCLIMB.md](evals/HILLCLIMB.md) logs how it was reached, one failure mode per round.
 
 ### Public goldens
 
-Six pinned public repos, from a well-tested npm package down to a monorepo with no tests, plus a Go module and a .NET solution, check that the levels rank real repositories in the expected order and that no report claims a config, script or path its tree doesn't have. [evals/README.md](evals/README.md) lists the repos, why each is there, the expected order and what the first runs found.
+Six pinned public repos, from a well-tested npm package down to a monorepo with no tests, plus a Go module and a .NET solution, check that the levels rank real repositories in the expected order, that the stable ones get their exact level, and that no report claims a config, script or path its tree doesn't have. Each stored result records a digest of `score.ts` and `levels.ts`, and `npm run check` fails when the stored results are stale. [evals/README.md](evals/README.md) lists the repos, why each is there, the expected order and what the first runs found.
 
 ## Known gaps
 

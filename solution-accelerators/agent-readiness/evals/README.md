@@ -47,6 +47,22 @@ A grader audit costs a full audit: one for `before`, one for `final`, and up to 
 
 [cases/negative.ts](cases/negative.ts) holds the false-passes from the scoring-reliability review, played by [lib/attacks.ts](lib/attacks.ts): `forged-reseal`, `forged-reseal-latest`, `seal-tamper`, `hash-test-oracle` and `drop-db-setup`. Each lists the gates that must reject it, wrapped in `rejects()`, which passes only when the inner gate ran and failed. `honest-fix` is the control: an honest scripted fix that must pass every make-it-level-2 gate. Its level rise needs a container runtime. `tests/eval-integrity.test.ts` runs every one in host mode on each `npm run check`.
 
+### Coverage cases and their scripted controls
+
+Five case files cover paths that used to be unit-only. [lib/coverage.ts](lib/coverage.ts) holds their setup helpers and gates.
+
+| File | Cases |
+|---|---|
+| [cases/outcomes.ts](cases/outcomes.ts) | `level-3-outcomes`, `level-3-short-window`, `level-4-streak`, `level-4-failed-recheck` (healthy-node with `prs.template.json` and `prs-later.template.json`) |
+| [cases/multi-audit.ts](cases/multi-audit.ts) | `recheck-regression`, `recheck-restore`, `new-component-joins`, `drops-below-share`, `diff-catches-weakening`, and its negative twin `skip-failing-tests` |
+| [cases/scenarios.ts](cases/scenarios.ts) | `scenario-repo-wide`, `scenario-components` |
+| [cases/remediation.ts](cases/remediation.ts) | `fix-instructions`, `draft-verify-skill`, `fix-safety-hook`, `draft-env-service`, `compose-env` (the `compose-services` fixture: Postgres and Redis from `compose.yml`, URLs from `.env.example`) |
+| [cases/scope.ts](cases/scope.ts) | `sampled-scope` (eight packages, six assessed) |
+
+- **Seeded history.** Earlier audits, rechecks and targets come from `seedAudit`, `seedRecheck` and `seedTargets`, which run the accelerator's CLI as the harness in a case's `setup`, with the case's eval seed and no seal key. An earlier Level 3 window is an audit dated 30 days back (`SA_READINESS_NOW`) over a PR file materialized for that date. Turn hooks change only repo code: a hook runs between the agent's tool calls, where the protected-file snapshots would blame a records change on the agent.
+- **Scripted controls.** Every case has a `<id>-scripted` twin, built with `control()` in [lib/controls.ts](lib/controls.ts), that plays the honest path through the same setup, turn hooks and gates with no agent. A control that fails means the case can't pass even when everything is done right. They run with `npm run evals -- --tag negative`, like `honest-fix`. `tests/coverage.test.ts` runs the three cheapest in a container on each `npm run check`.
+- **Scenarios in fixture cases.** When a fixture's `expected.json` adds scenarios, its fixture case asks for them in the prompt and adds `scenarioLevelsGate`.
+
 ## Public goldens
 
 ### How the repos were chosen
@@ -71,14 +87,17 @@ Each is pinned at a full commit SHA in [goldens/goldens.json](goldens/goldens.js
 
 ### What is asserted
 
-- **Order, not scores.** `rank` in `goldens.json` lists tiers from highest to lowest. Every component in a tier must sit strictly above every component in the next one; there is no order within a tier, and no exact level is asserted. The expected order is:
+- **Order.** `rank` in `goldens.json` lists tiers from highest to lowest. Every component in a tier must sit strictly above every component in the next one; there is no order within a tier. The expected order is:
   1. `slugify` and `starlette`;
   2. above `express`;
   3. above `create-t3-turbo`'s `nextjs` and `ui`.
+- **Exact levels for the stable entries.** `expect.levels` pins `slugify` at 2, `starlette` at 2 and `express` at 1, so a change that moves every repo down a level fails even though the order holds. `null` would mean the audit must give that component no level.
 - **Components.** Each golden names the components it must assess, and the unsupported ones it must list as not assessed, with their toolchain.
 - **No claims outside the tree.** [lib/claims.ts](lib/claims.ts) checks every path, manifest, lockfile, agent asset, toolchain pin, CI config and contract script the report states as present against the files git tracks at the audited commit. A path the report quotes as missing, such as a stale instruction's target, isn't a claim of presence. The same check runs in the skill evals' report gate.
 
-`npm run goldens` needs network access and Docker or Podman, so it isn't part of `npm run check`. Use `-- --only slugify,uuid` for a subset and `-- --keep` to keep the clones. Each run writes [goldens/last-run.json](goldens/last-run.json). Offline, `tests/goldens.test.ts` checks the manifest against the selection bar, the ranking rule and the claims check.
+`npm run goldens` needs network access and Docker or Podman, so it isn't part of `npm run check`. Use `-- --only slugify,uuid` for a subset and `-- --keep` to keep the clones. Each run writes [goldens/last-run.json](goldens/last-run.json), and each result records `scoring`, a digest of `scripts/lib/score.ts` and `scripts/lib/levels.ts`, and the accelerator commit it ran from. `--only` keeps the other goldens' stored results, and any of them recorded under other scoring is listed under `pending` with the reason.
+
+Offline, `tests/goldens.test.ts` checks the manifest against the selection bar, the ranking rule and the claims check, and checks freshness: every stored result must be recorded under the current scoring digest or be listed as pending, and the recorded run must hold every exact level and ranking. Pending entries show as TODO tests. After changing `score.ts` or `levels.ts`, rerun the goldens; `npm run goldens -- --check` runs nothing and exits 1 while any result is stale, pending or failing, so a release gate run uses it.
 
 ### Runtime
 

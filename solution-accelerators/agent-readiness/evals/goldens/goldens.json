@@ -93,7 +93,15 @@
           "db",
           "ui"
         ],
-        "excluded": []
+        "excluded": [],
+        "levels": {
+          "expo": 0,
+          "nextjs": 0,
+          "tanstack-start": 0,
+          "auth": 0,
+          "db": 0,
+          "ui": 0
+        }
       }
     },
     {

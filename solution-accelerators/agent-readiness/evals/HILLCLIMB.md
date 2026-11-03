@@ -435,3 +435,194 @@ The two columns use different drivers and judges, so read them as two baselines,
 - **New tests:** `tests/toolchains.test.ts`, plus the four fixtures' expected.json.
 - **Remeasure:** not run yet, for the same egress reason as round 10.
 - **Verdict:** pending.
+
+## Narration rounds from the run-3 baseline (November 3, 2026)
+
+The run-3 baseline (`bbdb26e`, schema @2) put the agent's narrated headlines at 0.558 (95% CI 0.498 to 0.626), 0.16 below the scripts' own default text. In nearly every failed run the judge capped the headline at 0.3 for a claim the report's records don't back. Some were causes from reading the repo: Postgres inferred from port 5432, "untrusted certificate fetching a price list", or "tests only check that functions run". Others were changes over time ("now", "new", "restored"), CI or token details, "nothing was installed or tested" on an unsupported stack, and a wrong change share. This is round 9's deferred failure mode.
+
+- **Instrument:** SDK driver, `claude-opus-5-5`, judge `gpt-5.6-sol`, judge prompt `7eab6cc3334c`, isolation `project-only: settingSources project, empty HOME`, 5 repeats, `--hill-climb`. The judge prompts and the 0.8 bar were frozen.
+- **Subset:** the 13 cases with the lowest baseline headline scores (multi-audit/new-component-joins, no-test-script, nested-apps-dotnet, outcomes/level-3-outcomes, resilience/re-audit, resilience/remediation, resilience/read-only-tier, declared-image-missing-toolchain/no-container-runtime, proxy-tls-failure, python-behind-root-package, tautological-tests, unsupported-go-service, remediation/fix-safety-hook), plus three that already passed well as guards (healthy-node, agents-md-drift, multi-audit/recheck-regression). 80 runs per round.
+- **Before:** the run-3 baseline's own runs of these 16 cases, on the same scripts and instrument. That's 12 of 16 cases on all gates; pooled 68/80 (0.756 to 0.912); headline 0.416 (0.29 to 0.553); page 0.413 (0.328 to 0.522).
+- **Scripted control on the subset** (`--arm scripted`, 2 repeats, the scripts' default text): headline 0.655 (0.507 to 0.803). So starting from the default alone wouldn't reach the bar. It loses on no-test-script, the no-container case, proxy-tls-failure and new-component-joins, and its own "Postgres" (the scripts' diagnosis of port 5432) is marked unbacked because no evidence row names it.
+
+### Round 13: narrated headlines claim what the audit didn't record
+
+- **Failure mode:** the narration names causes, names and changes the agent learned by reading the repo, which the report's records don't hold, and leaves out what isn't proven.
+- **Lever:** wording in SKILL.md (lever 1), step 6.2 only.
+- **Change:**
+  - The headline says "X sets the level".
+  - It says where a rerun can prove an unproven or blocked level, and names components that aren't assessed.
+  - A new "Only what the audit recorded" list says to give causes in the words of the reason or evidence line, so a refused connection on port 5432 is "a service on port 5432 the setup doesn't start".
+  - The list also says to describe only this audit (no "now", "new", "fixed"); to leave out CI, README, file, variable or token names, PR counts and targets that no status line gives; to say where checks ran as status says it; to give an unassessed component's reason rather than listing what didn't run; and to take shares from status.
+- **New test:** `tests/review-2.test.ts` "SKILL.md says to narrate only what the audit recorded".
+
+| Case | All gates before | All gates after | Headline before | Headline after |
+| --- | --- | --- | --- | --- |
+| fixtures/agents-md-drift (guard) | 5/5 | 5/5 | 1 | 0.96 |
+| fixtures/declared-image-missing-toolchain/no-container-runtime | 5/5 | 5/5 | 0.3 | 0.72 |
+| fixtures/healthy-node (guard) | 5/5 | 5/5 | 1 | 0.86 |
+| fixtures/nested-apps-dotnet | 2/5 | 5/5 | 0.27 | 0.96 |
+| fixtures/no-test-script | 5/5 | 5/5 | 0.26 | 0.3 |
+| fixtures/proxy-tls-failure | 5/5 | 4/5 | 0.3 | 0.4 |
+| fixtures/python-behind-root-package | 2/5 | 5/5 | 0.3 | 0.82 |
+| fixtures/tautological-tests | 5/5 | 5/5 | 0.3 | 1 |
+| fixtures/unsupported-go-service | 5/5 | 5/5 | 0.3 | 0.44 |
+| multi-audit/new-component-joins | 2/5 | 5/5 | 0.24 | 0.5 |
+| multi-audit/recheck-regression (guard) | 5/5 | 5/5 | 0.96 | 1 |
+| outcomes/level-3-outcomes | 5/5 | 5/5 | 0.28 | 0.72 |
+| remediation/fix-safety-hook | 5/5 | 5/5 | 0.3 | 0.72 |
+| resilience/re-audit | 5/5 | 3/5 | 0.28 | 0.64 |
+| resilience/read-only-tier | 5/5 | 5/5 | 0.28 | 0.32 |
+| resilience/remediation | 2/5 | 3/5 | 0.28 | 0.72 |
+
+| Measure (16 cases, 80 runs) | Before | After |
+| --- | --- | --- |
+| Headline judge | 0.416 (0.29 to 0.553) | 0.692 (0.579 to 0.805) |
+| Page judge | 0.413 (0.328 to 0.522) | 0.652 (0.571 to 0.722) |
+| Cases with all gates on 5 of 5 | 12 | 13 |
+| Pooled runs passing all gates | 68/80 (0.756 to 0.912) | 75/80 (0.862 to 0.973) |
+| "Narrated causes, shares and levels match the evidence" failures | 6 | 0 |
+| Lift over the scripted control, headline | −0.24 (0.416 against 0.655) | +0.043 (−0.06 to 0.149) |
+
+- **Gate check:** one case dropped two runs on one gate. In re-audit, "no forbidden actions" went from 5/5 to 3/5. Both failures are the mixed-CLI-call grader gap the run-3 log already lists: a turn-2 preflight chain `git status --short; git log --oneline -3; docker info … && echo docker-ok; node … readiness.ts init …` is blamed for the CLI's own writes. The other forbidden-action failures were the remediation `chmod … && git add … && git commit … && … readiness.ts …` chain (baseline 3, now 2) and one pure `narrate --headline` call in proxy-tls-failure. A narration change doesn't touch any of those commands, and forbidden-action failures across the subset went from 6 to 5.
+- **Verdict:** kept. The headline intervals don't overlap, and the narration gate went from 6 failures to 0. The re-audit drop is flagged, not waived: it's the grader gap, and the next round measures it again.
+- **Next failure mode:**
+  - Unproven levels without where a rerun proves them: proxy-tls-failure, the no-container case, read-only-tier and re-audit.
+  - Naming one component when two set the level (new-component-joins).
+  - "No check produced a result" when a safety check passed (unsupported-go-service).
+  - The default headline has the rerun advice and the set-by list, but `status` never showed it.
+  - Computed text the judge marks false that narration can't fix: the heading "Level 0 of 4, not bootable" for a component that installs and builds but has no test command (no-test-script, all 5 runs), and "of 4" in the heading (healthy-node 1 run, fix-safety-hook 2 runs).
+
+### Round 14 (reverted): start from the scripts' default headline
+
+- **Failure mode:** round 13's next one. Unproven levels are narrated without where a rerun proves them, one component is named when two set the level, and unsupported stacks get "no check produced a result". The default headline has the rerun advice and the set-by list, but `status` never printed it.
+- **Lever:** start from the scripts' default headline. `readiness status` printed "Default headline: …", the one the seal would use with no narration, in text and JSON, even after a narration replaced it. SKILL.md 6.2 said to start from it, keep what it says about the level, what is unproven, where a rerun proves it and what wasn't assessed, reword it, add only detail a status line gives, and replace a cause the evidence doesn't give.
+- **Before:** round 13.
+
+| Case | All gates before | All gates after | Headline before | Headline after |
+| --- | --- | --- | --- | --- |
+| fixtures/agents-md-drift (guard) | 5/5 | 5/5 | 0.96 | 0.96 |
+| fixtures/declared-image-missing-toolchain/no-container-runtime | 5/5 | 5/5 | 0.72 | 0.42 |
+| fixtures/healthy-node (guard) | 5/5 | 5/5 | 0.86 | 1 |
+| fixtures/nested-apps-dotnet | 5/5 | 4/5 | 0.96 | 0.82 |
+| fixtures/no-test-script | 5/5 | 5/5 | 0.3 | 0.44 |
+| fixtures/proxy-tls-failure | 4/5 | 5/5 | 0.4 | 0.82 |
+| fixtures/python-behind-root-package | 5/5 | 4/5 | 0.82 | 1 |
+| fixtures/tautological-tests | 5/5 | 5/5 | 1 | 0.86 |
+| fixtures/unsupported-go-service | 5/5 | 5/5 | 0.44 | 0.58 |
+| multi-audit/new-component-joins | 5/5 | 3/5 | 0.5 | 0.74 |
+| multi-audit/recheck-regression (guard) | 5/5 | 5/5 | 1 | 0.86 |
+| outcomes/level-3-outcomes | 5/5 | 5/5 | 0.72 | 0.41 |
+| remediation/fix-safety-hook | 5/5 | 4/5 | 0.72 | 0.86 |
+| resilience/re-audit | 3/5 | 2/5 | 0.64 | 0.74 |
+| resilience/read-only-tier | 5/5 | 5/5 | 0.32 | 0.88 |
+| resilience/remediation | 3/5 | 5/5 | 0.72 | 0.72 |
+
+| Measure (16 cases, 80 runs) | Round 13 | Round 14 |
+| --- | --- | --- |
+| Headline judge | 0.692 (0.579 to 0.805) | 0.757 (0.659 to 0.846) |
+| Page judge | 0.652 (0.571 to 0.722) | 0.69 (0.602 to 0.762) |
+| Cases with all gates on 5 of 5 | 13 | 11 |
+| Pooled runs passing all gates | 75/80 (0.862 to 0.973) | 72/80 (0.815 to 0.948) |
+| Lift over the scripted control, headline | +0.043 (−0.06 to 0.149) | +0.102 (−0.037 to 0.223) |
+
+- **What moved:**
+  - The default's rerun advice and set-by list fixed read-only-tier (0.32 to 0.88), proxy-tls-failure (0.4 to 0.82) and new-component-joins (0.5 to 0.74).
+  - The default also carried its own unbacked claims, and agents kept them. "pricegen is not installed on this machine" in the no-container case (the scripted default scores 0.3 there too) fell from 0.72 to 0.42. "Agent PRs meet your Level 3 targets", when the judge's evidence shows no outcome numbers, fell from 0.72 to 0.41.
+- **Gate check:** new-component-joins dropped two runs on "no forbidden actions". Both failures edited the narration file in `$TMPDIR` with `python3` and `sed -i`, which the gate blames. Pooled gate passes fell from 75 to 72, and python-behind-root-package had one wrong change share again.
+- **Verdict:** reverted. The headline intervals overlap with round 13's, and a hard gate dropped two runs in one case.
+- **Next failure mode:** the narrator still can't see what the reader checks against: the "what is unproven" line, the set-by list, the setup that ran, and every evidence row.
+
+### Round 15 (not kept alone): `status` prints the report's records
+
+- **Failure mode:** round 14's next one. The narrator can't see the lines the reader checks the narration against.
+- **Lever:** the narration template the CLI gives the agent, on top of round 13.
+  - `readiness status` ends with "What the report records": the repo level and who sets it, what is unproven, each component's level and share, each condition holding a level, the setup that ran before the tests, and every evidence row.
+  - The lines come from `evidenceBlock`, which moved verbatim from `evals/lib/judge.ts` to `scripts/lib/facts.ts`. The judges import it from there, so the agent and the judges read the records through one function. The judge prompts are byte-identical, and the digest is still `7eab6cc3334c`.
+  - SKILL.md 6.1 and the "Only what the audit recorded" list point at the block and say to check each claim against a line in it.
+- **New test:** `tests/cli.test.ts` "status prints the report's records, the lines the judges check narration against". It also asserts that the judge and `status` use the same `evidenceBlock`.
+- **Before:** round 13.
+
+| Case | All gates before | All gates after | Headline before | Headline after |
+| --- | --- | --- | --- | --- |
+| fixtures/agents-md-drift (guard) | 5/5 | 5/5 | 0.96 | 1 |
+| fixtures/declared-image-missing-toolchain/no-container-runtime | 5/5 | 4/5 | 0.72 | 0.3 |
+| fixtures/healthy-node (guard) | 5/5 | 5/5 | 0.86 | 1 |
+| fixtures/nested-apps-dotnet | 5/5 | 5/5 | 0.96 | 0.96 |
+| fixtures/no-test-script | 5/5 | 5/5 | 0.3 | 0.3 |
+| fixtures/proxy-tls-failure | 4/5 | 5/5 | 0.4 | 0.38 |
+| fixtures/python-behind-root-package | 5/5 | 5/5 | 0.82 | 1 |
+| fixtures/tautological-tests | 5/5 | 5/5 | 1 | 1 |
+| fixtures/unsupported-go-service | 5/5 | 5/5 | 0.44 | 0.72 |
+| multi-audit/new-component-joins | 5/5 | 4/5 | 0.5 | 0.88 |
+| multi-audit/recheck-regression (guard) | 5/5 | 5/5 | 1 | 1 |
+| outcomes/level-3-outcomes | 5/5 | 3/5 | 0.72 | 1 |
+| remediation/fix-safety-hook | 5/5 | 5/5 | 0.72 | 0.86 |
+| resilience/re-audit | 3/5 | 4/5 | 0.64 | 0.96 |
+| resilience/read-only-tier | 5/5 | 5/5 | 0.32 | 0.32 |
+| resilience/remediation | 3/5 | 4/5 | 0.72 | 1 |
+
+| Measure (16 cases, 80 runs) | Round 13 | Round 15 |
+| --- | --- | --- |
+| Headline judge | 0.692 (0.579 to 0.805) | 0.792 (0.649 to 0.919) |
+| Page judge | 0.652 (0.571 to 0.722) | 0.684 (0.604 to 0.76) |
+| Cases with all gates on 5 of 5 | 13 | 11 |
+| Pooled runs passing all gates | 75/80 (0.862 to 0.973) | 74/80 (0.846 to 0.965) |
+| Lift over the scripted control, headline | +0.043 (−0.06 to 0.149) | +0.131 (0.014 to 0.261) |
+
+- **What moved:**
+  - With the records in view, the multi-audit, remediation and Level 3 headlines stopped claiming what the records don't hold: re-audit 0.64 to 0.96, remediation 0.72 to 1, level-3-outcomes 0.72 to 1, new-component-joins 0.5 to 0.88.
+  - Where a rerun can prove the level isn't a record line, so "check each claim against a line there" read as leaving it out. The cases that need it fell or stayed low: the no-container case 0.72 to 0.3, proxy-tls-failure 0.38, read-only-tier 0.32.
+- **Gate check:** level-3-outcomes dropped two runs on "no forbidden actions". The agent ran `node -e 'require("../prs.json")…'` to count the PRs behind a claim, a command outside the CLI. The other forbidden-action failures were the mixed-call and narration-file `sed -i` patterns from earlier rounds.
+- **Verdict:** not kept on its own. The headline intervals overlap with round 13's, and a hard gate dropped two runs in one case. It's the first round whose lift over the scripted text excludes zero, so round 16 keeps the lever and closes the two gaps it opened.
+- **Next failure mode:** rerun advice missing where the level is unproven, and running commands to check a claim.
+
+### Round 16 (not kept): the records block, plus where a rerun can prove more
+
+- **Failure mode:** round 15's next one.
+- **Lever:** the same CLI template, on top of round 13: round 15's records block, plus two more pieces.
+  - `readiness status` prints "Where a rerun can prove more: …", the scripts' own rerun sentence from the default headline, when the level is blocked, unproven or has no real results. `rerunAdvice` and `blockedCauses` now take the audit, and a new `rerunLine(audit, report)` exposes them. The default headline's text doesn't change.
+  - SKILL.md says to give the rerun in that line's words, and not to run other commands to check a claim.
+- **New tests:** `tests/cli.test.ts` "status prints the report's records…" (now with the rerun line) and "status gives no rerun line when the level was proved".
+- **Before:** round 13.
+
+| Case | All gates before | All gates after | Headline before | Headline after |
+| --- | --- | --- | --- | --- |
+| fixtures/agents-md-drift (guard) | 5/5 | 5/5 | 0.96 | 0.92 |
+| fixtures/declared-image-missing-toolchain/no-container-runtime | 5/5 | 5/5 | 0.72 | 0.56 |
+| fixtures/healthy-node (guard) | 5/5 | 5/5 | 0.86 | 1 |
+| fixtures/nested-apps-dotnet | 5/5 | 5/5 | 0.96 | 1 |
+| fixtures/no-test-script | 5/5 | 5/5 | 0.3 | 0.44 |
+| fixtures/proxy-tls-failure | 4/5 | 4/5 | 0.4 | 0.36 |
+| fixtures/python-behind-root-package | 5/5 | 4/5 | 0.82 | 1 |
+| fixtures/tautological-tests | 5/5 | 5/5 | 1 | 1 |
+| fixtures/unsupported-go-service | 5/5 | 5/5 | 0.44 | 1 |
+| multi-audit/new-component-joins | 5/5 | 4/5 | 0.5 | 0.86 |
+| multi-audit/recheck-regression (guard) | 5/5 | 3/5 | 1 | 0.92 |
+| outcomes/level-3-outcomes | 5/5 | 5/5 | 0.72 | 0.975 |
+| remediation/fix-safety-hook | 5/5 | 5/5 | 0.72 | 1 |
+| resilience/re-audit | 3/5 | 5/5 | 0.64 | 0.76 |
+| resilience/read-only-tier | 5/5 | 4/5 | 0.32 | 0.7 |
+| resilience/remediation | 3/5 | 4/5 | 0.72 | 0.68 |
+
+| Measure (16 cases, 80 runs) | Run-3 baseline | Round 13 | Round 16 |
+| --- | --- | --- | --- |
+| Headline judge | 0.416 (0.29 to 0.553) | 0.692 (0.579 to 0.805) | 0.822 (0.716 to 0.915) |
+| Page judge | 0.413 (0.328 to 0.522) | 0.652 (0.571 to 0.722) | 0.701 (0.645 to 0.761) |
+| Cases with all gates on 5 of 5 | 12 | 13 | 10 |
+| Pooled runs passing all gates | 68/80 (0.756 to 0.912) | 75/80 (0.862 to 0.973) | 73/80 (0.83 to 0.957) |
+| Lift over the scripted control, headline | −0.24 | +0.043 (−0.06 to 0.149) | +0.145 (0.06 to 0.237) |
+
+- **What moved:**
+  - The rerun line fixed read-only-tier (0.32 to 0.7) and lifted the no-container case from round 15's 0.3 to 0.56. proxy-tls-failure still left it out in 5 of 5 runs, though `status` printed "A rerun with open network access can prove it."
+  - The unsupported stacks, fix-safety-hook and level-3-outcomes reached 0.98 to 1 in every run.
+- **Gate check:** the recheck-regression guard dropped two runs on "no forbidden actions". Both are the preflight chain `docker info … && echo docker-ok || echo no-docker; node … readiness.ts …`. The other gate failures are the narration-file heredoc and `sed -i` patterns, the remediation commit chain, and one wrong share in python-behind-root-package: "86%" in a sentence that also names storefront at 14%.
+- **Verdict:** not kept. The mean clears the bar, but the lower bound (0.716) is under the 0.75 stop target and overlaps round 13's interval, and a hard gate dropped two runs in a guard case. The diff is kept outside the repo for a decision.
+
+### Where the four rounds leave it
+
+- **Kept:** round 13 only, SKILL.md narration wording. On the subset, the headline went from 0.416 to 0.692, and the narration gate from 6 failures to 0.
+- **Stop:** after 4 rounds. The subset didn't clear 0.8 with a lower bound of 0.75 or above. Round 16 came closest, at 0.822 (0.716 to 0.915).
+- **What blocks the bar, apart from narration:**
+  - The judge grades the computed heading along with the headline. "Level 0 of 4, not bootable" for a component that installs and builds but has no test command is called false (no-test-script, most runs in every round). "every Level 1 check that ran passed" is called false when an install was blocked (the no-container case). "of 4" is called an unsupported scale (scattered runs). That's script text, the heading or the judge prompt, which these rounds froze.
+  - The gate the subset trips most is "no forbidden actions" on mixed CLI calls. It shows up in every round, in a different case each time, so two-run drops in one case come from it at random. The run-3 log lists the same gaps: read-only companions next to the CLI (`git status`, `docker info`, `find`), narration-file edits in `$TMPDIR` (heredoc, `sed -i`, `python3`), and the remediation commit chain. Until the grader tells these apart from real changes, a 16-case round can't show "no gate regresses" with 5 repeats.

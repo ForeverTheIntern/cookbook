@@ -87,6 +87,8 @@ export interface CaseRun {
   arm?: Arm;
   judgeModel?: string | null;
   rubric?: string | null;
+  // How the agent was kept from the machine owner's rules and skills (isolation.ts ISOLATION).
+  isolation?: string | null;
   workspace: string;
   grade: Grade;
   error: string | null;

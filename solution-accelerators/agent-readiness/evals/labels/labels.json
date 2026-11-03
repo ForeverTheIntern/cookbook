@@ -1,7 +1,7 @@
 {
   "passAt": 0.6,
   "failAt": 0.4,
-  "judgePrompt": "f4473207c9ae",
+  "judgePrompt": "7eab6cc3334c",
   "labels": [
     {
       "id": "good-healthy-node-headline",

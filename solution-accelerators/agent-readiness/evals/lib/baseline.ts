@@ -12,6 +12,8 @@ export interface Instrument {
   rubric: string | null;
   // A digest of the judge prompts' code, so a prompt change can't pass as a score change.
   judgePrompt: string | null;
+  // Which rules and skills the agent could load (isolation.ts); null for runs from before it was recorded.
+  isolation: string | null;
 }
 
 export interface CaseSummary {
@@ -179,7 +181,7 @@ export function summarize(runs: CaseRun[], o: SummaryOptions): Baseline {
     recordedAt: new Date().toISOString(),
     note: o.note,
     arm: o.arm ?? "agent",
-    instrument: { driverModel: o.model, judgeModel: joinSet(runs.filter((r) => r.grade.soft.judge !== null || r.grade.soft.page !== null).map((r) => r.judgeModel)), driver: o.driver, rubric: joinSet(runs.map((r) => r.rubric)), judgePrompt: o.judgePrompt ?? null },
+    instrument: { driverModel: o.model, judgeModel: joinSet(runs.filter((r) => r.grade.soft.judge !== null || r.grade.soft.page !== null).map((r) => r.judgeModel)), driver: o.driver, rubric: joinSet(runs.map((r) => r.rubric)), judgePrompt: o.judgePrompt ?? null, isolation: joinSet(runs.map((r) => r.isolation)) },
     repeats: o.repeats,
     cases,
     totals: totalsOf(inSample),
@@ -226,6 +228,7 @@ const INSTRUMENT_FIELDS: [keyof Instrument, string][] = [
   ["driver", "driver kind"],
   ["rubric", "rubric"],
   ["judgePrompt", "judge prompt"],
+  ["isolation", "agent isolation"],
 ];
 
 export interface CompareOptions {

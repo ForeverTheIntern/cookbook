@@ -197,6 +197,20 @@ describe("judges", () => {
     assert.match(judgePromptDigest(), /^[0-9a-f]{12}$/);
   });
 
+  test("stating what is unproven, including a sampled scope, weighs as much as what is proven", () => {
+    assert.match(headlinePrompt(loadBase("slugify")), /What is unproven: nothing; every component was assessed/);
+    const sampled = loadBase("monorepo-mixed");
+    sampled.components.shape = "sampled_monorepo";
+    sampled.components.excluded.push({ id: "billing", path: "packages/billing", toolchain: "Node", manifest: "packages/billing/package.json", lockfile: null, changeShare: 0.12, reason: "outside the 6 most active components" });
+    sampled.maturity.unproven = true;
+    for (const p of [headlinePrompt(sampled), pagePrompt(sampled)]) {
+      assert.match(p, /What isn't proven weighs as much as what is/);
+      assert.match(p, /What is unproven: Level 1 is unproven on this machine; 2 components aren't assessed, 14% of recent changes; the scope is sampled: only the 3 most active components were assessed/);
+    }
+    assert.match(headlinePrompt(sampled), /must not speak for the whole repo: doing so scores 0\.5 or lower/);
+    assert.match(pagePrompt(sampled), /reads as if the whole repo was checked scores 0\.3 or lower/);
+  });
+
   test("a judge reply without a numeric score is null, not zero", () => {
     assert.deepEqual(parseJudge('{"score": 0.7, "reasons": ["ok"]}'), { score: 0.7, reasons: ["ok"] });
     assert.equal(parseJudge("I can't grade this").score, null);

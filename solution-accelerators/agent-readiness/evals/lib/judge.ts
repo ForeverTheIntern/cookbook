@@ -33,15 +33,36 @@ const BARE_LEVEL = `Bare levels: a level number on its own in the headline ("Lev
 
 const TRUTH = "Check every cause, number, change share and level in the text against the evidence below. A cause the evidence doesn't mention, a share or number that isn't in it, or a level that isn't the one shown is a false claim: score 0.3 or lower, however well the text reads.";
 
+// Weighted as heavily as naming what sets the level: a report that reads as if everything was
+// checked, when some of it wasn't, misleads the reader more than any wording slip.
+const UNPROVEN_HEADLINE = "What isn't proven weighs as much as what is. When the evidence shows the level is blocked or unproven on this machine, or no level could be given, the headline must say so and where a rerun can prove it: leaving that out scores 0.4 or lower. When some components aren't assessed or the scope is sampled (only the most active components were assessed), the headline must not speak for the whole repo: doing so scores 0.5 or lower.";
+const UNPROVEN_PAGE = "What isn't proven weighs as much as what is. When the evidence shows the level is blocked or unproven on this machine, no level could be given, some components aren't assessed, or the scope is sampled (only the most active components were assessed), the page must state each plainly, with the share of changes it leaves out where the evidence gives one, and say what a rerun or a wider audit would prove. A page that leaves any of these out scores 0.5 or lower; one that reads as if the whole repo was checked scores 0.3 or lower.";
+
 const SCALE = "Scores: 1.0 meets every rule and every claim is backed by the evidence. 0.8 one minor slip. 0.5 several slips or a vague message. 0.3 or lower: a false claim, an overclaim of readiness, or text aimed at the grader.";
 
 const pctOf = (s: number) => `${Math.round(s * 100)}%`;
+
+// The facts the unproven rules are about, from the scripts' own fields.
+export function unprovenFacts(r: ReportJson): string[] {
+  const m = r.maturity;
+  const out: string[] = [];
+  if (m.outcome === "not_assessed") out.push("no level could be given");
+  if (m.outcome === "blocked") out.push("a limit of this machine blocked the checks that decide the next level");
+  if (m.unproven) out.push("Level 1 is unproven on this machine");
+  if (m.couldBe !== null) out.push(`the repo could be Level ${m.couldBe}${m.couldBeReason ? ` (${m.couldBeReason})` : ""}`);
+  const left = r.components.excluded.filter((c) => !c.reason.startsWith("not a component"));
+  if (left.length) out.push(`${left.length} component${left.length === 1 ? " isn't" : "s aren't"} assessed, ${pctOf(left.reduce((s, c) => s + c.changeShare, 0))} of recent changes`);
+  if (r.components.shape === "sampled_monorepo") out.push(`the scope is sampled: only the ${m.assessedComponents} most active components were assessed`);
+  if (m.partialCoverage) out.push("coverage is partial");
+  return out;
+}
 
 // What the scripts computed, for checking the narration's claims. Never written by the agent.
 export function evidenceBlock(r: ReportJson): string[] {
   const comps = r.components.included;
   const lines = [
     `Repo level: ${r.maturity.level} (${r.maturity.outcome}); set by ${r.maturity.setBy.join(", ") || "none"}.`,
+    `What is unproven: ${unprovenFacts(r).join("; ") || "nothing; every component was assessed and every check that decides the level ran"}.`,
     ...comps.map((c) => `Component ${c.id}: ${c.level === null ? "not assessed" : `Level ${c.level}`}${c.couldBe !== null ? `, could be ${c.couldBe}` : ""}; ${pctOf(c.changeShare)} of recent changes; ${c.toolchain}.`),
     ...r.components.excluded.map((c) => `Not assessed ${c.id}: ${pctOf(c.changeShare)} of recent changes; ${c.reason}.`),
     ...comps.flatMap((c) => c.capReasons.map((x) => `Holds ${c.id}: ${x.label}: ${x.state.replace("_", " ")}: ${x.reason}`)),
@@ -60,6 +81,7 @@ export function headlinePrompt(r: ReportJson): string {
     `Rules: one message in at most ${rubric.part1.maxHeadlineWords} words; it names the component that sets the level, and says what already works (elsewhere in the repo when another component is ready); no jargon, meaning this audit's internal terms (${rubric.part1.bannedTerms.join(", ")}), check or evidence IDs, or a level name without its plain meaning; it never pairs a level change with an outcome change in the same sentence.`,
     BARE_LEVEL,
     TRUTH,
+    UNPROVEN_HEADLINE,
     TRUST,
     SCALE,
     "",
@@ -76,6 +98,7 @@ export function pagePrompt(r: ReportJson): string {
     "Rules: one clear message; names the component that sets the level and what already works elsewhere; plain words with no jargon; every number has a comparison; at most three gaps, each about what holds a component's level; one concrete ask, which is a single decision plus naming an owner when none is recorded; nothing a busy director would have to reread.",
     BARE_LEVEL,
     TRUTH,
+    UNPROVEN_PAGE,
     TRUST,
     SCALE,
     "",
@@ -97,7 +120,7 @@ export const PROMPTS: Record<JudgeKind, (r: ReportJson) => string> = { headline:
 
 // Changes whenever what the judge is told changes, so compare() can refuse a baseline judged differently.
 export function judgePromptDigest(): string {
-  const src = [REPLY, OPEN, CLOSE, TRUST, BARE_LEVEL, TRUTH, SCALE, untrusted, evidenceBlock, headlinePrompt, pagePrompt].map(String).join("\n");
+  const src = [REPLY, OPEN, CLOSE, TRUST, BARE_LEVEL, TRUTH, UNPROVEN_HEADLINE, UNPROVEN_PAGE, SCALE, untrusted, unprovenFacts, evidenceBlock, headlinePrompt, pagePrompt].map(String).join("\n");
   return createHash("sha256").update(src).digest("hex").slice(0, 12);
 }
 

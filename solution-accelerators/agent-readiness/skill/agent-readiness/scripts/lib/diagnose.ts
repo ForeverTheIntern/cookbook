@@ -55,7 +55,39 @@ const NETWORK: { re: RegExp; detail: string }[] = [
 ];
 
 export function networkFailure(output: string): string | null {
-  return NETWORK.find((n) => n.re.test(output))?.detail ?? null;
+  return NETWORK.find((n) => n.re.test(output))?.detail ?? mirrorRefused(output);
+}
+
+// A package mirror or registry answering an HTTP error, such as apt's "403  Forbidden" from
+// deb.debian.org behind a firewall, or a 5xx or rate limit from npm or PyPI. 401 is missing registry
+// credentials and 404 can be a typo in the repo's own dependencies, so neither is here.
+const STATUS = String.raw`(?<status>403|407|429|5\d\d)`;
+const URL_ = String.raw`(?<url>https?:\/\/[^\s"'\\]+)`;
+const REASON = String.raw`(?:Forbidden|Proxy Authentication Required|Too Many Requests|Internal Server Error|Bad Gateway|Service Unavailable|Gateway Time-?out|Client Error|Server Error)`;
+const MIRROR: RegExp[] = [
+  // apt: "E: Failed to fetch <url>  403  Forbidden [IP: ...]"; yarn: "<url>: Request failed \"403 Forbidden\""
+  new RegExp(String.raw`${URL_}[^\n]*?[\s"]${STATUS}\s+${REASON}`),
+  // apt update: "Err:1 <url> bookworm InRelease" with "  403  Forbidden" on the next line
+  new RegExp(String.raw`Err:\d+\s+${URL_}[^\n]*\n\s+${STATUS}\s+${REASON}`),
+  // npm: "403 Forbidden - GET <url>"; requests: "403 Client Error: Forbidden for url: <url>"
+  new RegExp(String.raw`\b${STATUS}\b[^\n]{0,40}?${REASON}[^\n]*?${URL_}`),
+  // pip: "HTTP error 403 while getting <url>"; pnpm: "ERR_PNPM_FETCH_403  GET <url>"
+  new RegExp(String.raw`(?:HTTP error ${STATUS} while getting|ERR_PNPM_FETCH_${STATUS.replace("status", "pnpm")}\s+GET)\s+${URL_}`),
+];
+
+export function mirrorRefused(output: string): string | null {
+  for (const re of MIRROR) {
+    const m = re.exec(output);
+    if (!m?.groups) continue;
+    let host = "the mirror";
+    try {
+      host = new URL(m.groups.url.replace(/[:.,;)]+$/, "")).hostname;
+    } catch {
+      // keep the generic name
+    }
+    return `a package mirror refusing the download (HTTP ${m.groups.status ?? m.groups.pnpm} from ${host})`;
+  }
+  return null;
 }
 
 export function diagnose(output: string, timedOut: boolean, phase: string): Diagnosis {
@@ -74,6 +106,9 @@ export function diagnose(output: string, timedOut: boolean, phase: string): Diag
   if ((phase === "install" || phase === "doctor") && (/\b(E?401|Unauthorized|authentication required|no auth token)\b/i.test(output) || /Failed to replace env in config: \$\{[A-Z_]+\}/.test(output))) {
     return { cause: "registry", detail: "registry credentials not provided" };
   }
+  // A refused package download explains whatever is missing after it.
+  const mirror = mirrorRefused(output);
+  if (mirror) return { cause: "network", detail: mirror };
   if (/ensurepip is not available|No module named venv\b/.test(output)) return { cause: "missing_tool", detail: "python3-venv is not installed" };
   const tool = output.match(/(?:^|\n)(?:[^\n:]*: line \d+: |[^\n:]*: \d+: |(?:ba)?sh: )?([\w.+-]+): (?:command )?not found/);
   if (tool) return { cause: "missing_tool", detail: `${tool[1]} is not installed` };

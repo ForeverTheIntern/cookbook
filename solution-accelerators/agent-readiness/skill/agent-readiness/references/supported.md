@@ -33,7 +33,7 @@ A component outside the supported tier never sets the repo level. When it holds 
 | `task-graph` | A package that needs a sibling package built first | a build or test that fails because a sibling workspace package's module is missing | the audit builds packages one by one, not in Turbo's or Nx's order | `fixtures/turbo-depends-on-build`, `spree/spree@cdd9a02` |
 | `windows` | Windows without Docker or Podman | `process.platform` is `win32` and no container runtime answers | the host fallback runs bash; run the audit in WSL 2 or with Docker Desktop | `tests/supported.test.ts` |
 
-A Python, PHP or Ruby app next to a root `package.json` is listed with its own share of changes. When the root package has no tests of its own, it isn't assessed either, so the audit never says the repo "has no tests" because it looked only at release tooling. A sibling package that wasn't built first, and a network, TLS or proxy error during install or build, are reported as blocked, never as a repo defect.
+A Python, PHP or Ruby app next to a root `package.json` is listed with its own share of changes. When the root package has no tests of its own, it isn't assessed either, so the audit never says the repo "has no tests" because it looked only at release tooling. A sibling package that wasn't built first, and a network, TLS or proxy error or a package mirror's HTTP error during install or build, are reported as blocked, never as a repo defect.
 
 ## Not assessed
 

@@ -117,6 +117,14 @@ describe("fixes from the second independent review", () => {
     assert.match(readFileSync(join(__dirname, "../skill/agent-readiness/SKILL.md"), "utf8"), /If the variable isn't set in this shell, don't stop to ask for it: narrate and seal the audit as it stands/);
   });
 
+  test("SKILL.md says to narrate only what the audit recorded", () => {
+    const skill = readFileSync(join(__dirname, "../skill/agent-readiness/SKILL.md"), "utf8");
+    assert.match(skill, /\*\*Only what the audit recorded\.\*\* .*What you learned only by reading the repo isn't in those records, so leave it out even when it's true/);
+    assert.match(skill, /A refused connection on port 5432 is "a service on port 5432 the setup doesn't start" unless a line names the service/);
+    assert.match(skill, /Describe only this audit\. Leave out "now", "new", "again"/);
+    assert.match(skill, /say so and where a rerun can prove it/);
+  });
+
   test("verify-seal fails when the latest audit's roadmap.json is gone", () => {
     const repo = materialize("healthy-node");
     hostAudit(repo);

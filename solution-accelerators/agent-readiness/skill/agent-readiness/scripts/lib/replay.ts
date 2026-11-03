@@ -525,7 +525,13 @@ export function makeExecutor(audit: Audit, copyDir: string, runtimePref: string,
       audit.environment.containerRuntime = runtime.bin;
       audit.environment.image = image;
       log(`Replaying in a clean ${runtime.bin} container (${image}).`);
-      // A tool missing from the repo's own image is the repo's to add, so only the audit's images get one.
+      // Python components next to Node ones run in the Node image, which has python3 but no venv.
+      if (image.startsWith("node:") && audit.profile!.components.some((c) => c.assessed && c.language === "py")) {
+        const added = session.asImageUser("python3 -m venv /tmp/venv-probe >/dev/null 2>&1 || (apt-get update -qq && DEBIAN_FRONTEND=noninteractive apt-get install -y -qq python3-venv >/dev/null)", 600000);
+        log(added.ok ? "Added python3-venv to the Node image for the Python components." : `Couldn't add python3-venv for the Python components: ${tail(added.output, 300)}`);
+      }
+      // A tool missing from the repo's own image is the repo's to add, so only the audit's images get
+      // one. Poetry needs the venv module above.
       if (imageSource !== "repo") {
         for (const t of toolSetup(audit.profile!, copyDir)) {
           if (session.asImageUser(`command -v ${t.tool}`, 30000).ok) continue;
@@ -533,11 +539,6 @@ export function makeExecutor(audit: Audit, copyDir: string, runtimePref: string,
           (audit.environment.tools ??= []).push({ spec: t.spec, added: added.ok });
           log(added.ok ? `Added ${t.spec} to the image for the frozen install.` : `Couldn't add ${t.spec} to the image, so its install will be blocked: ${tail(added.output, 300)}`);
         }
-      }
-      // Python components next to Node ones run in the Node image, which has python3 but no venv.
-      if (image.startsWith("node:") && audit.profile!.components.some((c) => c.assessed && c.language === "py")) {
-        const added = session.asImageUser("python3 -m venv /tmp/venv-probe >/dev/null 2>&1 || (apt-get update -qq && DEBIAN_FRONTEND=noninteractive apt-get install -y -qq python3-venv >/dev/null)", 600000);
-        log(added.ok ? "Added python3-venv to the Node image for the Python components." : `Couldn't add python3-venv for the Python components: ${tail(added.output, 300)}`);
       }
       return containerExecutor(session, copyDir, imageSource);
     }

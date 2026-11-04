@@ -5,6 +5,7 @@ import { fileURLToPath } from "node:url";
 import { HILL_CLIMB_MIN_REPEATS, compare, crashedRun, isInfraError, summarize, withControls, writeJunit } from "./lib/baseline.ts";
 import type { Baseline } from "./lib/baseline.ts";
 import { scriptedAudit } from "./lib/controls.ts";
+import { releaseVerdict } from "./lib/release.ts";
 import { isolateHome } from "./lib/isolation.ts";
 import { gradeCase, latestReport } from "./lib/grade.ts";
 import { renderMarkdown } from "../skill/agent-readiness/scripts/lib/render.ts";
@@ -15,6 +16,7 @@ import type { JudgeResult } from "./lib/judge.ts";
 import { rerenderLatest } from "./lib/rerender.ts";
 import { runWithSdk } from "./lib/sdk.ts";
 import type { Arm, CaseRun, EvalCase, Trajectory } from "./lib/types.ts";
+import { exitWhenFlushed, supervise, writeResult } from "./lib/worker-exit.ts";
 import { applyTurnHook, externalPreamble, fillPrompt, loadWorkspace, prepare, skillPreamble } from "./lib/workspace.ts";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -110,8 +112,11 @@ async function worker(flags: Record<string, string | true>): Promise<void> {
   const report = latestReport(ws);
   const [h, p] = c.attack ? [NOT_JUDGED, NOT_JUDGED] : await judgeRun(report, arm, judgeModel);
   const run: CaseRun = { id: c.id, repeat: Number(flags.repeat), model, driver: t.driver, arm, judgeModel: c.attack ? null : judgeModel, rubric: report?.audit.rubric ?? null, isolation: iso.id, workspace: ws.dir, grade: { gates, soft: { judge: h.score, judgeReasons: h.reasons, page: p.score, pageReasons: p.reasons, wallMs: t.durationMs, toolCalls: t.toolCalls.length, tokens: t.tokens } }, error: t.error };
-  writeFileSync(String(flags.out), JSON.stringify({ run, trajectory: t }, null, 2));
+  writeResult(String(flags.out), { run, trajectory: t });
 }
+
+// How long a worker may run on after writing a complete result before the parent stops it.
+const RESULT_GRACE_MS = Number(process.env.SA_READINESS_EVAL_RESULT_GRACE_SEC ?? 60) * 1000;
 
 interface Job {
   c: EvalCase;
@@ -120,18 +125,13 @@ interface Job {
   arm: Arm;
 }
 
-function spawnOnce(j: Job, out: string, timeoutMin: string, judgeModel: string | null): Promise<void> {
-  return new Promise((done) => {
-    const argv = [fileURLToPath(import.meta.url), "--worker", "--case", j.c.id, "--repeat", String(j.r), "--model", j.m, "--arm", j.arm, "--out", out, "--timeout-min", timeoutMin, ...(judgeModel ? ["--judge-model", judgeModel] : [])];
-    const child = spawn(process.execPath, ["--experimental-strip-types", "--no-warnings", ...argv], { stdio: ["ignore", "inherit", "inherit"], env: process.env });
-    // The worker cancels its own turn at the timeout; this catches a worker that hangs past it.
-    const kill = setTimeout(() => child.kill("SIGKILL"), (Number(timeoutMin) + 10) * 60000);
-    child.on("close", (code, signal) => {
-      clearTimeout(kill);
-      if (!existsSync(out)) writeFileSync(out, JSON.stringify({ run: crashedRun(j.c, j.r, j.m, `the worker exited ${signal ? `on ${signal}` : `with code ${code}`} without a result`, j.arm) }, null, 2));
-      done();
-    });
-  });
+async function spawnOnce(j: Job, out: string, timeoutMin: string, judgeModel: string | null): Promise<void> {
+  const argv = [fileURLToPath(import.meta.url), "--worker", "--case", j.c.id, "--repeat", String(j.r), "--model", j.m, "--arm", j.arm, "--out", out, "--timeout-min", timeoutMin, ...(judgeModel ? ["--judge-model", judgeModel] : [])];
+  const child = spawn(process.execPath, ["--experimental-strip-types", "--no-warnings", ...argv], { stdio: ["ignore", "inherit", "inherit"], env: process.env });
+  // The worker cancels its own turn at the timeout and exits once its result is written; this
+  // catches one that hangs past either, keeping a result that is already complete.
+  const s = await supervise(child, out, { graceMs: RESULT_GRACE_MS, hardMs: (Number(timeoutMin) + 10) * 60000, log: (line) => process.stdout.write(`${j.c.id} #${j.r} [${j.arm}]: ${line}\n`) });
+  if (!existsSync(out)) writeFileSync(out, JSON.stringify({ run: crashedRun(j.c, j.r, j.m, `the worker exited ${s.signal ? `on ${s.signal}` : `with code ${s.code}`} without a result`, j.arm) }, null, 2));
 }
 
 // Infrastructure errors (capacity, network, a crashed worker) are retried in a fresh workspace and
@@ -208,8 +208,17 @@ function report(runs: CaseRun[], flags: Record<string, string | true>, o: Report
     for (const f of soft) process.stdout.write(`FLAG ${f}\n`);
     if (regressions.length) code = 1;
   }
+  if (arm === "agent" && o.driver === "scripted") {
+    // Negative cases: any gate that lets an attack through, in any run, fails.
+    if (runs.some((r) => !r.infra?.lost && !r.grade.gates.every((g) => g.pass))) code = code || 2;
+  } else if (arm === "agent") {
+    // The release policy (release.ts): k of n per case; one run short is a flag, two a regression.
+    const verdict = releaseVerdict(summary);
+    for (const line of verdict.lines) process.stdout.write(`${line}\n`);
+    if (verdict.cases.some((c) => c.verdict === "regression")) code = code || 2;
+    if (flags.release && !verdict.pass) code = code || 1;
+  }
   // Control arms are expected to fail gates; that is what the lift measures.
-  if (arm === "agent" && runs.some((r) => !r.infra?.lost && !r.grade.gates.every((g) => g.pass))) code = code || 2;
   return code;
 }
 
@@ -224,7 +233,16 @@ async function pickJudgeModel(flags: Record<string, string | true>, driverModel:
 
 async function main(): Promise<void> {
   const flags = args();
-  if (flags.worker) return worker(flags);
+  // A worker exits as soon as its result is written: open keep-alive sockets would hold it otherwise.
+  if (flags.worker) {
+    try {
+      await worker(flags);
+    } catch (e) {
+      process.stderr.write(`evals worker: ${(e as Error).stack ?? (e as Error).message}\n`);
+      return exitWhenFlushed(1);
+    }
+    return exitWhenFlushed(0);
+  }
   const all = await loadCases();
   const holdout = holdoutIds(all);
   if (flags.list) {
@@ -236,6 +254,14 @@ async function main(): Promise<void> {
   const models = String(flags.model ?? DEFAULT_MODEL).split(",");
   const arms = String(flags.arm ?? "agent").split(",") as Arm[];
   for (const a of arms) if (!ARMS.includes(a)) throw new Error(`Unknown --arm ${a}; use ${ARMS.join(", ")}.`);
+  // Scores a saved run (--json output or a baseline) against the release policy: one PASS or FAIL.
+  if (typeof flags["release-check"] === "string") {
+    const saved = JSON.parse(readFileSync(resolve(flags["release-check"]), "utf8")) as { summary?: Baseline } & Baseline;
+    const verdict = releaseVerdict(saved.summary ?? saved);
+    for (const line of verdict.lines) process.stdout.write(`${line}\n`);
+    process.exitCode = verdict.pass ? 0 : 1;
+    return;
+  }
   if (typeof flags.hook === "string") {
     const { ws, id } = loadWorkspace(resolve(flags.hook));
     const c = all.find((x) => x.id === id)!;

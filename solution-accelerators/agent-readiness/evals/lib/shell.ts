@@ -329,6 +329,7 @@ function extractFunctions(cmd: string): { text: string; bodies: string[] } {
 }
 
 const OPENERS = new Set(["if", "while", "until", "for", "case", "select", "{"]);
+const LOOP_HEADERS = new Set(["for", "select", "case"]);
 const MIDDLES = new Set(["then", "do", "else", "elif", "!"]);
 const CLOSERS = new Set(["fi", "done", "esac", "}"]);
 const DECLARE = new Set(["export", "local", "declare", "typeset", "readonly"]);
@@ -465,6 +466,9 @@ function walk(segs: Segment[], bodies: string[], ctx: Context, defs: Definitions
   const pushed: string[] = [];
   // A subshell's `cd` ends with it. segments() marks the last command inside "( ... )" with end ")".
   const subshells: string[] = [];
+  // Assignments that certainly hold for the rest of an unbroken `a && R=x && b && $R` run: if
+  // anything before R=x fails, the run stops before $R, and R=x itself can't fail.
+  const chain = new Map<string, string>();
   let nest = 0;
   let parens = 0;
   for (const s of segs) {
@@ -474,14 +478,25 @@ function walk(segs: Segment[], bodies: string[], ctx: Context, defs: Definitions
     }
     try {
       let w = [...s.words];
+      let header: string | null = null;
       for (;;) {
-        if (OPENERS.has(w[0])) nest++;
-        else if (CLOSERS.has(w[0])) nest = Math.max(0, nest - 1);
+        if (OPENERS.has(w[0])) {
+          nest++;
+          if (LOOP_HEADERS.has(w[0])) header = w[0];
+        } else if (CLOSERS.has(w[0])) nest = Math.max(0, nest - 1);
         else if (!MIDDLES.has(w[0])) break;
         w = w.slice(1);
       }
+      if (s.sep !== "&&" || nest > 0 || parens > 0) chain.clear();
       if (!w.length) continue;
+      // `for p in a b c`, `select p in ...` and `case $x in` name a variable or a word, not a
+      // command; the loop variable's value is unknown. The body's commands are judged one by one.
+      if (header) {
+        if (header !== "case" && /^[A-Za-z_]\w*$/.test(w[0])) defs.vars.set(w[0], null);
+        continue;
+      }
       const certain = nest === 0 && parens === 0 && ["start", ";", "\n", ";;"].includes(s.sep) && !["|", "|&", "&", "("].includes(s.end);
+      const view: Definitions = chain.size ? { ...defs, vars: new Map([...defs.vars, ...chain]) } : defs;
       const fn = w[0].match(/^__readiness_fn_(\d+)__$/);
       if (fn) {
         const [name, body] = bodies[Number(fn[1])].split("\0");
@@ -494,15 +509,18 @@ function walk(segs: Segment[], bodies: string[], ctx: Context, defs: Definitions
         continue;
       }
       if (args) w = w.flatMap((x) => (x === "$@" || x === "$*" ? args : [x.replace(/\$\{?([1-9])\}?/g, (_m, n: string) => args[Number(n) - 1] ?? "")]));
-      w = w.flatMap((x) => expandVars(x, defs, cwd));
-      const writes = s.writes.map((x) => expandVars(x, defs, cwd).join(" "));
-      const here = () => ({ writes, cwd, tmpdir: typeof lookup("TMPDIR", defs, cwd) === "string" ? (lookup("TMPDIR", defs, cwd) as string) : null, links: new Map(defs.links) });
+      w = w.flatMap((x) => expandVars(x, view, cwd));
+      const writes = s.writes.map((x) => expandVars(x, view, cwd).join(" "));
+      const here = () => ({ writes, cwd, tmpdir: typeof lookup("TMPDIR", view, cwd) === "string" ? (lookup("TMPDIR", view, cwd) as string) : null, links: new Map(defs.links) });
       const decl = DECLARE.has(w[0]) ? w.slice(1).filter((x) => !x.startsWith("-")) : w;
       if (decl.length && decl.every((x) => ASSIGN.test(x))) {
         for (const x of decl) {
           const [, name, value] = x.match(ASSIGN)!;
           const v = pathMarkers(value, ctx.repo, cwd);
-          setDefinition(defs.vars, name, /\$\(|`|\$\{?[A-Za-z_]/.test(v) ? null : v, certain);
+          const known = /\$\(|`|\$\{?[A-Za-z_]/.test(v) ? null : v;
+          setDefinition(defs.vars, name, known, certain);
+          if (known !== null && s.sep === "&&" && s.end === "&&" && nest === 0 && parens === 0) chain.set(name, known);
+          else chain.delete(name);
         }
         continue;
       }
@@ -688,6 +706,30 @@ export function repoEvidence(words: string[], ctx: Context): string | null {
   return null;
 }
 
+export interface Step {
+  // The readiness subcommand when this simple command calls the CLI (init, scan, seal, ...).
+  cli: string | null;
+  // Why it runs repo code outside the readiness scripts, when it does.
+  evidence: string | null;
+}
+
+// The simple commands `cmd` runs, in order, as CLI calls or repo commands; the rest are left out.
+export function commandSteps(cmd: string, ctx: Context): Step[] {
+  const steps: Step[] = [];
+  for (const c of expand(cmd, ctx).calls) {
+    if (!c.known) continue;
+    const at = { ...ctx, cwd: c.cwd };
+    if (isCliCall(c.words, at)) {
+      const w = program(c.words);
+      steps.push({ cli: w.slice(w.findIndex((x) => x.endsWith("readiness.ts")) + 1).find((x) => !x.startsWith("-")) ?? "", evidence: null });
+      continue;
+    }
+    const why = repoEvidence(c.words, at);
+    if (why) steps.push({ cli: null, evidence: c.via ? `${why} (in ${c.via})` : why });
+  }
+  return steps;
+}
+
 // Each simple command in `cmd` that runs repo code outside the readiness scripts, following `cd`
 // and the functions and variables it goes through.
 export function commandEvidence(cmd: string, ctx: Context): string[] {
@@ -700,7 +742,7 @@ export function commandEvidence(cmd: string, ctx: Context): string[] {
   return out;
 }
 
-const READ_ONLY = new Set(["cd", "pushd", "popd", "source", ".", "export", "set", "unset", "echo", "printf", "cat", "head", "tail", "less", "more", "ls", "pwd", "true", "false", "sleep", "wc", "grep", "egrep", "rg", "jq", "sort", "uniq", "test", "[", "which", "type", "date", "clear", "column", "cut", "tr", "basename", "dirname", "realpath", "readlink", "stat", "file", "diff", "nl", "fold", "od", "hexdump", "printenv", "whoami", "uname", "id", "hostname", "du", "df", "tree", "cmp", "comm", "paste", "expand", "rev", "seq", "md5", "md5sum", "shasum", "sha256sum"]);
+const READ_ONLY = new Set(["cd", "pushd", "popd", "source", ".", "export", "set", "unset", "read", "echo", "printf", "cat", "head", "tail", "less", "more", "ls", "pwd", "true", "false", "sleep", "wc", "grep", "egrep", "rg", "jq", "sort", "uniq", "test", "[", "which", "type", "date", "clear", "column", "cut", "tr", "basename", "dirname", "realpath", "readlink", "stat", "file", "diff", "nl", "fold", "od", "hexdump", "printenv", "whoami", "uname", "id", "hostname", "du", "df", "tree", "cmp", "comm", "paste", "expand", "rev", "seq", "md5", "md5sum", "shasum", "sha256sum"]);
 const DOCKER_READS = new Set(["info", "version", "ps", "images", "inspect", "context", "--version", "-v"]);
 const VERSION_QUERY = /^(--version|-v|-V|version)$/;
 const FIND_ACTIONS = /^-(exec|execdir|ok|okdir|delete|fprint|fprint0|fprintf|fls)$/;

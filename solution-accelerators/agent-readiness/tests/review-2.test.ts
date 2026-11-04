@@ -117,6 +117,10 @@ describe("fixes from the second independent review", () => {
     assert.match(readFileSync(join(__dirname, "../skill/agent-readiness/SKILL.md"), "utf8"), /If the variable isn't set in this shell, don't stop to ask for it: narrate and seal the audit as it stands/);
   });
 
+  test("SKILL.md says to seal one audit per request, with the narration final once sealed", () => {
+    assert.match(readFileSync(join(__dirname, "../skill/agent-readiness/SKILL.md"), "utf8"), /\*\*Seal one audit per request\.\*\* .*Once an audit is sealed, its narration is final: don't run another audit to reword it/);
+  });
+
   test("SKILL.md says to narrate only what the audit recorded", () => {
     const skill = readFileSync(join(__dirname, "../skill/agent-readiness/SKILL.md"), "utf8");
     assert.match(skill, /\*\*Only what the audit recorded\.\*\* .*What you learned only by reading the repo isn't in those records, so leave it out even when it's true/);

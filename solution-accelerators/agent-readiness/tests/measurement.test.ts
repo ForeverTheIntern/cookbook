@@ -1,3 +1,4 @@
+import { spawnSync } from "node:child_process";
 import assert from "node:assert/strict";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -12,6 +13,7 @@ import { expectedProblems } from "../evals/lib/expected.ts";
 import { DEFAULT_GATES, actionsGate, conditionsWithoutAction, expectedJsonGate, narrationGate } from "../evals/lib/grade.ts";
 import { JUDGE_CANDIDATES, chooseJudge, family, headlinePrompt, judgePromptDigest, pagePrompt, parseJudge } from "../evals/lib/judge.ts";
 import { ISOLATION, isolateHome, userAgentDirs } from "../evals/lib/isolation.ts";
+import { releaseVerdict } from "../evals/lib/release.ts";
 import { narrationCheck } from "../evals/lib/narration.ts";
 import { bootstrapMean, kOfN, wilson } from "../evals/lib/stats.ts";
 import type { CaseRun, EvalCase, Trajectory } from "../evals/lib/types.ts";
@@ -79,12 +81,12 @@ describe("compare() matches the instrument and misses nothing", () => {
     assert.equal(committed.schema, "agent-readiness/eval-baseline@2", "the committed baseline is recorded at the current schema");
   });
 
-  test("missing cases, renamed gates and null judges are regressions; new ones are flags", () => {
+  test("missing cases and renamed gates are regressions; new ones, and one judge short, are flags", () => {
     const now = healthyBaseline(["a", "b", "c", "d", "f"]).map((r) => (r.id === "b" ? run("b", r.repeat, { sealed: true, "levels match": true }) : r.id === "c" ? run("c", r.repeat, { sealed: true, levels: true }, r.repeat === 1 ? null : 0.9) : r));
     const c = compare(summarize(now, O), base);
     assert.ok(c.regressions.includes("e: in the baseline but no run left a result"), c.regressions.join("\n"));
     assert.ok(c.regressions.some((x) => /^b: gate "levels" is in the baseline but not in this run/.test(x)), c.regressions.join("\n"));
-    assert.ok(c.regressions.includes("c: the headline judge gave no score in 1 of 3 runs"), c.regressions.join("\n"));
+    assert.ok(c.flags.includes("c: the headline judge gave no score in 1 of 3 runs (one run short; a flag, not a regression)"), c.flags.join("\n"));
     assert.ok(c.flags.includes("f: new case with no baseline") && c.flags.some((f) => f.includes('b: new gate "levels match"')), c.flags.join("\n"));
     const smoke = compare(summarize(healthyBaseline(["a"]), O), base, { selected: ["a"] });
     assert.deepEqual(smoke.regressions, [], "a smoke run isn't missing the full set's other cases");
@@ -344,5 +346,101 @@ describe("control arms and holdouts", () => {
     const g = narrationGate(ws, t, c);
     assert.equal(g.pass, false);
     assert.match(g.detail, /names Redis as a cause, but no evidence row mentions it/);
+  });
+});
+
+describe("compare(): missing judge scores go through k-of-n and the infrastructure rule", () => {
+  const five = ["p", "q"];
+  const base = summarize(healthyBaseline(five, 5), { ...O, repeats: 5 });
+  const withNulls = (id: string, judgeNulls: number[], opts: { page?: boolean; reasons?: string[] } = {}) =>
+    healthyBaseline(five, 5).map((r) => (r.id === id && judgeNulls.includes(r.repeat) ? { ...r, grade: { ...r.grade, soft: { ...r.grade.soft, ...(opts.page ? { page: null, pageReasons: opts.reasons ?? ["judge reply wasn't JSON"] } : { judge: null, judgeReasons: opts.reasons ?? ["judge reply wasn't JSON"] }) } } } : r));
+  const cmp = (runs: CaseRun[], against = base) => compare(summarize(runs, { ...O, repeats: 5 }), against);
+
+  test("run 4's self-compare: one score missing in 5, in the baseline too, is clean", () => {
+    const run4 = summarize(withNulls("p", [3], { page: true }), { ...O, repeats: 5 });
+    assert.deepEqual(compare(run4, run4).regressions, []);
+    assert.deepEqual(compare(run4, run4).flags, []);
+  });
+
+  test("one score missing against a baseline with none is a flag, two a regression", () => {
+    assert.deepEqual(cmp(withNulls("p", [1])).regressions, []);
+    assert.ok(cmp(withNulls("p", [1])).flags.includes("p: the headline judge gave no score in 1 of 5 runs (one run short; a flag, not a regression)"));
+    assert.ok(cmp(withNulls("p", [1, 2], { page: true })).regressions.includes("p: the page judge gave no score in 2 of 5 runs"));
+  });
+
+  test("a judge call lost to infrastructure is flagged, not counted", () => {
+    const c = cmp(withNulls("p", [1, 2], { reasons: ["judge call failed: [unknown] <html><title>502 Bad Gateway</title></html>"] }));
+    assert.deepEqual(c.regressions, []);
+    assert.ok(c.flags.includes("p: the headline judge call failed on infrastructure in 2 of 5 runs"), c.flags.join("\n"));
+  });
+
+  test("a case whose judge scores are all missing is still a regression", () => {
+    assert.ok(cmp(withNulls("q", [1, 2, 3, 4, 5])).regressions.includes("q: the headline judge gave no score in any of 5 runs"));
+    assert.ok(cmp(withNulls("q", [1, 2, 3, 4, 5], { reasons: ["judge call failed: fetch failed"] })).regressions.includes("q: the headline judge gave no score in any of 5 runs"));
+  });
+});
+
+describe("the release policy", () => {
+  const ids = Array.from({ length: 12 }, (_, i) => `c${i}`);
+  const R5 = { ...O, repeats: 5 };
+  // Twelve cases at 5 repeats; `short` sets how many runs of a case fail a gate, `judge` each run's headline score.
+  const at = (short: Record<string, number> = {}, judge: (id: string, rep: number) => number | null = () => 0.85, extra: (id: string, rep: number) => Partial<CaseRun> = () => ({})) =>
+    summarize(ids.flatMap((id) => Array.from({ length: 5 }, (_, i) => run(id, i + 1, { sealed: true, levels: i >= (short[id] ?? 0) }, judge(id, i + 1), 0.4, extra(id, i + 1)))), R5);
+
+  test("every case clean and the judge over both bars passes, and both judge numbers are printed", () => {
+    const v = releaseVerdict(at());
+    assert.equal(v.pass, true);
+    assert.equal(v.lines.at(-1), "RELEASE PASS");
+    assert.ok(v.lines.some((l) => /^OK headline judge pooled mean 0\.85 \(needs 0\.8\), 95% CI 0\.85 to 0\.85, lower bound 0\.85 \(needs 0\.75\)/.test(l)), v.lines.join("\n"));
+  });
+
+  test("one run short is a flag and still passes; two or more is a regression that fails", () => {
+    const flag = releaseVerdict(at({ c3: 1 }));
+    assert.equal(flag.pass, true);
+    assert.ok(flag.lines.includes("FLAG c3: 4/5 runs pass every gate, 1 short"));
+    assert.match(flag.lines.find((l) => l.startsWith("REPORT hard gates"))!, /11 cases clean, 1 flagged .* every gate in every repeat: 11\/12 cases \(not a release criterion\)/);
+    const two = releaseVerdict(at({ c3: 2 }));
+    assert.equal(two.pass, false);
+    assert.ok(two.lines.includes("FAIL c3: 3/5 runs pass every gate, 2 short"));
+    assert.equal(two.lines.at(-1), "RELEASE FAIL");
+    assert.equal(releaseVerdict(at({ c1: 1, c2: 1, c3: 1, c4: 1 })).pass, true, "flags in many cases don't add up to a failure");
+  });
+
+  test("fewer than 5 repeats can't pass", () => {
+    const v = releaseVerdict(summarize(healthyBaseline(ids, 3), O));
+    assert.equal(v.pass, false);
+    assert.ok(v.lines.includes("FAIL the run has 3 repeats; the policy needs 5"));
+  });
+
+  test("the headline judge needs a pooled mean of 0.8 and a 95% lower bound of 0.75; the page judge never fails", () => {
+    const low = releaseVerdict(at({}, () => 0.79));
+    assert.equal(low.pass, false);
+    assert.match(low.lines.find((l) => l.startsWith("FAIL headline"))!, /pooled mean 0\.79 \(needs 0\.8\)/);
+    // A mean over 0.8 whose interval reaches below 0.75: half the cases at 1.0, half at 0.62.
+    const wide = at({}, (id) => (Number(id.slice(1)) % 2 ? 1 : 0.62));
+    assert.ok(wide.totals.judge.mean! >= 0.8 && wide.totals.judge.low! < 0.75, JSON.stringify(wide.totals.judge));
+    assert.equal(releaseVerdict(wide).pass, false, "the mean alone isn't enough");
+    assert.equal(releaseVerdict(at()).page.mean, 0.4, "a page judge of 0.4 is reported, and the release still passes");
+    assert.equal(releaseVerdict(at({}, () => null)).pass, false, "no headline score at all fails");
+  });
+
+  test("runs lost to infrastructure are left out, not counted short", () => {
+    const lost = { infra: { attempts: 3, errors: ["ECONNRESET"], lost: true }, error: "ECONNRESET" };
+    const v = releaseVerdict(at({ c5: 1 }, () => 0.85, (id, rep) => (id === "c5" && rep === 1 ? lost : {})));
+    assert.equal(v.pass, true);
+    assert.ok(v.lines.includes("NOTE c5: 1 of 5 runs lost to infrastructure, left out"));
+    assert.equal(v.cases.find((c) => c.id === "c5")!.verdict, "ok");
+  });
+
+  test("npm run evals -- --release-check prints one PASS or FAIL and exits by it", () => {
+    const dir = mkdtempSync(join(tmpdir(), "release-"));
+    const runCheck = (s: object) => {
+      const f = join(dir, `${Math.random()}.json`);
+      writeFileSync(f, JSON.stringify({ summary: s }));
+      const r = spawnSync(process.execPath, ["--experimental-strip-types", "--no-warnings", join(LABELS_DIR, "..", "run.ts"), "--release-check", f], { encoding: "utf8" });
+      return { code: r.status, last: r.stdout.trim().split("\n").at(-1) };
+    };
+    assert.deepEqual(runCheck(at({ c3: 1 })), { code: 0, last: "RELEASE PASS" });
+    assert.deepEqual(runCheck(at({ c3: 2 })), { code: 1, last: "RELEASE FAIL" });
   });
 });

@@ -27,6 +27,10 @@ export interface CaseSummary {
   page: number | null;
   judgeNulls: number;
   pageNulls: number;
+  // Of those, the runs whose judge call failed on infrastructure (a 502, a reset connection).
+  // Absent in baselines recorded before it was kept.
+  judgeInfra?: number;
+  pageInfra?: number;
   holdout?: boolean;
   wallMs: number;
   toolCalls: number;
@@ -107,6 +111,12 @@ export function isInfraError(error: string | null): boolean {
   return Boolean(error && !/ended cancelled/.test(error) && INFRA.test(error));
 }
 
+// A judge that gave no score because its call failed on infrastructure, not because of its reply.
+export function judgeLost(reasons: string[] | undefined): boolean {
+  const first = reasons?.[0] ?? "";
+  return /^judge call failed/.test(first) && isInfraError(first);
+}
+
 function avg(xs: number[]): number | null {
   return xs.length ? Math.round((xs.reduce((a, b) => a + b, 0) / xs.length) * 1000) / 1000 : null;
 }
@@ -168,6 +178,8 @@ export function summarize(runs: CaseRun[], o: SummaryOptions): Baseline {
       page: avg(ps),
       judgeNulls: ok.length - js.length,
       pageNulls: ok.length - ps.length,
+      judgeInfra: ok.filter((r) => r.grade.soft.judge === null && judgeLost(r.grade.soft.judgeReasons)).length,
+      pageInfra: ok.filter((r) => r.grade.soft.page === null && judgeLost(r.grade.soft.pageReasons)).length,
       ...(o.holdout?.has(id) ? { holdout: true } : {}),
       wallMs: Math.round(avg(list.map((r) => r.grade.soft.wallMs)) ?? 0),
       toolCalls: Math.round(avg(list.map((r) => r.grade.soft.toolCalls)) ?? 0),
@@ -271,8 +283,25 @@ export function compare(current: Baseline, base: Baseline, opts: CompareOptions 
       else verdict(`"${g}"`, c.gates[g], then);
     }
     for (const g of Object.keys(c.gates)) if (b.gates[g] === undefined) flags.push(`${id}: new gate "${g}" has no baseline`);
-    if (b.judge !== null && c.judgeNulls > 0) regressions.push(`${id}: the headline judge gave no score in ${c.judgeNulls} of ${c.usable} runs`);
-    if (b.page !== null && c.pageNulls > 0) regressions.push(`${id}: the page judge gave no score in ${c.pageNulls} of ${c.usable} runs`);
+    for (const [label, nulls, infra, baseNulls, baseInfra, had] of [
+      ["headline judge", c.judgeNulls, c.judgeInfra ?? 0, b.judgeNulls ?? 0, b.judgeInfra ?? 0, b.judge !== null],
+      ["page judge", c.pageNulls, c.pageInfra ?? 0, b.pageNulls ?? 0, b.pageInfra ?? 0, b.page !== null],
+    ] as const) {
+      if (!had || nulls === 0) continue;
+      // No score at all measures nothing, whatever the reason.
+      if (nulls >= c.usable) {
+        regressions.push(`${id}: the ${label} gave no score in any of ${c.usable} runs`);
+        continue;
+      }
+      // A judge call lost to infrastructure is like a run lost to it: flagged, not counted.
+      if (infra) flags.push(`${id}: the ${label} call failed on infrastructure in ${infra} of ${c.usable} runs`);
+      // Other missing scores are misses, held to the baseline's own scored rate by k-of-n.
+      const n = c.usable - infra;
+      const baseN = b.usable - baseInfra;
+      const v = kOfN(n - (nulls - infra), n, baseN > 0 ? (baseN - (baseNulls - baseInfra)) / baseN : 1);
+      if (v === "regression") regressions.push(`${id}: the ${label} gave no score in ${nulls - infra} of ${n} runs`);
+      else if (v === "flag") flags.push(`${id}: the ${label} gave no score in ${nulls - infra} of ${n} runs (one run short; a flag, not a regression)`);
+    }
     if (b.judge !== null && c.judge !== null && b.judge - c.judge > 0.1) flags.push(`${id}: judge ${b.judge} -> ${c.judge}`);
     if (b.page != null && c.page != null && b.page - c.page > 0.1) flags.push(`${id}: page judge ${b.page} -> ${c.page}`);
   }

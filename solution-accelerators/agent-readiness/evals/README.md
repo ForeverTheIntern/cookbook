@@ -94,6 +94,22 @@ The agent arm's summary gets `controls.<arm>`, holding that arm's totals and the
 
 The first scripted run, in Docker on November 2, 2026, passed every gate in 22 of 25 cases. The 3 it failed were `python-unpinned` (PyPI isn't reachable from the container here) and the two fix gates of `remediation` and `make-it-level-2`. Most hard gates measure the scripts, so the lift over `scripted` is what says whether the agent adds anything.
 
+### Release policy
+
+Andrew decided this policy on November 4, 2026. [lib/release.ts](lib/release.ts) `releaseVerdict()` applies it to a run's summary and ends with one line, `RELEASE PASS` or `RELEASE FAIL`:
+
+- **Hard gates, k of n per case, at 5 repeats.** A case one run short of passing every gate in every repeat is a `FLAG`. A case two or more runs short, or with no usable run, is a regression and fails the release. Runs lost to infrastructure are left out, not counted short. A run with fewer than 5 repeats can't pass. Held-out cases are held to the same rule.
+- **Headline judge.** The pooled mean over in-sample case-runs must be at least 0.8, and the lower bound of its 95% bootstrap interval (resampling cases) at least 0.75. Both numbers are printed.
+- **Reported, not required.** The page judge's mean and interval, and how many cases passed every gate in every repeat. That every-gate count used to be the bar; it's now only a stat.
+
+Every agent-arm run prints the verdict after its summary. Its exit code is 2 for a k-of-n regression and 0 for a flag; `--release` also exits 1 when the verdict is FAIL. Negative cases stay strict: any gate that lets an attack through fails the run. `npm run evals -- --release-check <file>` scores a saved `--json` output or a baseline and exits 0 on PASS and 1 on FAIL:
+
+```bash
+npm run evals -- --release-check evals/runs/result.json
+```
+
+`compare()` against the baseline still runs alongside, to catch drift case by case. The release verdict doesn't depend on a baseline.
+
 ### Baseline and compare()
 
 `evals/baseline.json` is schema `@2`:

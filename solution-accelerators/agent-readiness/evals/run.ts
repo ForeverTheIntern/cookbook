@@ -5,6 +5,7 @@ import { fileURLToPath } from "node:url";
 import { HILL_CLIMB_MIN_REPEATS, compare, crashedRun, isInfraError, summarize, withControls, writeJunit } from "./lib/baseline.ts";
 import type { Baseline } from "./lib/baseline.ts";
 import { scriptedAudit } from "./lib/controls.ts";
+import { releaseVerdict } from "./lib/release.ts";
 import { isolateHome } from "./lib/isolation.ts";
 import { gradeCase, latestReport } from "./lib/grade.ts";
 import { renderMarkdown } from "../skill/agent-readiness/scripts/lib/render.ts";
@@ -207,8 +208,17 @@ function report(runs: CaseRun[], flags: Record<string, string | true>, o: Report
     for (const f of soft) process.stdout.write(`FLAG ${f}\n`);
     if (regressions.length) code = 1;
   }
+  if (arm === "agent" && o.driver === "scripted") {
+    // Negative cases: any gate that lets an attack through, in any run, fails.
+    if (runs.some((r) => !r.infra?.lost && !r.grade.gates.every((g) => g.pass))) code = code || 2;
+  } else if (arm === "agent") {
+    // The release policy (release.ts): k of n per case; one run short is a flag, two a regression.
+    const verdict = releaseVerdict(summary);
+    for (const line of verdict.lines) process.stdout.write(`${line}\n`);
+    if (verdict.cases.some((c) => c.verdict === "regression")) code = code || 2;
+    if (flags.release && !verdict.pass) code = code || 1;
+  }
   // Control arms are expected to fail gates; that is what the lift measures.
-  if (arm === "agent" && runs.some((r) => !r.infra?.lost && !r.grade.gates.every((g) => g.pass))) code = code || 2;
   return code;
 }
 
@@ -244,6 +254,14 @@ async function main(): Promise<void> {
   const models = String(flags.model ?? DEFAULT_MODEL).split(",");
   const arms = String(flags.arm ?? "agent").split(",") as Arm[];
   for (const a of arms) if (!ARMS.includes(a)) throw new Error(`Unknown --arm ${a}; use ${ARMS.join(", ")}.`);
+  // Scores a saved run (--json output or a baseline) against the release policy: one PASS or FAIL.
+  if (typeof flags["release-check"] === "string") {
+    const saved = JSON.parse(readFileSync(resolve(flags["release-check"]), "utf8")) as { summary?: Baseline } & Baseline;
+    const verdict = releaseVerdict(saved.summary ?? saved);
+    for (const line of verdict.lines) process.stdout.write(`${line}\n`);
+    process.exitCode = verdict.pass ? 0 : 1;
+    return;
+  }
   if (typeof flags.hook === "string") {
     const { ws, id } = loadWorkspace(resolve(flags.hook));
     const c = all.find((x) => x.id === id)!;

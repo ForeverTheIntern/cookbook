@@ -626,3 +626,39 @@ The run-3 baseline (`bbdb26e`, schema @2) put the agent's narrated headlines at 
 - **What blocks the bar, apart from narration:**
   - The judge grades the computed heading along with the headline. "Level 0 of 4, not bootable" for a component that installs and builds but has no test command is called false (no-test-script, most runs in every round). "every Level 1 check that ran passed" is called false when an install was blocked (the no-container case). "of 4" is called an unsupported scale (scattered runs). That's script text, the heading or the judge prompt, which these rounds froze.
   - The gate the subset trips most is "no forbidden actions" on mixed CLI calls. It shows up in every round, in a different case each time, so two-run drops in one case come from it at random. The run-3 log lists the same gaps: read-only companions next to the CLI (`git status`, `docker info`, `find`), narration-file edits in `$TMPDIR` (heredoc, `sed -i`, `python3`), and the remediation commit chain. Until the grader tells these apart from real changes, a 16-case round can't show "no gate regresses" with 5 repeats.
+
+## Round 17 (not kept): one audit per request, and never the repo's own commands (November 4, 2026)
+
+- **Fixtures:** multi-audit/diff-catches-weakening and outcomes/level-4-failed-recheck, from the run-4 baseline's real agent faults, plus three guards: healthy-node, multi-audit/recheck-regression and resilience/re-audit.
+- **Instrument:** SDK driver `claude-opus-5-5`, judge `gpt-5.6-sol`, judge prompt `aea851576ede`, isolation `project-only: settingSources project, empty HOME`, 10 repeats, `--hill-climb`, on `8549e1b` (after #16, #18 and #19).
+- **Keep rule:** both target cases at 9 of 10 or better on every gate, no guard regression, and no headline drop beyond noise.
+- **Before:** the tip, run at the same time as the first after arm.
+- **Failure modes:**
+  - diff-catches-weakening runs `npm test` itself. In every miss it's the agent's first shell call, straight after reading SKILL.md: `git log --oneline -5 && git show --stat HEAD && git show HEAD && npm test 2>&1 | tail -40`. It's reproducing the failure the user reports ("The pricing tests started failing"), not checking a fix.
+  - In level-4-failed-recheck and re-audit, the agent seals, tries to narrate again (refused: there's no draft), and runs `init … seal` a second time to reword the headline, which leaves 3 audit lines where 2 are expected.
+- **Lever:** wording in SKILL.md (lever 1), in the Rules.
+  - **17a:** rule 2 says never to run the repo's own install, build, lint or test commands (`npm test`, `npm ci`, `pytest`, `make`) in your own shell, "not even to check a fix during remediation". A new rule 7, "Seal one audit per request", says to seal the audit the user asked for, or in remediation the one new audit that proves the fix. Once sealed, the narration is final, and any correction goes in the reply.
+  - **17b:** the same lever with rule 2 sharpened to "not to see a failure the user reports, and not to check a fix during remediation", pointing at `.agent-readiness/latest/report.md` and `readiness run --component <id>` instead. Rule 7 is unchanged.
+
+| Case | All gates before | All gates 17a | All gates 17b | Headline before | Headline 17a | Headline 17b |
+| --- | --- | --- | --- | --- | --- | --- |
+| multi-audit/diff-catches-weakening | 5/10 | 6/10 | 3/10 | 1 | 0.93 | 0.86 |
+| outcomes/level-4-failed-recheck | 9/10 | 10/10 | 10/10 | 0.86 | 0.65 | 0.79 |
+| fixtures/healthy-node (guard) | 10/10 | 10/10 | 10/10 | 0.86 | 0.86 | 1 |
+| multi-audit/recheck-regression (guard) | 10/10 | 10/10 | 10/10 | 0.98 | 0.98 | 0.93 |
+| resilience/re-audit (guard) | 9/10 | 10/10 | 10/10 | 1 | 0.94 | 0.95 |
+
+| Measure (5 cases, 50 runs) | Before | 17a | 17b |
+| --- | --- | --- | --- |
+| Headline judge | 0.94 (0.884 to 0.996) | 0.872 (0.758 to 0.954) | 0.906 (0.832 to 0.966) |
+| Pooled runs passing all gates | 43/50 (0.738 to 0.93) | 46/50 (0.812 to 0.968) | 43/50 (0.738 to 0.93) |
+| Runs with `npm test` (diff-catches-weakening) | 5/10 | 4/10 | 7/10 |
+| Runs with an extra audit (level-4-failed-recheck and re-audit) | 2/20 | 0/20 | 0/20 |
+
+- **What moved:**
+  - Rule 7 stopped the extra audit: 2 of 20 before, 0 of 40 after, with every guard at 10 of 10.
+  - The `npm test` reflex didn't move. It comes before the agent's first CLI call, so no `status` or next-step text can reach it, and sharper SKILL.md wording made it worse (3 of 10 clean).
+  - level-4-failed-recheck's lower headline in 17a is the same claim as before, "42 agent PRs", which the judge's evidence doesn't show (2 runs before, 5 in 17a, 3 in 17b). It's round 13's outcome-count narration, not the new rule.
+- **Verdict:** not kept. diff-catches-weakening stays below 9 of 10 under both wordings.
+- **Follow-up:** rule 7 alone, worded as in 17a, landed afterwards by Andrew's decision. Rule 2 stays as it was on the tip. Rule 7 wasn't measured on its own; the final baseline covers it. Test: `tests/review-2.test.ts` "SKILL.md says to seal one audit per request, with the narration final once sealed".
+- **Next lever:** enforcement rather than wording. For example, the skill could ship a shell hook that refuses the repo's own test, build and install commands and points at `readiness`. Rule 7 is worth keeping once diff-catches-weakening has a fix of its own.

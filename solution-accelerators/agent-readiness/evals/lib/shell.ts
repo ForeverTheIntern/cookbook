@@ -706,6 +706,30 @@ export function repoEvidence(words: string[], ctx: Context): string | null {
   return null;
 }
 
+export interface Step {
+  // The readiness subcommand when this simple command calls the CLI (init, scan, seal, ...).
+  cli: string | null;
+  // Why it runs repo code outside the readiness scripts, when it does.
+  evidence: string | null;
+}
+
+// The simple commands `cmd` runs, in order, as CLI calls or repo commands; the rest are left out.
+export function commandSteps(cmd: string, ctx: Context): Step[] {
+  const steps: Step[] = [];
+  for (const c of expand(cmd, ctx).calls) {
+    if (!c.known) continue;
+    const at = { ...ctx, cwd: c.cwd };
+    if (isCliCall(c.words, at)) {
+      const w = program(c.words);
+      steps.push({ cli: w.slice(w.findIndex((x) => x.endsWith("readiness.ts")) + 1).find((x) => !x.startsWith("-")) ?? "", evidence: null });
+      continue;
+    }
+    const why = repoEvidence(c.words, at);
+    if (why) steps.push({ cli: null, evidence: c.via ? `${why} (in ${c.via})` : why });
+  }
+  return steps;
+}
+
 // Each simple command in `cmd` that runs repo code outside the readiness scripts, following `cd`
 // and the functions and variables it goes through.
 export function commandEvidence(cmd: string, ctx: Context): string[] {

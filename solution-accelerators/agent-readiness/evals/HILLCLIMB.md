@@ -660,4 +660,5 @@ The run-3 baseline (`bbdb26e`, schema @2) put the agent's narrated headlines at 
   - The `npm test` reflex didn't move. It comes before the agent's first CLI call, so no `status` or next-step text can reach it, and sharper SKILL.md wording made it worse (3 of 10 clean).
   - level-4-failed-recheck's lower headline in 17a is the same claim as before, "42 agent PRs", which the judge's evidence doesn't show (2 runs before, 5 in 17a, 3 in 17b). It's round 13's outcome-count narration, not the new rule.
 - **Verdict:** not kept. diff-catches-weakening stays below 9 of 10 under both wordings.
+- **Follow-up:** rule 7 alone, worded as in 17a, landed afterwards by Andrew's decision. Rule 2 stays as it was on the tip. Rule 7 wasn't measured on its own; the final baseline covers it. Test: `tests/review-2.test.ts` "SKILL.md says to seal one audit per request, with the narration final once sealed".
 - **Next lever:** enforcement rather than wording. For example, the skill could ship a shell hook that refuses the repo's own test, build and install commands and points at `readiness`. Rule 7 is worth keeping once diff-catches-weakening has a fix of its own.

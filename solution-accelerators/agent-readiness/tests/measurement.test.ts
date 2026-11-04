@@ -79,12 +79,12 @@ describe("compare() matches the instrument and misses nothing", () => {
     assert.equal(compare(base, committed).regressions.length, 1, "the committed baseline predates the instrument");
   });
 
-  test("missing cases, renamed gates and null judges are regressions; new ones are flags", () => {
+  test("missing cases and renamed gates are regressions; new ones, and one judge short, are flags", () => {
     const now = healthyBaseline(["a", "b", "c", "d", "f"]).map((r) => (r.id === "b" ? run("b", r.repeat, { sealed: true, "levels match": true }) : r.id === "c" ? run("c", r.repeat, { sealed: true, levels: true }, r.repeat === 1 ? null : 0.9) : r));
     const c = compare(summarize(now, O), base);
     assert.ok(c.regressions.includes("e: in the baseline but no run left a result"), c.regressions.join("\n"));
     assert.ok(c.regressions.some((x) => /^b: gate "levels" is in the baseline but not in this run/.test(x)), c.regressions.join("\n"));
-    assert.ok(c.regressions.includes("c: the headline judge gave no score in 1 of 3 runs"), c.regressions.join("\n"));
+    assert.ok(c.flags.includes("c: the headline judge gave no score in 1 of 3 runs (one run short; a flag, not a regression)"), c.flags.join("\n"));
     assert.ok(c.flags.includes("f: new case with no baseline") && c.flags.some((f) => f.includes('b: new gate "levels match"')), c.flags.join("\n"));
     const smoke = compare(summarize(healthyBaseline(["a"]), O), base, { selected: ["a"] });
     assert.deepEqual(smoke.regressions, [], "a smoke run isn't missing the full set's other cases");
@@ -344,5 +344,36 @@ describe("control arms and holdouts", () => {
     const g = narrationGate(ws, t, c);
     assert.equal(g.pass, false);
     assert.match(g.detail, /names Redis as a cause, but no evidence row mentions it/);
+  });
+});
+
+describe("compare(): missing judge scores go through k-of-n and the infrastructure rule", () => {
+  const five = ["p", "q"];
+  const base = summarize(healthyBaseline(five, 5), { ...O, repeats: 5 });
+  const withNulls = (id: string, judgeNulls: number[], opts: { page?: boolean; reasons?: string[] } = {}) =>
+    healthyBaseline(five, 5).map((r) => (r.id === id && judgeNulls.includes(r.repeat) ? { ...r, grade: { ...r.grade, soft: { ...r.grade.soft, ...(opts.page ? { page: null, pageReasons: opts.reasons ?? ["judge reply wasn't JSON"] } : { judge: null, judgeReasons: opts.reasons ?? ["judge reply wasn't JSON"] }) } } } : r));
+  const cmp = (runs: CaseRun[], against = base) => compare(summarize(runs, { ...O, repeats: 5 }), against);
+
+  test("run 4's self-compare: one score missing in 5, in the baseline too, is clean", () => {
+    const run4 = summarize(withNulls("p", [3], { page: true }), { ...O, repeats: 5 });
+    assert.deepEqual(compare(run4, run4).regressions, []);
+    assert.deepEqual(compare(run4, run4).flags, []);
+  });
+
+  test("one score missing against a baseline with none is a flag, two a regression", () => {
+    assert.deepEqual(cmp(withNulls("p", [1])).regressions, []);
+    assert.ok(cmp(withNulls("p", [1])).flags.includes("p: the headline judge gave no score in 1 of 5 runs (one run short; a flag, not a regression)"));
+    assert.ok(cmp(withNulls("p", [1, 2], { page: true })).regressions.includes("p: the page judge gave no score in 2 of 5 runs"));
+  });
+
+  test("a judge call lost to infrastructure is flagged, not counted", () => {
+    const c = cmp(withNulls("p", [1, 2], { reasons: ["judge call failed: [unknown] <html><title>502 Bad Gateway</title></html>"] }));
+    assert.deepEqual(c.regressions, []);
+    assert.ok(c.flags.includes("p: the headline judge call failed on infrastructure in 2 of 5 runs"), c.flags.join("\n"));
+  });
+
+  test("a case whose judge scores are all missing is still a regression", () => {
+    assert.ok(cmp(withNulls("q", [1, 2, 3, 4, 5])).regressions.includes("q: the headline judge gave no score in any of 5 runs"));
+    assert.ok(cmp(withNulls("q", [1, 2, 3, 4, 5], { reasons: ["judge call failed: fetch failed"] })).regressions.includes("q: the headline judge gave no score in any of 5 runs"));
   });
 });

@@ -123,7 +123,7 @@ The evals run the real Cursor agent on each fixture with a pinned prompt and gra
 - `npm run evals -- --tag negative` needs no key. Scripts play gamed fixes (a resealed forgery, a tampered seal, a test that hashes the source, a dropped database setup) and each case passes only if its gates reject them. An honest scripted fix next to them must pass, which needs a container runtime. Every coverage case (Levels 3 and 4, rechecks and re-audits, scenarios, remediation, sampled scope) has an honest scripted path too, `<id>-honest`, which does what the prompt asks through the same setup and gates.
 - Without a key, any agent can be the driver: `--prepare` builds the workspaces and a manifest of prompts, the agent runs each prompt, `--grade <root>` grades one workspace, and `--collect <dir>` summarizes. `--rerender <root>` rebuilds a run's report with the current scripts, so a rendering change can be judged on earlier runs, and `--regrade <dir>` grades stored SDK runs again from their saved tool calls after a grader fix.
 
-[evals/baseline.json](evals/baseline.json) is the result CI compares against, and [evals/HILLCLIMB.md](evals/HILLCLIMB.md) logs how it was reached, one failure mode per round.
+[RELEASE.md](RELEASE.md) sets the release-gate policy: k of n per case at 5 repeats, and a headline judge mean of at least 0.8 with a 95% lower bound of at least 0.75. `npm run evals -- --release-check <run.json>` prints PASS or FAIL against it. [evals/baseline.json](evals/baseline.json) is the result CI compares against, and [evals/HILLCLIMB.md](evals/HILLCLIMB.md) logs how it was reached, one failure mode per round.
 
 ### Public goldens
 

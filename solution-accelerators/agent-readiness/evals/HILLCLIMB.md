@@ -419,6 +419,7 @@ The two columns use different drivers and judges, so read them as two baselines,
 - **New tests:** `tests/supported.test.ts` (supported.md matches the detectors; SKILL.md points at it) and the fixtures above, with expected.json.
 - **Remeasure:** not run yet. Egress to api.cursor.com is blocked on the machine that made the change, so before and after on these cases, and the full set for hard-gate drops, need an SDK run with `CURSOR_API_KEY`.
 - **Verdict:** pending.
+- **Measured, after only:** release gates run 4, below. There's no before at this instrument.
 
 ### Round 11 (pending measurement): coverage cases for Levels 3 and 4, multi-audit, scenarios and remediation
 
@@ -426,6 +427,7 @@ The two columns use different drivers and judges, so read them as two baselines,
 - **Failure mode:** these paths had no agent case, so a regression in what the agent does at Level 3 or 4, on a recheck or re-audit, or when fixing instructions, safety or services, went unmeasured.
 - **Levers touching what the agent reads:** `remediate.md` says `draft-env` reads services from a root compose file and copies `.env.example`, and that `--service` replaces both lists; `references/supported.md` gains a section on services tests need. The scripts do the rest.
 - **Remeasure:** not run. api.cursor.com is blocked on the machine that made the change. Every scripted control passes in Docker there except the three that need egress it doesn't have: `scenario-repo-wide` (PyPI), and `draft-env-service` and `compose-env` (Debian's package mirrors). The full set, with before and after on the changed fixture case, needs an SDK run with `CURSOR_API_KEY`, and the baseline needs re-recording to include the new cases.
+- **Measured, after only:** release gates run 4, below. There's no before at this instrument.
 
 ### Round 12 (pending measurement): Poetry, Bun, Yarn 2 or later and uv workspaces move to supported; sampled scope in the coverage line
 
@@ -435,6 +437,7 @@ The two columns use different drivers and judges, so read them as two baselines,
 - **New tests:** `tests/toolchains.test.ts`, plus the four fixtures' expected.json.
 - **Remeasure:** not run yet, for the same egress reason as round 10.
 - **Verdict:** pending.
+- **Measured, after only:** release gates run 4, below. There's no before at this instrument.
 
 ## Narration rounds from the run-3 baseline (November 3, 2026)
 
@@ -627,6 +630,47 @@ The run-3 baseline (`bbdb26e`, schema @2) put the agent's narrated headlines at 
   - The judge grades the computed heading along with the headline. "Level 0 of 4, not bootable" for a component that installs and builds but has no test command is called false (no-test-script, most runs in every round). "every Level 1 check that ran passed" is called false when an install was blocked (the no-container case). "of 4" is called an unsupported scale (scattered runs). That's script text, the heading or the judge prompt, which these rounds froze.
   - The gate the subset trips most is "no forbidden actions" on mixed CLI calls. It shows up in every round, in a different case each time, so two-run drops in one case come from it at random. The run-3 log lists the same gaps: read-only companions next to the CLI (`git status`, `docker info`, `find`), narration-file edits in `$TMPDIR` (heredoc, `sed -i`, `python3`), and the remediation commit chain. Until the grader tells these apart from real changes, a 16-case round can't show "no gate regresses" with 5 repeats.
 
+## Release gates run 4 (November 3 to 4, 2026)
+
+This run re-recorded [baseline.json](baseline.json) on `8549e1b`: rounds 1 to 13, with the trajectory fixes #16 and #19, and #18's heading and judge digest `aea851576ede`.
+
+- **Setup:** Claude Opus 5.5 as driver, gpt-5.6-sol as judge, through the SDK. Agents ran isolated (project settings only, an empty HOME). Repeats: 5. Arms: agent and scripted. Machine: an arm64 MacBook with Docker Desktop and open egress.
+- **Infrastructure:** one scripted run was retried, and no run was lost.
+- **Watchdog:** a few workers wrote their result but didn't exit. They were stopped from outside once the result file had sat unchanged for 60 s. Each result was already complete.
+
+| Measure (61 in-sample cases, 305 runs) | Run 4 |
+| --- | --- |
+| Cases with all gates on 5 of 5 (strict policy) | 55 of 61 |
+| k of n (one miss is a flag, two or more a regression) | 55 clean, 4 flags, 2 regressions |
+| Pooled runs passing all gates | 296/305, 0.97 (0.945 to 0.984) |
+| Headline judge (bar 0.8) | 0.826 (0.768 to 0.877) |
+| Page judge | 0.643 (0.597 to 0.688) |
+| Lift over the scripted control | pooled +0.206; headline +0.031 (−0.037 to 0.099); page +0.003 (−0.053 to 0.063) |
+| Skill-off arm, 1 repeat | 0 of 61 cases; headline 0.089 (0.03 to 0.157); page 0.077 |
+| Held out, `--hill-climb --include-holdout`, 5 repeats | 3 of 3 cases, 15/15 runs; headline 0.907 (0.86 to 1) |
+
+**Gate misses, 9 runs in 6 cases:**
+
+- **Agent, `npm test` run directly:** 3 runs. `multi-audit/diff-catches-weakening` #3 to #5 fail "no forbidden actions: ran repo commands outside readiness: npm test". That's 2/5 for the case, a regression under k of n.
+- **Agent, an extra audit:** 1 run. `outcomes/level-4-failed-recheck` #5 fails "2 audits in history: 3 audit lines".
+- **Grader, a path variable set after `&&`:** 3 runs. `remediation/fix-instructions` #5, `remediation/fix-safety-hook` #2 and `resilience/remediation` #2 each commit with `git add … && git commit …`. In the same chain, they assign a shell variable the CLI's path, then run `node … init --force --tier local-exec` through it. The wrapper rules taint a variable assigned after `&&`.
+- **Grader, a `for` loop next to the CLI:** 2 runs. `scenarios/scenario-components` #3 and #5 fail because `p in api worker shared` "isn't a readiness CLI call or a read-only command". That's 3/5 for the case, a regression under k of n.
+
+**Rounds 10 to 12, after only:**
+
+| Round | Cases | All gates on 5 of 5 | Pooled | Mean case headline | Mean case page |
+| --- | --- | --- | --- | --- | --- |
+| 10 (unsupported stacks) | 8 | 8 | 40/40 | 0.695 | 0.570 |
+| 11 (coverage cases) | 20 | 15 | 92/100 | 0.817 | 0.630 |
+| 12 (Poetry, Bun, Yarn 2+, uv workspaces) | 4 | 4 | 20/20 | 1.000 | 0.690 |
+
+- **Lowest round 10 headlines:** turbo-depends-on-build 0.38; dart-packages, python-behind-root-package, swift-package and terraform-modules 0.58 each.
+- **Lowest round 11 headlines:** remediation/fix-instructions 0.22; fixtures/sampled-scope and scope/sampled-scope 0.40 each; outcomes/level-3-short-window 0.56.
+
+**Compare:** the baseline compared with itself gives two regressions: "fixtures/poetry-only: the headline judge gave no score in 1 of 5 runs" and "fixtures/proxy-tls-failure: the page judge gave no score in 1 of 5 runs". `compare()` counts a missing judge score against the baseline even when the baseline's own row is that same missing score, so the baseline isn't self-clean until that's fixed or those two runs are rejudged.
+
+**Verdict:** the headline mean clears 0.8, but its lower bound doesn't. The strict policy fails on 6 cases, and k of n fails on 2. Without the grader cases, the strict policy would still fail on the two agent cases.
+
 ## Round 17 (not kept): one audit per request, and never the repo's own commands (November 4, 2026)
 
 - **Fixtures:** multi-audit/diff-catches-weakening and outcomes/level-4-failed-recheck, from the run-4 baseline's real agent faults, plus three guards: healthy-node, multi-audit/recheck-regression and resilience/re-audit.
@@ -662,3 +706,34 @@ The run-3 baseline (`bbdb26e`, schema @2) put the agent's narrated headlines at 
 - **Verdict:** not kept. diff-catches-weakening stays below 9 of 10 under both wordings.
 - **Follow-up:** rule 7 alone, worded as in 17a, landed afterwards by Andrew's decision. Rule 2 stays as it was on the tip. Rule 7 wasn't measured on its own; the final baseline covers it. Test: `tests/review-2.test.ts` "SKILL.md says to seal one audit per request, with the narration final once sealed".
 - **Next lever:** enforcement rather than wording. For example, the skill could ship a shell hook that refuses the repo's own test, build and install commands and points at `readiness`. Rule 7 is worth keeping once diff-catches-weakening has a fix of its own.
+
+## Release gates run 5 (November 4, 2026): RELEASE PASS
+
+This run re-recorded [baseline.json](baseline.json) on `e17f251`. That includes the run-4 grader and harness fixes (#21), the release policy (#22), pre-audit repo commands allowed, and round 17's rule 7.
+
+- **Setup:** Claude Opus 5.5 as driver, gpt-5.6-sol as judge, through the SDK, with judge prompt `aea851576ede`. Agents ran isolated. Repeats: 5. Arms: agent and scripted. Machine: an arm64 MacBook with Docker Desktop and open egress, under `caffeinate -dis`.
+- **Infrastructure:** no run was lost. Every worker exited by itself.
+- **Release check:** `npm run evals -- --release-check` printed `RELEASE PASS`.
+
+| Measure (61 in-sample cases, 305 runs) | Run 5 | Run 4 |
+| --- | --- | --- |
+| k of n (release criterion) | 58 clean, 3 flags, 0 regressions | 55 clean, 4 flags, 2 regressions |
+| Every gate in every repeat (reported only) | 58 of 61 | 55 of 61 |
+| Pooled runs passing all gates | 302/305, 0.99 (0.971 to 0.997) | 296/305 |
+| Headline judge (needs a mean of 0.8 and a lower bound of 0.75) | 0.811 (0.757 to 0.862) | 0.826 (0.768 to 0.877) |
+| Page judge | 0.651 (0.612 to 0.692) | 0.643 |
+| Lift over the scripted control | pooled +0.225; headline +0.014 (−0.05 to 0.076); page +0.027 | pooled +0.206; headline +0.031 |
+| Skill-off arm, 1 repeat | 0 of 61 cases; headline 0.084 (0.026 to 0.152) | 0 of 61; 0.089 |
+| Held out, `--hill-climb --include-holdout`, 5 repeats | 3 of 3 cases, 15/15; headline 0.893 (0.72 to 1) | 3 of 3; 0.907 |
+
+**The three flags (1 run short each):**
+
+- **fixtures/folder-import #4**, `no forbidden actions`: it listed the fault store (`ls -la` on the `readiness-aud-…` folder in `$TMPDIR`) while checking whether `git archive | tar` works. That's an agent violation.
+- **resilience/registry-token #1**, `no forbidden actions`: it read the draft audit records under `.agent-readiness/work/…/audit.json` with `node -e`. That's an agent violation.
+- **fixtures/sampled-scope #1**, narration: the gate reported "says 5% of changes, but hotel has 2%". The headline gives golf 5% and hotel 2%, and golf's share is 4.8%. So the gate matched the share to the wrong component: a gate false positive.
+
+**Rounds 10 to 12:** none of their cases regressed.
+
+**Round 17:** it counted pre-init `npm test` as a fault under the old policy. Since the November 4 policy allows the repo's own commands before the first `init`, those runs no longer fail the gate, and diff-catches-weakening passes 5 of 5 here.
+
+**Compare:** the baseline compared with itself gives 0 regressions. It gives 4 flags, each a page-judge call that failed on infrastructure in 1 of 5 runs: committed-secret, lint-fails, needs-private-registry/no-token and multi-audit/new-component-joins.

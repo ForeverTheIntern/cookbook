@@ -370,6 +370,47 @@ describe("A/B on 079c833: directory changes, cleanup, sed scripts and functions 
   });
 });
 
+describe("run 4: assignments inside an && chain, and loops next to the CLI", () => {
+  const ws = prepare(healthy);
+  const ctx = { repo: ws.dir, cwd: ws.dir };
+  const P = ".cursor/skills/agent-readiness/scripts/readiness.ts";
+  const NODE = "node --experimental-strip-types --no-warnings";
+  const blamed = (cmd: string, why: RegExp, c: typeof ctx = ctx) => assert.match(protectedChanges(changing(cmd), c).join(), why, cmd);
+  const fix = `git add README.md && git commit --trailer "Co-authored-by: Cursor <cursoragent@cursor.com>" -qm "Fix README setup instructions" && git status --short && R=${P} && ${NODE} $R init --force --tier local-exec && ${NODE} $R scan && ${NODE} $R replay && ${NODE} $R seal`;
+
+  test("R=... in an unbroken && chain holds for the rest of the chain, even over an earlier R", () => {
+    assert.equal(cliOnly(fix, ctx), "cli");
+    assert.deepEqual(session(ctx, `R=$PWD/${P}`, fix), [], "an earlier, differently spelled R");
+    assert.deepEqual(session(ctx, `R=/tmp/fix-level.mjs`, fix), [], "even an earlier R that wasn't the CLI");
+    assert.deepEqual(commandEvidence(fix, ctx), []);
+  });
+
+  test("outside the chain, or across || and ;, the earlier value may still stand", () => {
+    blamed(`R=/tmp/fix-level.mjs; true && R=${P}; ${NODE} $R seal`, /\$R seal` isn't a readiness CLI call/);
+    blamed(`R=/tmp/fix-level.mjs; true && R=${P} || echo x && ${NODE} $R seal`, /\$R seal` isn't a readiness CLI call/);
+    blamed(`R=/tmp/fix-level.mjs; git status && R=${P} | cat && ${NODE} $R seal`, /\$R seal` isn't a readiness CLI call/);
+    assert.equal(session(ctx, `R=/tmp/fix-level.mjs`, `true && R=${P}`, `${NODE} $R seal`).length, 1, "a later call doesn't inherit the chain");
+  });
+
+  test("a for loop next to the CLI is judged by its body", () => {
+    for (const cmd of [
+      `${CLI} scenario add bug_fixes --components worker,shared; ${CLI} contract list; for p in api worker shared; do ${CLI} status --component $p | head -5; done`,
+      `${CLI} scenario add bug_fixes --components worker,shared && ${CLI} contract list; ls -a; ls .github/workflows 2>/dev/null; for p in api worker shared; do cat $p/package.json 2>/dev/null | head -20; done`,
+      `${CLI} status --json | jq -r '.gaps[]' | while read -r g; do echo "$g"; done`,
+    ]) {
+      assert.equal(cliOnly(cmd, ctx), "cli", cmd);
+      assert.deepEqual(protectedChanges(changing(cmd), ctx), [], cmd);
+    }
+    blamed(`for p in a b; do node /tmp/fix-level.mjs $p; done; ${CLI} seal`, /node \/tmp\/fix-level\.mjs \$p` isn't a readiness CLI call/);
+    blamed(`for p in a b; do $p; done; ${CLI} seal`, /`\$p` runs through a name the gate can't follow/);
+  });
+
+  test("the real faults in run 4 stay blamed", () => {
+    assert.deepEqual(commandEvidence("for p in api worker; do (cd $p && npm test); done", ctx), ["npm test"]);
+    assert.deepEqual(commandEvidence(`R=${P} && ${NODE} $R status && npm test`, ctx), ["npm test"]);
+  });
+});
+
 function session(ctx: { repo: string; cwd: string }, ...cmds: string[]): string[] {
   const calls = cmds.map((c, i) => shell(c, `c${i}`));
   const snaps: Snapshot[] = calls.flatMap((c, i) => [

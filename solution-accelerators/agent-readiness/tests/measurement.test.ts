@@ -76,7 +76,7 @@ describe("compare() matches the instrument and misses nothing", () => {
     const old = { schema: "agent-readiness/eval-baseline@1", model: "claude-opus-5-5", driver: "sdk", repeats: 3, cases: {}, totals: {} } as unknown as Baseline;
     assert.match(compare(base, old).regressions.join(), /re-record it with --write-baseline/);
     const committed = JSON.parse(readFileSync(join(LABELS_DIR, "..", "baseline.json"), "utf8")) as Baseline;
-    assert.equal(compare(base, committed).regressions.length, 1, "the committed baseline predates the instrument");
+    assert.equal(committed.schema, "agent-readiness/eval-baseline@2", "the committed baseline is recorded at the current schema");
   });
 
   test("missing cases, renamed gates and null judges are regressions; new ones are flags", () => {

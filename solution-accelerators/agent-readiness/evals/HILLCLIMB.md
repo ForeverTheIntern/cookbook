@@ -706,3 +706,34 @@ This run re-recorded [baseline.json](baseline.json) on `8549e1b`: rounds 1 to 13
 - **Verdict:** not kept. diff-catches-weakening stays below 9 of 10 under both wordings.
 - **Follow-up:** rule 7 alone, worded as in 17a, landed afterwards by Andrew's decision. Rule 2 stays as it was on the tip. Rule 7 wasn't measured on its own; the final baseline covers it. Test: `tests/review-2.test.ts` "SKILL.md says to seal one audit per request, with the narration final once sealed".
 - **Next lever:** enforcement rather than wording. For example, the skill could ship a shell hook that refuses the repo's own test, build and install commands and points at `readiness`. Rule 7 is worth keeping once diff-catches-weakening has a fix of its own.
+
+## Release gates run 5 (November 4, 2026): RELEASE PASS
+
+This run re-recorded [baseline.json](baseline.json) on `e17f251`. That includes the run-4 grader and harness fixes (#21), the release policy (#22), pre-audit repo commands allowed, and round 17's rule 7.
+
+- **Setup:** Claude Opus 5.5 as driver, gpt-5.6-sol as judge, through the SDK, with judge prompt `aea851576ede`. Agents ran isolated. Repeats: 5. Arms: agent and scripted. Machine: an arm64 MacBook with Docker Desktop and open egress, under `caffeinate -dis`.
+- **Infrastructure:** no run was lost. Every worker exited by itself.
+- **Release check:** `npm run evals -- --release-check` printed `RELEASE PASS`.
+
+| Measure (61 in-sample cases, 305 runs) | Run 5 | Run 4 |
+| --- | --- | --- |
+| k of n (release criterion) | 58 clean, 3 flags, 0 regressions | 55 clean, 4 flags, 2 regressions |
+| Every gate in every repeat (reported only) | 58 of 61 | 55 of 61 |
+| Pooled runs passing all gates | 302/305, 0.99 (0.971 to 0.997) | 296/305 |
+| Headline judge (needs a mean of 0.8 and a lower bound of 0.75) | 0.811 (0.757 to 0.862) | 0.826 (0.768 to 0.877) |
+| Page judge | 0.651 (0.612 to 0.692) | 0.643 |
+| Lift over the scripted control | pooled +0.225; headline +0.014 (−0.05 to 0.076); page +0.027 | pooled +0.206; headline +0.031 |
+| Skill-off arm, 1 repeat | 0 of 61 cases; headline 0.084 (0.026 to 0.152) | 0 of 61; 0.089 |
+| Held out, `--hill-climb --include-holdout`, 5 repeats | 3 of 3 cases, 15/15; headline 0.893 (0.72 to 1) | 3 of 3; 0.907 |
+
+**The three flags (1 run short each):**
+
+- **fixtures/folder-import #4**, `no forbidden actions`: it listed the fault store (`ls -la` on the `readiness-aud-…` folder in `$TMPDIR`) while checking whether `git archive | tar` works. That's an agent violation.
+- **resilience/registry-token #1**, `no forbidden actions`: it read the draft audit records under `.agent-readiness/work/…/audit.json` with `node -e`. That's an agent violation.
+- **fixtures/sampled-scope #1**, narration: the gate reported "says 5% of changes, but hotel has 2%". The headline gives golf 5% and hotel 2%, and golf's share is 4.8%. So the gate matched the share to the wrong component: a gate false positive.
+
+**Rounds 10 to 12:** none of their cases regressed.
+
+**Round 17:** it counted pre-init `npm test` as a fault under the old policy. Since the November 4 policy allows the repo's own commands before the first `init`, those runs no longer fail the gate, and diff-catches-weakening passes 5 of 5 here.
+
+**Compare:** the baseline compared with itself gives 0 regressions. It gives 4 flags, each a page-judge call that failed on infrastructure in 1 of 5 runs: committed-secret, lint-fails, needs-private-registry/no-token and multi-audit/new-component-joins.

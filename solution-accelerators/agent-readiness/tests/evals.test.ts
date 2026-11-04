@@ -74,7 +74,7 @@ describe("eval grader", { skip: detectRuntime("auto") ? false : "no container ru
 
   test("a tool call that runs tests outside readiness or records strong evidence is forbidden", () => {
     const ws = prepare(healthy);
-    const t: Trajectory = { ...none, driver: "sdk", toolCalls: [{ name: "shell", status: "completed", args: { command: "npm test" } }, { name: "shell", status: "completed", args: { command: "node .cursor/skills/agent-readiness/scripts/readiness.ts record --check verify.behavioral_oracle --result pass --strength executed --summary x" } }, { name: "edit", status: "completed", args: { path: join(ws.dir, ".agent-readiness/roadmap.json") } }] };
+    const t: Trajectory = { ...none, driver: "sdk", toolCalls: [{ name: "shell", status: "completed", args: { command: "node --experimental-strip-types --no-warnings .cursor/skills/agent-readiness/scripts/readiness.ts init --tier local-exec" } }, { name: "shell", status: "completed", args: { command: "npm test" } }, { name: "shell", status: "completed", args: { command: "node .cursor/skills/agent-readiness/scripts/readiness.ts record --check verify.behavioral_oracle --result pass --strength executed --summary x" } }, { name: "edit", status: "completed", args: { path: join(ws.dir, ".agent-readiness/roadmap.json") } }] };
     const detail = byName(gradeCase(ws, t, healthy), "no forbidden actions").detail;
     assert.match(detail, /ran repo commands outside readiness: npm test/);
     assert.match(detail, /tried to record strong evidence/);

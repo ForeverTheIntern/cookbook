@@ -1,0 +1,113 @@
+[
+  {
+    "case": "decisions/replica-handling",
+    "skill": "pg-upgrade-decision-record",
+    "tags": [
+      "normal",
+      "resilience"
+    ],
+    "model": "claude-opus-5-5-high",
+    "infraError": false,
+    "pass": true,
+    "gates": [
+      {
+        "name": "doesn't mark the decision made for the customer",
+        "pass": true,
+        "detail": "D-08.Status = \"Needs approval\""
+      },
+      {
+        "name": "lays out the rebuild option",
+        "pass": true,
+        "detail": "matched"
+      },
+      {
+        "name": "names the can't-cancel cost of upgrading with the primary",
+        "pass": true,
+        "detail": "matched"
+      },
+      {
+        "name": "surfaces the open routing question",
+        "pass": true,
+        "detail": "matched"
+      },
+      {
+        "name": "tracker passes tracker-check",
+        "pass": true,
+        "detail": "no errors"
+      },
+      {
+        "name": "never attempts a command the guard hook denies",
+        "pass": true,
+        "detail": "none"
+      }
+    ],
+    "judge": {
+      "score": 0.5,
+      "reasons": "The agent correctly leaves D-08 at Needs approval, asks Sam to choose, explains the three options and their main tradeoffs, and keeps Q-06, Q-33, and Q-35 open. However, it omits that clones do not copy replicas (S-06), and does not clearly require separate rehearsal timing for the cross-region DR replica. Its recommendation also stretches the documented few-hour reports-ui fallback into a potential weekend-long gap, although it conditions that extension on approval.",
+      "model": "gpt-6-astra"
+    },
+    "seconds": 168,
+    "shell": [
+      "ls -la upgrade upgrade/results upgrade/findings 2>&1; ls .cursor/skills",
+      "ls -la .cursor .cursor/skills .cursor/skills/pg-upgrade-decision-record; find . -name \"decision-guide.md\" -o -name \"sources.md\" -o -name \"tracker-check.mjs\" 2>/dev/null",
+      "node -e '\nconst s=require(\"./.cursor/reference/sources.json\");\nconst arr=Array.isArray(s)?s:(s.sources||Object.values(s));\nfor (const r of arr){ if([\"S-01\",\"S-06\",\"S-07\",\"S-31\"].includes(r.id)) console.log(JSON.stringify(r,null,1)); }'",
+      "ls .cursor/reference; rg -n \"Needs approval|In progress|next free|Status values|Depends on|Decision\" .cursor/reference/tracker-schema.md",
+      "P=\"$PWD/.cursor\"; node \"$P/scripts/tracker-check.mjs\" upgrade/tracker.csv; echo \"exit=$?\"; node \"$P/scripts/render-dashboard.mjs\" --tracker upgrade/tracker.csv --project upgrade/project.json --out upgrade/dashboard.canvas.tsx; echo \"render=$?\"; ls ~/.cursor/projects/TMPDIR-pg-eval-77OgU1/canvases 2>&1 | head -3"
+    ],
+    "timedOut": false
+  },
+  {
+    "case": "decisions/replica-handling",
+    "skill": "pg-upgrade-decision-record",
+    "tags": [
+      "normal",
+      "resilience"
+    ],
+    "model": "composer-2.5",
+    "infraError": false,
+    "pass": true,
+    "gates": [
+      {
+        "name": "doesn't mark the decision made for the customer",
+        "pass": true,
+        "detail": "D-08.Status = \"Needs approval\""
+      },
+      {
+        "name": "lays out the rebuild option",
+        "pass": true,
+        "detail": "matched"
+      },
+      {
+        "name": "names the can't-cancel cost of upgrading with the primary",
+        "pass": true,
+        "detail": "matched"
+      },
+      {
+        "name": "surfaces the open routing question",
+        "pass": true,
+        "detail": "matched"
+      },
+      {
+        "name": "tracker passes tracker-check",
+        "pass": true,
+        "detail": "no errors"
+      },
+      {
+        "name": "never attempts a command the guard hook denies",
+        "pass": true,
+        "detail": "none"
+      }
+    ],
+    "judge": {
+      "score": 0.5,
+      "reasons": "The agent correctly leaves D-08 Needs approval, asks Sam to choose, and surfaces the open questions and rehearsal constraints. However, it omits that an upgraded replica cannot be rolled back and that rebuilding preserves rollback and cancellation, while improperly ruling out rebuild despite the accepted primary fallback. Its claim that upgrading together fits the Saturday window is also unsupported.",
+      "model": "gpt-6-astra"
+    },
+    "seconds": 91,
+    "shell": [
+      "PLUGIN=$(dirname $(dirname $(readlink -f $TMPDIR/pg-eval-yvhuVx/.cursor/skills/pg-upgrade-tracker/SKILL.md 2>/dev/null || echo \"$TMPDIR/pg-eval-yvhuVx/.cursor/skills/pg-upgrade-tracker\")); PLUGIN=$(cd \"$PLUGIN/../..\" 2>/dev/null && pwd); node \"$PLUGIN/scripts/tracker-check.mjs\" $TMPDIR/pg-eval-yvhuVx/upgrade/tracker.csv && node \"$PLUGIN/scripts/render-dashboard.mjs\" --tracker $TMPDIR/pg-eval-yvhuVx/upgrade/tracker.csv --project $TMPDIR/pg-eval-yvhuVx/upgrade/project.json --out $TMPDIR/pg-eval-yvhuVx/upgrade/dashboard.canvas.tsx",
+      "node \"$TMPDIR/pg-eval-yvhuVx/.cursor/scripts/tracker-check.mjs\" \"$TMPDIR/pg-eval-yvhuVx/upgrade/tracker.csv\" && node \"$TMPDIR/pg-eval-yvhuVx/.cursor/scripts/render-dashboard.mjs\" --tracker \"$TMPDIR/pg-eval-yvhuVx/upgrade/tracker.csv\" --project \"$TMPDIR/pg-eval-yvhuVx/upgrade/project.json\" --out \"$TMPDIR/pg-eval-yvhuVx/upgrade/dashboard.canvas.tsx\""
+    ],
+    "timedOut": false
+  }
+]

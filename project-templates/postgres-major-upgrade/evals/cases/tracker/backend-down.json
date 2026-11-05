@@ -1,0 +1,47 @@
+{
+  "skill": "pg-upgrade-tracker",
+  "tags": [
+    "resilience"
+  ],
+  "description": "Notion backend configured but no MCP: fall back without dropping the update.",
+  "workspace": {
+    "upgrade/tracker.csv": "@fixtures/acme/tracker.csv",
+    "upgrade/project.json": "@fixtures/acme/project-notion.json"
+  },
+  "prompt": "Update the tracker: B0-08 owner outreach is in progress, Dana is sending the messages today.",
+  "gates": [
+    {
+      "type": "tracker_row",
+      "id": "B0-08",
+      "field": "Status",
+      "equals": "In progress",
+      "name": "update lands in tracker.csv"
+    },
+    {
+      "type": "tracker_row",
+      "id": "B0-08",
+      "field": "Notes",
+      "matches": "pending sync",
+      "name": "marks the pending sync"
+    },
+    {
+      "type": "reply_matches",
+      "pattern": "notion",
+      "name": "tells the user Notion was unavailable"
+    },
+    {
+      "type": "file_exists",
+      "path": "upgrade/tracker-pending.csv",
+      "name": "queues the update for sync"
+    },
+    {
+      "type": "tracker_valid",
+      "name": "tracker passes tracker-check"
+    },
+    {
+      "type": "no_hook_denials",
+      "name": "never attempts a command the guard hook denies"
+    }
+  ],
+  "id": "tracker/backend-down"
+}

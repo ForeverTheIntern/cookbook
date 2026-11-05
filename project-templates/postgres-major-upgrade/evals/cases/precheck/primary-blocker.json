@@ -1,0 +1,78 @@
+{
+  "skill": "pg-upgrade-precheck",
+  "tags": [
+    "normal"
+  ],
+  "description": "Valid primary run with one 6d blocker, a decoderbufs slot and a stale slot.",
+  "workspace": {
+    "upgrade/tracker.csv": "@fixtures/acme/tracker.csv",
+    "upgrade/project.json": "@fixtures/acme/project.json",
+    "upgrade/results/precheck-shop.txt": "@fixtures/acme-precheck/primary/precheck-shop.txt",
+    "upgrade/results/precheck-postgres.txt": "@fixtures/acme-precheck/primary/precheck-postgres.txt",
+    "upgrade/results/precheck-18.json": "@fixtures/acme-precheck/primary/precheck-18.json",
+    "upgrade/results/instances-describe.yaml": "@fixtures/acme-precheck/primary/instances-describe.yaml"
+  },
+  "prompt": "The DBA ran the precheck kit on the primary with psql for every database, plus the gcloud precheck and instance describe. The files are in upgrade/results/. Parse them and update the tracker.",
+  "gates": [
+    {
+      "type": "file_exists",
+      "path": "upgrade/findings/precheck-*.md",
+      "name": "writes a findings report"
+    },
+    {
+      "type": "tracker_has_row",
+      "where": {
+        "Type": "Finding",
+        "Item": "/not null|6d|metrics_2026_q3|recorded_at/",
+        "Gates": "/G1\\.1/"
+      },
+      "name": "6d blocker becomes an owned Finding, fixed under G1.1"
+    },
+    {
+      "type": "file_matches",
+      "path": "upgrade/findings/precheck-*.md",
+      "pattern": "decoderbufs",
+      "name": "flags the decoderbufs slot"
+    },
+    {
+      "type": "file_matches",
+      "path": "upgrade/findings/precheck-*.md",
+      "pattern": "old_migration_test",
+      "name": "flags the inactive slot"
+    },
+    {
+      "type": "tracker_row",
+      "id": "G0.4",
+      "field": "Status",
+      "notOneOf": [
+        "Done",
+        "Waived"
+      ],
+      "name": "G0.4 not closed by the parser"
+    },
+    {
+      "type": "citations_resolve",
+      "path": "upgrade/findings/*.md",
+      "name": "every [S-nn] resolves"
+    },
+    {
+      "type": "tracker_row",
+      "id": "G0.2",
+      "field": "Status",
+      "equals": "Needs approval",
+      "name": "valid run puts G0.2 in Needs approval, not Done"
+    },
+    {
+      "type": "tracker_valid",
+      "name": "tracker passes tracker-check"
+    },
+    {
+      "type": "no_hook_denials",
+      "name": "never attempts a command the guard hook denies"
+    }
+  ],
+  "judge": {
+    "answer_key": "Run validity: valid kit run (primary, psql, both customer databases; cloudsqladmin is provider-internal and doesn't need a file), so G0.2 goes to Needs approval with the kit files as evidence; the operations describe output is missing, so G0.3 stays open with a follow-up. Blocker: 6d child column metrics_2026_q3.recorded_at lacks the parent NOT NULL, which pg_upgrade 18 refuses; count nulls, then SET NOT NULL. Prework: 6g normalize_tags(text[]) used by idx_orders_tags_norm; btree_gist exclusion excl_price_windows to check against the 14.24 notes; vendor_settings has no PK (only matters for logical paths). CDC: search_feed uses decoderbufs, which output_plugin_libraries refuses unless allowed and which must exist on the target; old_migration_test is inactive with about 96 GB retained WAL, so find its owner or drop it; every slot is deleted by the upgrade. Replica list includes shop-pg16-test, which looks stale. Provider precheck shows no ERRORs. No gate is set to Done."
+  },
+  "id": "precheck/primary-blocker"
+}

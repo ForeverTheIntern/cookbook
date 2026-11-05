@@ -1,0 +1,80 @@
+{
+  "reviewer": "gpt-6-astra via codex",
+  "rubric": "sop",
+  "summary": "The SOP needs changes to its CDC drain, rollback timing, and cutover validation before production use. The logical migration branch also omits required identity migration work.",
+  "overall": "rework",
+  "findings": [
+    {
+      "id": "R-01",
+      "file": "review/plugins/pg-major-upgrade/reference/sop.md",
+      "line": 210,
+      "severity": "blocker",
+      "category": "Safety",
+      "claim": "The drain test can pass without establishing that every final change reached every downstream consumer. Inbound subscriptions are disabled only after that test, leaving a possible source of changes after the declared drain.",
+      "evidence": "The SOP declares a consumer drained when \"the final sentinel has arrived downstream and its slot's confirmed_flush_lsn stopped advancing across two checks a minute apart\", then says to \"disable inbound subscriptions\". It records pg_current_wal_lsn() at line 207 but never compares acknowledgements against that boundary. The SOP also states at line 217 that the upgrade deletes every logical slot, so an incorrectly declared drain has no specified replay recovery.",
+      "source_id": null,
+      "verifiable": "judgment",
+      "suggested_fix": "Quiesce all producers, including inbound subscriptions, before establishing the final boundary. Require per-consumer evidence of durable downstream application through that boundary; a stationary acknowledgement alone must not pass the gate."
+    },
+    {
+      "id": "R-02",
+      "file": "review/plugins/pg-major-upgrade/reference/sop.md",
+      "line": 284,
+      "severity": "major",
+      "category": "Safety",
+      "claim": "The latest rollback decision time excludes the time required to cancel or wait for an upgrade operation to finish. Consequently, the SOP can approve a window that cannot accommodate rollback, especially when replicas make cancellation unavailable.",
+      "evidence": "Line 247 defines the deadline as \"the window's end minus 1.25 times this duration\", using the recovery-instance rehearsal. Line 284 requires waiting until the operation is cancelled or ended before restoring. The cited provider documentation describes both cancellation restrictions and an additional period of unavailability while cancellation reverts the instance: https://docs.cloud.google.com/sql/docs/postgres/upgrade-major-db-version-inplace#cancel_the_major_version_upgrade.",
+      "source_id": "S-01",
+      "verifiable": "verified",
+      "suggested_fix": "Include cancellation and operation-settlement time in the recovery budget. For non-cancellable phases or replica-inclusive upgrades, require an explicit overrun decision and recovery strategy rather than claiming the restore-duration formula guarantees recovery inside the window."
+    },
+    {
+      "id": "R-03",
+      "file": "review/plugins/pg-major-upgrade/reference/sop.md",
+      "line": 205,
+      "severity": "major",
+      "category": "Followability",
+      "claim": "The write-fence procedure does not explain how authorized maintenance writes work while databases are read-only, or how existing pooled sessions become writable at reopening. This leaves essential execution details unresolved for both cutover and rollback.",
+      "evidence": "The procedure sets \"ALTER DATABASE <db> SET default_transaction_read_only = on\", then requires a sentinel INSERT, extension updates and reindexing. Line 287 brings up the pooler while databases remain read-only; line 288 only says to \"lift the read-only setting\" and resume it. No maintenance-session exception, session-setting verification, or connection recycling step is specified.",
+      "source_id": null,
+      "verifiable": "judgment",
+      "suggested_fix": "Specify and rehearse a dedicated maintenance-session procedure that permits required writes while application access remains fenced. Include explicit connection recycling and transaction-mode checks when reopening either the upgraded or restored instance."
+    },
+    {
+      "id": "R-04",
+      "file": "review/plugins/pg-major-upgrade/reference/sop.md",
+      "line": 286,
+      "severity": "major",
+      "category": "Gate testability",
+      "claim": "Production crosses the stated point of no return before testing whether CDC consumers can actually resume from their replacement slots. The production sequence also provides no explicit execution step for the re-snapshot alternative allowed by G2.5.",
+      "evidence": "The production runbook says \"Create the new slots, but don't start CDC consumers yet\", conducts go or no-go 2, then starts consumers in the same step that reopens writes. By contrast, rehearsal step 10 starts consumers and checks post-upgrade sentinels, while G2.5 permits a timed full re-snapshot as the alternative.",
+      "source_id": null,
+      "verifiable": "judgment",
+      "suggested_fix": "Before releasing application writes, execute the selected CDC restart or re-snapshot procedure and require per-consumer readiness evidence. Define how controlled validation sentinels interact with the rollback boundary and how validation records are handled after rollback."
+    },
+    {
+      "id": "R-05",
+      "file": "review/plugins/pg-major-upgrade/reference/sop.md",
+      "line": 314,
+      "severity": "major",
+      "category": "Completeness",
+      "claim": "The logical branch omits migration and validation of database roles and login credentials. Existing authentication gates concern password rotation on the source and do not establish that applications can authenticate with the required privileges on the new destination.",
+      "evidence": "The required logical-runbook outline covers \"Target build\", copying, replication exclusions and connection switching, but has no role or credential migration step. Its cited DMS limitations explicitly exclude \"User login credentials and roles\" from migrated objects: https://docs.cloud.google.com/database-migration/docs/postgres/known-limitations.",
+      "source_id": "S-13",
+      "verifiable": "verified",
+      "suggested_fix": "Require a destination identity and authorization plan covering roles, credentials or IAM setup, memberships, ownership and grants. Gate connection switching on authentication and privilege tests using each actual application identity."
+    },
+    {
+      "id": "R-06",
+      "file": "review/plugins/pg-major-upgrade/reference/sop.md",
+      "line": 322,
+      "severity": "major",
+      "category": "Accuracy",
+      "claim": "The logical branch presents DMS sequence synchronization at promotion as a shared property of DMS, pglogical and pgcopydb. The cited source establishes this behavior only for DMS, leaving other paths without a required, tool-specific sequence synchronization procedure.",
+      "evidence": "Section 6 explicitly covers \"DMS, pglogical or pgcopydb\", but states without qualification: \"Sequences sync only at promotion [S-13].\" S-13 describes Database Migration Service behavior, rather than a general logical-replication guarantee: https://docs.cloud.google.com/database-migration/docs/postgres/known-limitations.",
+      "source_id": "S-13",
+      "verifiable": "verified",
+      "suggested_fix": "Label the promotion behavior as DMS-specific. Require the chosen tool's documented sequence handling, a final synchronization step where needed, and destination sequence validation before application writes resume."
+    }
+  ]
+}

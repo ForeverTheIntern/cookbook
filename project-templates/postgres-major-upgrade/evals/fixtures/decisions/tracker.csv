@@ -1,0 +1,103 @@
+ID,Type,Block,Stream,Item,Done when,Owner role,Owner,Side,Run by,Session or PR,Parallel group,Depends on,Gates,Status,Evidence,Approver,Due,Last checked,Notes,Repo,DB role,Auth,Path,Driver and version,CDC,Hazards found,Status since
+G0.1,Gate,0,Discovery,"Every repo and consumer has an owner, auth method and connection path","All Consumer rows have Owner, Auth and Path set and confirmed",Program owner,Dana Lee,Customer,Human,,,,,In progress,,,,2026-11-04,,,,,,,,,2026-11-03
+G0.2,Gate,0,Discovery,"Valid precheck run: primary, every database, psql",precheck-<db>.txt for every database; section 0 is_replica = f,DBA,Sam Ortiz,Customer,Human,,,,,Waiting on customer,,,,2026-11-04,,,,,,,,,2026-11-03
+G0.3,Gate,0,Discovery,"Provider precheck clean, or every error owned",Precheck and operations-describe JSON attached; each ERROR has a Finding row with an owner and a fix task (fixed under G1.1),DBA,Sam Ortiz,Customer,Human,,,,,In progress,,,,2026-11-04,Provider precheck clean; waiting on B0-05 parsing,,,,,,,,2026-11-03
+G0.4,Gate,0,Catalog,"Kit blockers clear, or every blocker owned",Findings report attached; each blocker and prework item has a Finding row with an owner and a fix task (fixed under G1.1),DBA,Sam Ortiz,Customer,Both,,,,,In progress,,,,2026-11-04,,,,,,,,,2026-11-03
+G0.5,Gate,0,CDC,CDC inventory reconciled,"Every slot, publication and pglogical node maps to a Consumer row with owner, connector version, plugin and target support",CDC owner,unknown,Customer,Both,,,,,Blocked,,,,2026-11-04,3 publications have no known consumer,,,,,,,,2026-11-03
+G0.6,Gate,0,Discovery,Decision record signed,decision-record.md signed by the program owner,Program owner,Dana Lee,Customer,Human,,,,,Not started,,,,2026-11-04,,,,,,,,,
+G0.7,Gate,0,Discovery,Provider questions sent and owned,Question rows for each provider question have an owner,Program owner,Dana Lee,Customer,Human,,,,,Done,Q-13,Dana Lee,,2026-11-04,,,,,,,,,2026-11-03
+B0-01,Task,0,Discovery,Code search across every org for DB connections,Repo rows with evidence links for every hit,Partner,Alex Kim,Customer,Agent,,,,G0.1,Done,reports/code-search.md,,,2026-11-04,,,,,,,,,2026-11-03
+B0-02,Task,0,Discovery,Read-only readiness scan per repo,A report per repo linked in Evidence,Partner,Alex Kim,Customer,Agent,,,B0-01,G0.1,Done,reports/scans/,,,2026-11-04,,,,,,,,,2026-11-03
+B0-03,Task,0,Discovery,"Run precheck.sql on the primary, every database, with psql",precheck-<db>.txt pasted for every database,DBA,Sam Ortiz,Customer,Human,,,,G0.2 G0.4,Waiting on customer,,,,2026-11-04,Run came from a replica and covered one of four databases; rerun requested on the primary,,,,,,,,2026-11-03
+B0-04,Task,0,Discovery,Run provider precheck and describe the instance,"Precheck JSON, operations describe JSON, instances describe YAML pasted",DBA,Sam Ortiz,Customer,Human,,,,G0.3,Done,precheck/precheck-18.json,,,2026-11-04,,,,,,,,,2026-11-03
+B0-05,Task,0,Discovery,"Parse precheck results into facts, findings and gate rows",Finding rows created; run-validity checks recorded,Partner,Alex Kim,Customer,Agent,,,B0-03 B0-04,G0.2 G0.3 G0.4,In progress,,,,2026-11-04,,,,,,,,,2026-11-03
+B0-06,Task,0,Discovery,Live consumer census over a week,Unmatched-connection list reviewed,DBA,Sam Ortiz,Customer,Both,,,,G0.1,In progress,,,,2026-11-04,,,,,,,,,2026-11-03
+B0-07,Task,0,CDC,"Reconcile slots, publications and pglogical against consumers",Every slot and publication maps to a Consumer row,CDC owner,Alex Kim,Customer,Both,,,B0-05 B0-03,G0.5,Blocked,,,,2026-11-04,Slots can't be read from a replica run; waiting on the primary rerun,,,,,,,,2026-11-03
+B0-08,Task,0,Comms,"Owner outreach, one message per owner",Every Consumer row confirmed by its owner,Program owner,Dana Lee,Customer,Both,,,,G0.1,In progress,,,,2026-11-04,,,,,,,,,2026-11-03
+B0-09,Task,0,Discovery,Constraints interview,"Window, data-loss rule, blackout dates and approvers recorded",Program owner,Dana Lee,Customer,Human,,,,G0.6,Not started,,,,2026-11-04,,,,,,,,,
+B0-10,Task,0,Discovery,Version research for this source and target,Research note with [S-nn] citations,Partner,Alex Kim,Customer,Agent,,,,G0.6,Done,research/pg14-to-18.md,,,2026-11-04,,,,,,,,,2026-11-03
+B0-11,Task,0,Discovery,Questions for the provider,Questions sent; replies tracked,Program owner,Dana Lee,Customer,Both,,,,G0.7,Done,Q-13,,,2026-11-04,,,,,,,,,2026-11-03
+B0-12,Task,0,Discovery,Decision record (pg-upgrade-decision-record skill),Draft reviewed and signed,Program owner,Dana Lee,Customer,Both,,,B0-09 B0-10,G0.6,Not started,,,,2026-11-04,,,,,,,,,
+G1.1,Gate,1,Catalog,Every blocker fixed in production on the source version,Provider precheck rerun has no ERROR; kit rerun of every section that held a finding; each original Finding row closed with its own evidence,DBA,Sam Ortiz,Customer,Both,,,,,Not started,,,,2026-11-04,,,,,,,,,
+G1.2,Gate,1,App code,App test suite passes against the target version in CI,CI run link,App team,Priya N,Customer,Both,,,,,Not started,,,,2026-11-04,,,,,,,,,
+G1.3,Gate,1,CDC,Every CDC connector supports the target,Connector version staged and approved by its owner,CDC owner,unknown,Customer,Both,,,,,Not started,,,,2026-11-04,,,,,,,,,
+G1.4,Gate,1,Auth,"Password roles reset under SCRAM, or waived","Rotation log listing every password-login role reset under scram-sha-256, or a provider answer, or an owner waiver",DBA,Sam Ortiz,Customer,Both,,,,,Not started,,,,2026-11-04,,,,,,,,,
+G1.5,Gate,1,Monitoring,Monitoring works on the target version,Exporter output and dashboard screenshots taken against a target-version instance,App team,Priya N,Customer,Both,,,,,Not started,,,,2026-11-04,,,,,,,,,
+G1.6,Gate,1,Runbook,"Runbook, rollback, validation and comms reviewed",Program owner and DBA approvals,Program owner,Dana Lee,Customer,Human,,,,,Not started,,,,2026-11-04,,,,,,,,,
+G1.7,Gate,1,Infra,"IaC changes reviewed, planned, not applied, reconcile step in runbook",PR plan output shows in-place or no change; deletion protection on; runbook says when it merges,DBA,Sam Ortiz,Customer,Both,,,,,Not started,,,,2026-11-04,,,,,,,,,
+B1-01,Task,1,App code,App compatibility per repo,PRs merged or no changes needed,App team,Priya N,Customer,Agent,,,,G1.2,Not started,,,,2026-11-04,,,,,,,,,
+B1-02,Task,1,Catalog,"Catalog fixes: search_path, NOT NULL, reg* types",Migration PRs merged; kit rerun clean,DBA,Sam Ortiz,Customer,Agent,,,,G1.1,Not started,,,,2026-11-04,,,,,,,,,
+B1-03,Task,1,Infra,Remove blocking and removed flags; plan decoding plugin allowlist,IaC PR merged,DBA,Sam Ortiz,Customer,Both,,,,G1.1 G1.7,Not started,,,,2026-11-04,,,,,,,,,
+B1-04,Task,1,Auth,Move MD5 roles to SCRAM,Roles rotated or waived,DBA,Sam Ortiz,Customer,Both,,,,G1.4,Not started,,,,2026-11-04,,,,,,,,,
+B1-05,Task,1,CDC,Upgrade connectors and write the new-slot plan,Connector PRs and runbook section approved,CDC owner,unknown,Customer,Both,,,,G1.3,Not started,,,,2026-11-04,,,,,,,,,
+B1-06,Task,1,Runbook,Extension target versions and ALTER EXTENSION steps,Runbook section,DBA,Sam Ortiz,Customer,Agent,,,,G1.6,Not started,,,,2026-11-04,,,,,,,,,
+B1-07,Task,1,Monitoring,Update exporters and dashboards for target-version views,PRs merged and verified on a target instance,App team,Priya N,Customer,Agent,,,,G1.5,Not started,,,,2026-11-04,,,,,,,,,
+B1-08,Task,1,App code,CI job against the target version,Green run,App team,Priya N,Customer,Agent,,,,G1.2,Not started,,,,2026-11-04,,,,,,,,,
+B1-09,Task,1,Runbook,Validation scripts,validate.sql reviewed,Partner,Alex Kim,Customer,Agent,,,,G1.6,Not started,,,,2026-11-04,,,,,,,,,
+B1-10,Task,1,Runbook,"Runbook, rollback plan, comms plan",Drafts reviewed,Program owner,Dana Lee,Customer,Both,,,,G1.6,Not started,,,,2026-11-04,,,,,,,,,
+B1-11,Task,1,Infra,IaC for the target version,PR with plan output,DBA,Sam Ortiz,Customer,Both,,,,G1.7,Not started,,,,2026-11-04,,,,,,,,,
+B1-12,Task,1,Infra,"Drop stale replicas, slots, publications and scratch tables",Change list applied,DBA,Sam Ortiz,Customer,Human,,,,G1.1,Not started,,,,2026-11-04,,,,,,,,,
+B1-13,Task,1,Infra,Freeze provider maintenance through cutover; align minor versions,Deny period set; rehearsal and production on the same minor,DBA,Sam Ortiz,Customer,Human,,,,G1.7,Not started,,,,2026-11-04,,,,,,,,,
+B1-14,Task,1,Catalog,"Reindex inventory (btree_gist, ltree, FTS and pg_trgm on non-libc, nondeterministic PK/FK collations)",Each item has a fix task or a timed runbook step,DBA,Sam Ortiz,Customer,Both,,,,G1.1 G1.6,Not started,,,,2026-11-04,,,,,,,,,
+B1-15,Task,1,Runbook,Cross-version statement set kept by the DBA,"About 20 statements with parameters, outside agent sessions",DBA,Sam Ortiz,Customer,Human,,,,G1.6,Not started,,,,2026-11-04,,,,,,,,,
+G2.1,Gate,2,Runbook,Two rehearsals in a row within 75% of the window,Two timing sheets,DBA,Sam Ortiz,Customer,Human,,,,,Not started,,,,2026-11-04,,,,,,,,,
+G2.2,Gate,2,Runbook,Provider precheck on the clone clean,Precheck JSON,DBA,Sam Ortiz,Customer,Human,,,,,Not started,,,,2026-11-04,,,,,,,,,
+G2.3,Gate,2,Runbook,Planner stats cover every non-empty readable table in every database,Per-database stats coverage before and after,DBA,Sam Ortiz,Customer,Human,,,,,Not started,,,,2026-11-04,,,,,,,,,
+G2.4,Gate,2,Runbook,Cross-version statement set within 2x,Timing and plan-shape comparison for the B1-15 set,DBA,Sam Ortiz,Customer,Both,,,,,Not started,,,,2026-11-04,,,,,,,,,
+G2.5,Gate,2,CDC,"Sentinels arrive exactly once from new slots, or full re-snapshot timed and fits","Sentinel check log per consumer, or re-snapshot plus catch-up timing",CDC owner,unknown,Customer,Human,,,,,Not started,,,,2026-11-04,,,,,,,,,
+G2.6,Gate,2,Runbook,Full rollback rehearsed and timed; latest rollback decision time set,Rollback timing sheet through app validation,DBA,Sam Ortiz,Customer,Human,,,,,Not started,,,,2026-11-04,,,,,,,,,
+G2.7,Gate,2,Runbook,Pooler and replica routing came back correctly,Routing check log,App team,Priya N,Customer,Human,,,,,Not started,,,,2026-11-04,,,,,,,,,
+G2.8,Gate,2,Discovery,"Every provider-only question answered, shown, or waived",Question rows for SOP appendix B closed with evidence or a named approver,Program owner,Dana Lee,Customer,Both,,,,,Not started,,,,2026-11-04,,,,,,,,,
+G2.9,Gate,2,Runbook,Go or no-go owner signed off the rehearsal,Sign-off row,Business approver,Morgan Diaz,Customer,Human,,,,,Not started,,,,2026-11-04,,,,,,,,,
+B2-01,Task,2,Runbook,"Rehearsal 1 on a production clone, including the full rollback",Timing sheet attached,DBA,Sam Ortiz,Customer,Human,,,,G2.1 G2.2 G2.3 G2.4 G2.5 G2.6 G2.7,Not started,,,,2026-11-04,,,,,,,,,
+B2-02,Task,2,Runbook,Rehearsal 2 on a production clone,Timing sheet attached,DBA,Sam Ortiz,Customer,Human,,,B2-01,G2.1,Not started,,,,2026-11-04,,,,,,,,,
+B2-03,Task,2,Runbook,Parse timings and update the runbook,Runbook updated from both sheets,Partner,Alex Kim,Customer,Agent,,,B2-01,G2.1,Not started,,,,2026-11-04,,,,,,,,,
+G3.1,Gate,3,Runbook,"Production on the target version, writes open, validation passed",validate.sql output and smoke-test results from the night,DBA,Sam Ortiz,Customer,Human,,,,,Not started,,,,2026-11-04,,,,,,,,,
+G3.2,Gate,3,CDC,Every CDC consumer current and confirmed,Sentinel or lag readings plus each owner confirmation,CDC owner,unknown,Customer,Human,,,,,Not started,,,,2026-11-04,,,,,,,,,
+G3.3,Gate,3,Runbook,Cross-version statement set within 2x after 24 hours,Timing comparison,DBA,Sam Ortiz,Customer,Both,,,,,Not started,,,,2026-11-04,,,,,,,,,
+G3.4,Gate,3,Runbook,Close-out done,Close-out checklist with links,Program owner,Dana Lee,Customer,Human,,,,,Not started,,,,2026-11-04,,,,,,,,,
+B3-01,Task,3,Runbook,Cutover,Runbook executed with timings,DBA,Sam Ortiz,Customer,Human,,,,G3.1 G3.2,Not started,,,,2026-11-04,,,,,,,,,
+B3-02,Task,Close-out,Runbook,Retro and template feedback,sop-feedback.md updated,Program owner,Dana Lee,Customer,Both,,,,G3.4,Not started,,,,2026-11-04,,,,,,,,,
+Q-01,Question,0,Discovery,"Is the downtime window approved by the business, and who approves it?",Named approver and approved window,Business approver,Morgan Diaz,Customer,Human,,,,G0.6,Waiting on customer,,,,2026-11-04,,,,,,,,,2026-11-03
+Q-02,Question,0,Discovery,"Who makes the go or no-go call on the night, and who can approve a rollback?",Named people,Program owner,Dana Lee,Customer,Human,,,,G0.6,Not started,,,,2026-11-04,,,,,,,,,
+Q-03,Question,0,Discovery,"Is zero data loss a hard rule, and is fixing forward after reopening acceptable?",Written answer in the decision record,Business approver,Morgan Diaz,Customer,Human,,,,G0.6,Not started,,,,2026-11-04,,,,,,,,,
+Q-04,Question,0,CDC,"For each CDC consumer: owner, connector version, decoding plugin, startup modes",Answer per Consumer row,CDC owner,unknown,Customer,Human,,,,G0.5,In progress,,,,2026-11-04,,,,,,,,,2026-11-03
+Q-05,Question,0,Discovery,"Which replicas are live, and will they upgrade with the primary or be rebuilt?",Replica list with a plan,DBA,Sam Ortiz,Customer,Human,,,,G0.6,Done,upgrade/results/replicas.md,,,2026-11-04,Two read replicas; one is cross-region,,,,,,,,{{TODAY}}
+Q-06,Question,0,Discovery,How do poolers and replica routing behave when the primary and replicas restart?,Tested or documented behavior,App team,Priya N,Customer,Human,,,,G0.6,Not started,,,,2026-11-04,,,,,,,,,
+Q-07,Question,0,Discovery,Which repos and services outside the known list touch the database?,Census matched to repo rows,Program owner,Dana Lee,Customer,Both,,,,G0.1,Not started,,,,2026-11-04,,,,,,,,,
+Q-08,Question,0,Discovery,"Edition, tier, HA and vCPU count",Instance describe output,DBA,Sam Ortiz,Customer,Human,,,,G0.6,Not started,,,,2026-11-04,,,,,,,,,
+Q-09,Question,0,Discovery,"Growth rate, peak write rate and WAL per day",Numbers with a source,DBA,Sam Ortiz,Customer,Human,,,,G0.6,Not started,,,,2026-11-04,,,,,,,,,
+Q-10,Question,0,Discovery,"Which weekend, and what are the blackout dates?",Dates in the decision record,Program owner,Dana Lee,Customer,Human,,,,G0.6,Not started,,,,2026-11-04,,,,,,,,,
+Q-11,Question,0,Discovery,Can schema migrations freeze from the last rehearsal to cutover?,"Yes, or a re-rehearsal rule",Program owner,Dana Lee,Customer,Human,,,,G0.6,Not started,,,,2026-11-04,,,,,,,,,
+Q-12,Question,0,Discovery,"Was an upgrade attempted before, and what did it leave behind?",Answer plus cleanup rows,DBA,Sam Ortiz,Customer,Human,,,,G0.4,In progress,,,,2026-11-04,pglogical is installed; probably left from an earlier attempt,,,,,,,,2026-11-03
+Q-13,Question,0,Discovery,"Who works with the provider's support, and will they send our questions?",Named contact,Program owner,Dana Lee,Customer,Human,,,,G0.7,Done,https://chat.example.com/acme/upgrade/1793,,,2026-11-04,,,,,,,,,2026-11-03
+Q-14,Question,0,Monitoring,Which exporters and dashboards read views that changed in 17?,List of exporters,App team,Priya N,Customer,Human,,,,G1.5,Not started,,,,2026-11-04,,,,,,,,,
+Q-30,Question,2,Discovery,Provider: does the MVU to the target keep planner statistics?,Provider answer or rehearsal stats coverage,Program owner,Dana Lee,Provider,Both,,,,G2.8,Not started,,,,2026-11-04,,,,,,,,,
+Q-31,Question,2,Discovery,Provider: can the admin role read pg_statistic for vacuumdb --missing-stats-only?,Provider answer or rehearsal attempt,Program owner,Dana Lee,Provider,Both,,,,G2.8,Not started,,,,2026-11-04,,,,,,,,,
+Q-32,Question,2,CDC,Provider: which decoding plugins are installed on the target?,Provider answer,Program owner,Dana Lee,Provider,Human,,,,G2.8,Not started,,,,2026-11-04,,,,,,,,,
+Q-33,Question,2,Discovery,Provider: does a replica-inclusive upgrade keep each replica's stats and hostname?,Provider answer or rehearsal check,Program owner,Dana Lee,Provider,Both,,,,G2.8,Not started,,,,2026-11-04,,,,,,,,,
+Q-34,Question,2,Runbook,Provider: can point-in-time recovery reach a point before the upgrade?,Provider answer,Program owner,Dana Lee,Provider,Human,,,,G2.8,Not started,,,,2026-11-04,,,,,,,,,
+Q-35,Question,2,Infra,Provider: can Terraform include replicas in the upgrade?,Provider answer or rehearsal,Program owner,Dana Lee,Provider,Both,,,,G2.8,Not started,,,,2026-11-04,,,,,,,,,
+Q-36,Question,2,Runbook,Provider: which pg_upgrade transfer mode does the MVU use?,Provider answer,Program owner,Dana Lee,Provider,Human,,,,G2.8,Not started,,,,2026-11-04,,,,,,,,,
+Q-37,Question,2,Infra,Provider: can a clone go to another project?,Provider answer or rehearsal,Program owner,Dana Lee,Provider,Both,,,,G2.8,Not started,,,,2026-11-04,,,,,,,,,
+Q-38,Question,2,Catalog,Provider: how does a PostGIS user meet the 3.6.0 floor from a 14 source?,"Provider answer, or not applicable",Program owner,Dana Lee,Provider,Human,,,,G2.8,Not started,,,,2026-11-04,,,,,,,,,
+Q-39,Question,2,CDC,Provider: how can customers allow decoding plugins other than pgoutput under output_plugin_libraries?,Provider answer,Program owner,Dana Lee,Provider,Human,,,,G2.8,Not started,,,,2026-11-04,,,,,,,,,
+C-orders-api,Consumer,0,Discovery,orders-api,,App team,Priya N,Customer,Both,,,,G0.1,Done,reports/scans/orders-api.md,,,,,acme/orders-api,orders_app,scram,primary,psycopg 3.2,none,,2026-11-03
+C-billing-worker,Consumer,0,Discovery,billing-worker,,App team,unknown,Customer,Both,,,,G0.1,Waiting on customer,,,,,,acme/billing,billing,md5,pooler,pgx 5.6,none,md5 password login,2026-11-03
+C-analytics-cdc,Consumer,0,CDC,Analytics CDC feed,,CDC owner,unknown,Customer,Both,,,,G0.5,Waiting on customer,,,,,,,,scram,cdc,,debezium 2.7 pgoutput,,2026-11-03
+C-reports-ui,Consumer,0,Discovery,reports-ui,,App team,Priya N,Customer,Both,,,,G0.1,Done,reports/scans/reports-ui.md,,,,,acme/reports,reports_ro,scram,replica,node-postgres 8.13,none,,2026-11-03
+F-6g-01,Finding,0,Catalog,search_path-dependent function normalize_tags(text[]) in an index,,DBA,Sam Ortiz,Customer,Both,https://github.com/acme/app/pull/812,,,G1.1,Needs approval,,,2026-11-06,2026-11-01,PR open 3 days,,,,,,,,2026-11-01
+F-5b-01,Finding,0,Catalog,4 stale unlogged backfill tables,,DBA,Sam Ortiz,Customer,Human,,,,G1.1,Waiting on customer,,,2026-11-03,,,,,,,,,,2026-11-03
+Q-16,Question,0,Discovery,Who owns billing-worker?,,Program owner,Dana Lee,Customer,Human,,,C-billing-worker,G0.1,Waiting on customer,,,,,,,,,,,,,2026-11-03
+Q-15,Question,0,CDC,Who owns the 3 publications with no known consumer?,,CDC owner,unknown,Customer,Human,,,C-analytics-cdc,G0.5,Waiting on customer,,,,,,,,,,,,,2026-11-03
+D-01,Decision,0,Discovery,Path: in-place upgrade or logical migration,"Option chosen by the decider, with reason and any condition",Program owner,Dana Lee,Customer,Human,,,B0-03 Q-09 Q-01 Q-04,G0.6,Not started,,,,{{TODAY}},,,,,,,,,
+D-02,Decision,0,Discovery,Target version,"Option chosen by the decider, with reason",Program owner,Dana Lee,Customer,Human,,,B0-10 B0-03 Q-04 Q-38,G0.6,Not started,,,,{{TODAY}},,,,,,,,,
+D-03,Decision,0,Discovery,"Window: length, mode and timing",Window approved by the business approver,Business approver,unknown,Customer,Human,,,Q-01 Q-10 Q-09 Q-06,G0.6,Not started,,,,{{TODAY}},,,,,,,,,
+D-04,Decision,0,Discovery,"Data-loss rule, including after writes reopen",Rule signed by the business approver,Business approver,unknown,Customer,Human,,,Q-03,G0.6,Not started,,,,{{TODAY}},,,,,,,,,
+D-05,Decision,0,Runbook,Rollback approach and the rule for its latest decision time,"Option chosen by the decider, with reason",Program owner,Dana Lee,Customer,Human,,,D-01 D-04 D-08 Q-34,G0.6,Not started,,,,{{TODAY}},,,,,,,,,
+D-06,Decision,0,Runbook,"Go or no-go owner, and a backup",Two named people,Program owner,Dana Lee,Customer,Human,,,Q-02,G0.6,Not started,,,,{{TODAY}},,,,,,,,,
+D-07,Decision,0,Discovery,"Target date, against the source version's support dates",Date chosen by the decider,Program owner,Dana Lee,Customer,Human,,,Q-10 B0-10,G0.6,Not started,,,,{{TODAY}},,,,,,,,,
+D-08,Decision,0,Infra,"Replica handling: upgrade with the primary, first, or rebuild","Option chosen by the decider, with reason",DBA,Sam Ortiz,Customer,Human,,,Q-05 Q-06 Q-33 Q-35,G0.6,Not started,,,,{{TODAY}},,,,,,,,,
+D-09,Decision,0,Infra,When the IaC version change merges,Option chosen by the decider,DBA,Sam Ortiz,Customer,Human,,,B0-02 Q-35,G0.6,Not started,,,,{{TODAY}},,,,,,,,,
+D-10,Decision,0,Infra,Freezes: provider maintenance and schema changes,"Freeze dates, or a re-rehearsal rule",Program owner,Dana Lee,Customer,Human,,,Q-10 Q-11,G0.6,Not started,,,,{{TODAY}},,,,,,,,,
+D-11,Decision,0,CDC,CDC plan for each consumer,"A plan per Consumer row, approved by its owner",CDC owner,unknown,Customer,Human,,,Q-04 B0-07 Q-39,G0.6 G0.5,Not started,,,,{{TODAY}},,,,,,,,,

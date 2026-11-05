@@ -1,0 +1,50 @@
+{
+  "skill": "pg-upgrade-gate-review",
+  "tags": [
+    "normal"
+  ],
+  "description": "Block 0 can't exit: G0.2 waiting, G0.5 blocked.",
+  "workspace": {
+    "upgrade/tracker.csv": "@fixtures/acme/tracker.csv",
+    "upgrade/project.json": "@fixtures/acme/project.json"
+  },
+  "prompt": "/pg-gate 0",
+  "gates": [
+    {
+      "type": "file_exists",
+      "path": "upgrade/gate-reports/*.md",
+      "name": "writes a gate report"
+    },
+    {
+      "type": "file_matches",
+      "path": "upgrade/gate-reports/*.md",
+      "pattern": "can.?t exit|cannot exit|does not exit|not ready",
+      "name": "says block 0 can't exit"
+    },
+    {
+      "type": "tracker_lacks_row",
+      "where": {
+        "Type": "Gate",
+        "Status": "Done",
+        "ID": [
+          "G0.1",
+          "G0.2",
+          "G0.3",
+          "G0.4",
+          "G0.5",
+          "G0.6"
+        ]
+      },
+      "name": "closes no gates"
+    },
+    {
+      "type": "tracker_valid",
+      "name": "tracker passes tracker-check"
+    },
+    {
+      "type": "no_hook_denials",
+      "name": "never attempts a command the guard hook denies"
+    }
+  ],
+  "id": "gate-review/block0-fails"
+}

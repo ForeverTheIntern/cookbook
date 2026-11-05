@@ -1,0 +1,104 @@
+{
+  "reviewer": "grok-4.7-high via cursor-agent",
+  "rubric": "readme",
+  "summary": "The README correctly sketches the four blocks, the tracker, the 75% rehearsal rule, and the first-write point of no return, and its Privacy Mode note matches the Cursor Projects docs. Exit summaries drop gates that change the upgrade, the IaC sentence collapses two different apply times, the Cloud Agent hook citation contradicts the hooks docs, and most links a team would follow do not resolve.",
+  "overall": "ship-with-fixes",
+  "findings": [
+    {
+      "id": "R-01",
+      "file": "review/README.md",
+      "line": 38,
+      "severity": "major",
+      "category": "safety",
+      "claim": "Block 1 tells people to merge every PR and to apply IaC only after the upgrade. That both merges the Cloud SQL version-change PR too early and delays blocking-flag IaC that has to be applied on the source version before rehearsal.",
+      "evidence": "README: \"People: review and merge every PR, and apply the IaC after the upgrade.\" SOP (review/plugins/pg-major-upgrade/reference/sop.md): \"Flags: remove blocking and removed flags ... Agent drafts the IaC PR, DBA applies\" and \"On Cloud SQL, changing `database_version` in Terraform starts an MVU of its own. So the version change merges after the runbook's upgrade step, as a reconcile\" and \"An IaC apply that starts an unrehearsed upgrade (B1-11).\"",
+      "source_id": null,
+      "verifiable": "judgment",
+      "suggested_fix": "Say compatibility and blocking-flag PRs merge and apply on the source version in Block 1, and that the database_version change stays unmerged until the Block 3 reconcile because applying it starts the upgrade."
+    },
+    {
+      "id": "R-02",
+      "file": "review/README.md",
+      "line": 143,
+      "severity": "major",
+      "category": "accuracy",
+      "claim": "The pilot checklist says Cursor documents beforeMCPExecution as supported in Cloud Agents. The hooks docs list that hook as not available there, so the database-MCP backstop is not the Cloud Agent control this line claims.",
+      "evidence": "README: \"The hooks fire in Cloud Agents. Cursor documents `beforeShellExecution` and `beforeMCPExecution` as supported ([S-47]).\" S-47 in review/reference/sources.json quotes only \"beforeShellExecution / afterShellExecution - Control shell commands\". Live page https://cursor.com/docs/hooks: \"`beforeShellExecution` | Yes\" under supported cloud-agent hooks, and \"`beforeMCPExecution` / `afterMCPExecution` | Deferred while cloud agents can still start in a read-only environment, where hooks don't load and MCP hook timing is unclear.\"",
+      "source_id": "S-47",
+      "verifiable": "verified",
+      "suggested_fix": "Cite beforeShellExecution as supported in Cloud Agents, and state that beforeMCPExecution is documented as not available there, so database-MCP denial cannot depend on that hook for Project agents."
+    },
+    {
+      "id": "R-03",
+      "file": "review/README.md",
+      "line": 33,
+      "severity": "major",
+      "category": "completeness",
+      "claim": "Block 0 equates gates G0.1 to G0.7 with one primary precheck, consumer owners, and a five-field decision record. A team lead can leave the block without the provider precheck, CDC ownership, sent provider questions, or the rollback, replica, and support-date fields the SOP requires.",
+      "evidence": "README: \"sign the decision record (path, target, window, rollback, go or no-go owner)\" and \"Exits when: every consumer has an owner, the precheck ran validly on the primary for every database, every blocker has an owner, and the decision record is signed (G0.1 to G0.7).\" SOP: G0.2 is the kit on the primary with `is_replica = f`; G0.3 is \"The provider precheck against the target returned no errors\"; G0.5 maps every slot, publication, subscription, and pglogical node to an owner; G0.6 also requires \"data-loss rule, rollback approach and its latest decision time, ... replica handling ..., when IaC is reconciled, the provider maintenance freeze, and the source version's support dates\"; G0.7 is \"Questions for the provider have been sent\".",
+      "source_id": null,
+      "verifiable": "judgment",
+      "suggested_fix": "Name the kit run and the provider precheck as separate exits, and list G0.5, G0.6's full decision-record fields, and G0.7 in the Block 0 exit."
+    },
+    {
+      "id": "R-04",
+      "file": "review/README.md",
+      "line": 39,
+      "severity": "major",
+      "category": "completeness",
+      "claim": "Block 1's exit presents G1.1 to G1.7 as fixed blockers, passing tests, connector support, and a reviewed runbook. The README never mentions the SCRAM password reset, so a team can rehearse without the auth gate.",
+      "evidence": "README: \"Exits when: blockers are fixed in production, tests pass on the target version, connectors support it, and the runbook is reviewed (G1.1 to G1.7).\" The README does not mention passwords, MD5, or SCRAM. SOP G1.4: \"Every password-login role has had its password reset under `scram-sha-256`, or has its owner's waiver.\" SOP also says PG 18 deprecates MD5 and that on Cloud SQL the MD5 role list cannot be read from `pg_authid`.",
+      "source_id": null,
+      "verifiable": "judgment",
+      "suggested_fix": "Add G1.4 to the Block 1 exit: reset every password-login role under scram-sha-256, or record a named waiver, before rehearsal."
+    },
+    {
+      "id": "R-05",
+      "file": "review/README.md",
+      "line": 44,
+      "severity": "major",
+      "category": "completeness",
+      "claim": "Block 2's exit says two rehearsals fit in 75% of the window and CDC sentinels arrive exactly once. It drops clone parity, the rehearsal statement budget, and the re-snapshot path, so a team can cut over on timings the SOP would reject.",
+      "evidence": "README: \"Exits when: two rehearsals in a row fit within 75% of the window, CDC sentinels arrive exactly once, the full rollback is timed, and every question only the provider can answer is settled (G2.1 to G2.9).\" SOP G2.1 requires a clone that \"matches production's tier, storage, replica topology and minor version\" or a signed waiver. G2.4: \"Every statement in the cross-version set (B1-15) runs within 2x of its source-version time\". G2.5 allows the sentinels \"Or a full re-snapshot of every affected consumer, plus downstream catch-up, was timed and fits.\"",
+      "source_id": null,
+      "verifiable": "judgment",
+      "suggested_fix": "State clone parity or a waiver, the rehearsal 2x statement check, and the timed re-snapshot alternative next to the sentinel check."
+    },
+    {
+      "id": "R-06",
+      "file": "review/README.md",
+      "line": 53,
+      "severity": "major",
+      "category": "links",
+      "claim": "Most links the README tells a team to open or run do not exist in the artifact tree, including the tracker checker, sources list, automations, catch-up handoff, review rounds, eval results, and the precheck test. Quick start and the verification steps cannot be followed from the files provided.",
+      "evidence": "These README targets are absent: plugins/pg-major-upgrade/scripts/tracker-check.mjs, plugins/pg-major-upgrade/scripts/render-dashboard.mjs, plugins/pg-major-upgrade/scripts/check-sources.mjs, plugins/pg-major-upgrade/reference/sources.md, plugins/pg-major-upgrade/reference/automations.md, plugins/pg-major-upgrade/reference/catch-up-handoff-template.md, tests/dashboard.snapshot.canvas.tsx, tests/sql/run-precheck.sh, docs/reviews/2026-11-template-review-round-1-sop.md, docs/reviews/2026-11-template-review-round-1-skills.md, docs/reviews/2026-11-template-review-round-2.md, and evals/results/. The only sources file present is review/reference/sources.json (48 entries), not the linked sources.md. Links that do resolve: plugins/pg-major-upgrade/reference/sop.md (including #8-adapting-to-another-provider), plugins/pg-major-upgrade/reference/tracker-schema.md, docs/bootstrap-prompt.md, and evals/HILLCLIMB.md.",
+      "source_id": null,
+      "verifiable": "judgment",
+      "suggested_fix": "Point sources at the file that exists, or add sources.md beside the SOP, and restore or remove every linked script, review, eval result, and handoff template before using this README as the entry point."
+    },
+    {
+      "id": "R-07",
+      "file": "review/README.md",
+      "line": 67,
+      "severity": "minor",
+      "category": "overstatement",
+      "claim": "The verification section states precheck coverage and a finished hill-climb that the artifacts do not show. The only test narrative documents a Postgres 14 fixture build, and the hill-climb log stops before round 2 results.",
+      "evidence": "README: \"The precheck SQL itself is tested on Postgres 14 and 18, as superuser and as a read-only role, by tests/sql/run-precheck.sh\" and \"Covered by 51 tests\" and \"Results and the hill-climb log are in evals/results/ and evals/HILLCLIMB.md.\" review/evals/HILLCLIMB.md says fixtures are built by a path that \"runs the real kit with psql on Postgres 14 in Docker\" and its round 2 section ends after the fixture description, with no result table. It links to results/2026-11-04-baseline.md and results/2026-11-04-round-1.md, which are not in the tree. Nothing in the tree shows 51 hook tests or a Postgres 18 or read-only precheck run.",
+      "source_id": null,
+      "verifiable": "unverified",
+      "suggested_fix": "Limit the verification claims to runs that are actually recorded, and finish or remove the round 2 section until it has the same pass counts as the earlier rounds."
+    },
+    {
+      "id": "R-08",
+      "file": "review/README.md",
+      "line": 55,
+      "severity": "minor",
+      "category": "overstatement",
+      "claim": "The tracking section states that a Project subscription updates statuses from PRs and posts a Slack summary. The pilot checklist says creating those subscriptions was not testable when the template was built.",
+      "evidence": "README: \"A Project subscription, or an Automation, updates statuses from PRs and posts a summary to Slack.\" Later: \"These weren't testable when the template was built, so check them in your first real Project\" including \"The coordinator creates the daily-status and PR-merge subscriptions from automations.md.\"",
+      "source_id": null,
+      "verifiable": "judgment",
+      "suggested_fix": "Describe daily Slack status as planned behavior that the pilot still has to confirm, in the same paragraph as the tracker."
+    }
+  ]
+}

@@ -1,0 +1,59 @@
+{
+  "skill": "pg-upgrade-runbook",
+  "tags": [
+    "normal"
+  ],
+  "description": "Rehearsal sums past 75% of the window; restore untimed; one CDC consumer untested.",
+  "workspace": {
+    "upgrade/tracker.csv": "@fixtures/acme/tracker.csv",
+    "upgrade/project.json": "@fixtures/acme/project.json",
+    "upgrade/results/rehearsal-1.md": "@fixtures/rehearsal/rehearsal-1.md"
+  },
+  "prompt": "Rehearsal 1 timings are in upgrade/results/rehearsal-1.md. Parse them against the window and update the tracker.",
+  "gates": [
+    {
+      "type": "reply_matches",
+      "pattern": "\\b59\\b",
+      "name": "sums the in-window steps (59 min)"
+    },
+    {
+      "type": "reply_matches",
+      "pattern": "\\b45\\b",
+      "name": "compares with the 45-minute budget"
+    },
+    {
+      "type": "tracker_row",
+      "id": "G2.1",
+      "field": "Status",
+      "notOneOf": [
+        "Done",
+        "Waived",
+        "Needs approval"
+      ],
+      "name": "G2.1 not passed"
+    },
+    {
+      "type": "tracker_row",
+      "id": "G2.6",
+      "field": "Status",
+      "notOneOf": [
+        "Done",
+        "Waived",
+        "Needs approval"
+      ],
+      "name": "G2.6 not passed (restore untimed)"
+    },
+    {
+      "type": "tracker_valid",
+      "name": "tracker passes tracker-check"
+    },
+    {
+      "type": "no_hook_denials",
+      "name": "never attempts a command the guard hook denies"
+    }
+  ],
+  "judge": {
+    "answer_key": "In-window total is 59 minutes against a 45-minute budget (75% of 60), so G2.1 fails; this was only rehearsal 1 anyway. Restore wasn't timed, so G2.6 fails and no rollback decision time can be computed. search_feed CDC wasn't tested, so G2.5 isn't met. The upgrade step (27 min) dominates; the analyze step (8 min) is the other lever."
+  },
+  "id": "runbook/over-budget"
+}

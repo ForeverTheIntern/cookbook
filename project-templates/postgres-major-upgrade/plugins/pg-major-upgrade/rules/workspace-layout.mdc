@@ -1,0 +1,54 @@
+---
+description: Where upgrade-project files live, how to find the plugin's own files, and how to run its scripts. Always applies.
+alwaysApply: true
+---
+
+# Upgrade workspace layout
+
+## Project files
+
+Project files live in an `upgrade/` folder at the workspace root. In a Cursor Project, keep `upgrade/` in the Project's shared context, so every agent sees the same files. If `upgrade/` doesn't exist yet, run the `pg-upgrade-bootstrap` skill instead of creating files ad hoc.
+
+| Path | What it holds |
+|---|---|
+| `upgrade/project.json` | Project facts, following the plugin's `reference/project.schema.json` |
+| `upgrade/tracker.csv` | The tracker, following `reference/tracker-schema.md` |
+| `upgrade/tracker-pending.csv` | Updates waiting to sync to an external tracker backend |
+| `upgrade/results/` | Pasted results that passed the content screen, saved exactly as received |
+| `upgrade/findings/` | Parsed findings and scan reports |
+| `upgrade/gate-reports/` | One report per gate review |
+| `upgrade/reviews/` | Independent review findings |
+| `upgrade/decision-record.md` | The signed decision record |
+| `upgrade/runbook.md` | The runbook, rollback plan and validation steps |
+| `upgrade/sop-feedback.md` | Each place where what happened differed from the SOP |
+| `upgrade/dashboard.canvas.tsx` | The rendered dashboard |
+
+Every change to the tracker goes through the `pg-upgrade-tracker` skill's update procedure, including changes made by other skills. That way the checker and the external-backend sync always run.
+
+## Plugin files and scripts
+
+The plugin root is the folder two levels above any of its `SKILL.md` files. Resolve it to an absolute path first, written here as `<plugin>`. It contains:
+
+- `reference/`: the SOP, sources, schemas and guides.
+- `assets/`: the precheck kit, the tracker seed, and the canvas template.
+- `scripts/`: the tracker check, the dashboard renderer, the source check and the review runners.
+- `agents/`: the reviewer prompts and the findings schema.
+
+Run scripts from the workspace root, with the plugin path made absolute, for example:
+
+```bash
+node "<plugin>/scripts/tracker-check.mjs" upgrade/tracker.csv
+```
+
+If a script or reference file isn't where this rule says, stop and report the missing path. Don't recreate it from memory.
+
+## Screen before saving
+
+Before saving any pasted text (precheck output, a handoff, a timing sheet) into `upgrade/`, screen it. Look for:
+
+- Rows of table data.
+- Query text with literal values.
+- Connection strings with passwords.
+- Tokens or keys.
+
+If any is present, don't save it. Ask for a clean version instead, and name what you found, without repeating the values.

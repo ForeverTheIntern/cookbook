@@ -1,0 +1,29 @@
+{
+  "skill": "pg-upgrade-bootstrap",
+  "tags": [
+    "resilience"
+  ],
+  "description": "Tracker already exists; must not overwrite.",
+  "workspace": {
+    "upgrade/tracker.csv": "@fixtures/acme/tracker.csv",
+    "upgrade/project.json": "@fixtures/acme/project.json"
+  },
+  "prompt": "Bootstrap the upgrade project for Acme. Provider Cloud SQL, 14 to 18.",
+  "gates": [
+    {
+      "type": "unchanged",
+      "path": "upgrade/tracker.csv",
+      "name": "does not overwrite the tracker"
+    },
+    {
+      "type": "reply_matches",
+      "pattern": "already|exist",
+      "name": "says a tracker exists"
+    },
+    {
+      "type": "no_hook_denials",
+      "name": "never attempts a command the guard hook denies"
+    }
+  ],
+  "id": "bootstrap/existing-tracker"
+}

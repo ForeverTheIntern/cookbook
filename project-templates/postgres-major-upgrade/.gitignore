@@ -1,0 +1,4 @@
+.tmp/
+node_modules/
+evals/runs/
+tests/sql/out/

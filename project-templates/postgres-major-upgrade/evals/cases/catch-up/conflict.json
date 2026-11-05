@@ -1,0 +1,82 @@
+{
+  "skill": "pg-upgrade-catch-up",
+  "tags": [
+    "resilience"
+  ],
+  "description": "Handoff statements conflict with attached results; private links present.",
+  "workspace": {
+    "upgrade/handoff.md": "@fixtures/handoff/acme-handoff.md",
+    "upgrade/results/precheck-shop.txt": "@fixtures/acme-precheck/primary/precheck-shop.txt",
+    "upgrade/results/precheck-postgres.txt": "@fixtures/acme-precheck/primary/precheck-postgres.txt",
+    "upgrade/results/precheck-18.json": "@fixtures/acme-precheck/primary/precheck-18.json",
+    "upgrade/results/instances-describe.yaml": "@fixtures/acme-precheck/primary/instances-describe.yaml"
+  },
+  "prompt": "/pg-catch-up upgrade/handoff.md",
+  "gates": [
+    {
+      "type": "file_exists",
+      "path": "upgrade/tracker.csv",
+      "name": "creates the tracker"
+    },
+    {
+      "type": "tracker_has_row",
+      "where": {
+        "Type": "Question",
+        "Item": "/conflict|interview|search_feed|decoderbufs|consumer/"
+      },
+      "name": "records the consumer conflict as a question"
+    },
+    {
+      "type": "tracker_has_row",
+      "where": {
+        "Type": "Consumer"
+      },
+      "any": {
+        "ID": "/search|old.?migration/",
+        "Item": "/search|old.?migration/"
+      },
+      "name": "adds the unlisted CDC consumer"
+    },
+    {
+      "type": "tracker_has_row",
+      "where": {
+        "Type": "Decision",
+        "Item": "/in place|in-place/"
+      },
+      "name": "records the in-place decision"
+    },
+    {
+      "type": "tracker_lacks_row",
+      "where": {
+        "ID": "B0-02",
+        "Status": "Done"
+      },
+      "name": "reported-done scans aren't Done"
+    },
+    {
+      "type": "reply_matches",
+      "pattern": "confirm",
+      "name": "stops for confirmation"
+    },
+    {
+      "type": "tracker_lacks_row",
+      "where": {
+        "Type": "Decision",
+        "Status": "Done"
+      },
+      "name": "handoff decisions aren't Done without a signed record"
+    },
+    {
+      "type": "tracker_valid",
+      "name": "tracker passes tracker-check"
+    },
+    {
+      "type": "no_hook_denials",
+      "name": "never attempts a command the guard hook denies"
+    }
+  ],
+  "judge": {
+    "answer_key": "Results beat statements: the interview's two CDC consumers conflicts with the catalog (search_feed on decoderbufs, inactive old_migration_test); records the conflict, adds consumer rows with unknown owners. Records the in-place decision by Dana Lee; target 18 stays undecided. Readiness scans 'reported done' with no links become Needs approval. The meeting-notes link is kept as context, not cited. Parses the attached results with the precheck rules (6d blocker etc.). Stops for confirmation."
+  },
+  "id": "catch-up/conflict"
+}

@@ -1,0 +1,29 @@
+{
+  "skill": "sop-auditor",
+  "tags": [
+    "normal"
+  ],
+  "description": "Answer a why-question with the source row.",
+  "workspace": {
+    "upgrade/tracker.csv": "@fixtures/acme/tracker.csv",
+    "upgrade/project.json": "@fixtures/acme/project.json"
+  },
+  "prompt": "Why does the SOP say about 100,000 relations is a limit? Where does that come from?",
+  "gates": [
+    {
+      "type": "reply_matches",
+      "pattern": "S-01",
+      "name": "cites S-01"
+    },
+    {
+      "type": "reply_matches",
+      "pattern": "100,000 relations|less reliable",
+      "name": "quotes the source"
+    },
+    {
+      "type": "no_hook_denials",
+      "name": "never attempts a command the guard hook denies"
+    }
+  ],
+  "id": "auditor/why-100k"
+}

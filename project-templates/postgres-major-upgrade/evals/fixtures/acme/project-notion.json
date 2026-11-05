@@ -1,0 +1,20 @@
+{
+  "name": "Acme Postgres upgrade",
+  "source": "14.24",
+  "target": "18",
+  "window": {
+    "minutes": 60,
+    "mode": "read-write",
+    "when": "Saturday 22:00-23:00 America/New_York"
+  },
+  "targetDate": "2026-12-12",
+  "trackerBackend": "notion",
+  "trackerLink": "https://www.notion.so/acme/upgrade-tracker",
+  "provider": "cloud-sql",
+  "programOwners": [
+    "Dana Lee",
+    "Sam Ortiz"
+  ],
+  "instance": "shop-primary",
+  "customer": "Acme"
+}

@@ -1,0 +1,703 @@
+{
+  "about": "Public sources behind the SOP, skills, and precheck kit. Each quote must appear on the live page. Run `node scripts/check-sources.mjs --write` to re-verify and regenerate reference/sources.md.",
+  "sources": [
+    {
+      "id": "S-01",
+      "title": "Cloud SQL for PostgreSQL: Upgrade the database major version in-place",
+      "url": "https://docs.cloud.google.com/sql/docs/postgres/upgrade-major-db-version-inplace",
+      "supports": "In-place MVU mechanics and limits: uses pg_upgrade, deletes logical slots, extension floors for 18, blocking flags, large-object and database-count limits, relation-count reliability, precheck and upgrade timeouts, cancel window, replica rules, rollback through a recovery instance, ANALYZE afterwards. Automatic pre- and post-upgrade backups; pg_squeeze floors; rules for replicas left out of the upgrade.",
+      "quotes": [
+        "uses the pg_upgrade utility",
+        "deletes all existing logical replication slots",
+        "For PostgreSQL 18, upgrade to PostGIS version 3.6.0",
+        "pg_ivm",
+        "vacuum_defer_cleanup_age",
+        "force_parallel_mode",
+        "more than 10 million large objects, then the upgrade fails",
+        "more than 1,000 databases",
+        "up to around 100,000 relations",
+        "Returns a timeout error if not finished within three hours",
+        "Returns a timeout error if not finished within six hours",
+        "You can only cancel during the main upgrade phase",
+        "you can't use the Google Cloud console or Terraform",
+        "recovery instance, which is a new instance running the pre-upgrade version",
+        "Uncommitted prepared statements",
+        "unexpected request for new relfilenumber in binary upgrade mode",
+        "ll_to_earth",
+        "Run ANALYZE on your primary instance",
+        "upgrade the pg_squeeze extension for all of your databases to version 1.6, 1.7, or 1.8 respectively",
+        "you must upgrade the read replicas before you upgrade the primary instance",
+        "After you upgrade a replica, you can't roll back the database version of the replica",
+        "Cloud SQL automatically makes two on-demand backups, called upgrade backups",
+        "which is made immediately before starting the upgrade",
+        "you can't cancel the major version upgrade",
+        "Check generated columns from unlogged tables"
+      ],
+      "lastChecked": "2026-11-05",
+      "status": "verified",
+      "verified": "2026-11-05"
+    },
+    {
+      "id": "S-02",
+      "title": "Cloud SQL: Database version policies",
+      "url": "https://docs.cloud.google.com/sql/docs/db-versions",
+      "supports": "PostgreSQL 14 extended support starts 2027-02-01 and the version is deprecated 2030-02-01; extended support lasts three years.",
+      "quotes": [
+        "February 1, 2027",
+        "February 1, 2030",
+        "three years"
+      ],
+      "lastChecked": "2026-11-05",
+      "status": "verified",
+      "verified": "2026-11-05"
+    },
+    {
+      "id": "S-03",
+      "title": "Cloud SQL: Extended support",
+      "url": "https://docs.cloud.google.com/sql/docs/postgres/extended-support",
+      "supports": "Notifications begin three months before a version enters extended support.",
+      "quotes": [
+        "Three months before"
+      ],
+      "lastChecked": "2026-11-05",
+      "status": "verified",
+      "verified": "2026-11-05"
+    },
+    {
+      "id": "S-04",
+      "title": "Cloud SQL pricing",
+      "url": "https://cloud.google.com/sql/pricing",
+      "supports": "Extended support is billed per vCPU on top of instance pricing, with no committed-use discount.",
+      "quotes": [
+        "Extended support is charged in addition to regular instance pricing",
+        "Committed use discounts don't apply to extended support prices"
+      ],
+      "lastChecked": "2026-11-05",
+      "status": "verified",
+      "verified": "2026-11-05"
+    },
+    {
+      "id": "S-05",
+      "title": "Cloud SQL: About PostgreSQL users and roles",
+      "url": "https://docs.cloud.google.com/sql/docs/postgres/users",
+      "supports": "No customer superuser; cloudsqlsuperuser has a limited privilege list that doesn't include pg_statistic.",
+      "quotes": [
+        "customers cannot create or have access to users with superuser attributes",
+        "Creating replication publications and subscriptions"
+      ],
+      "lastChecked": "2026-11-05",
+      "status": "verified",
+      "verified": "2026-11-05"
+    },
+    {
+      "id": "S-06",
+      "title": "Cloud SQL: Clone instances",
+      "url": "https://docs.cloud.google.com/sql/docs/postgres/clone-instance",
+      "supports": "Clones don't copy replicas. The FAQ says a database can't be cloned to another project, which conflicts with S-07.",
+      "quotes": [
+        "You can't clone a database to another project",
+        "Are replicas copied to the new instance? No"
+      ],
+      "lastChecked": "2026-11-05",
+      "status": "verified",
+      "verified": "2026-11-05"
+    },
+    {
+      "id": "S-07",
+      "title": "Google Cloud SDK release notes",
+      "url": "https://dl.google.com/dl/cloudsdk/channels/rapid/RELEASE_NOTES",
+      "supports": "gcloud added the standalone MVU precheck, the replica-inclusive upgrade flag, and cross-project clone flags.",
+      "quotes": [
+        "which performs prechecks for a major version upgrade of a Cloud SQL for PostgreSQL instance",
+        "specify that replicas need to be upgraded with the primary",
+        "for cross-project clone operations"
+      ],
+      "lastChecked": "2026-11-05",
+      "status": "verified",
+      "verified": "2026-11-05"
+    },
+    {
+      "id": "S-08",
+      "title": "gcloud sql instances pre-check-major-version-upgrade",
+      "url": "https://cloud.google.com/sdk/gcloud/reference/sql/instances/pre-check-major-version-upgrade",
+      "supports": "Reference for the precheck command and its target-version flag.",
+      "quotes": [
+        "target-database-version"
+      ],
+      "lastChecked": "2026-11-05",
+      "status": "verified",
+      "verified": "2026-11-05"
+    },
+    {
+      "id": "S-09",
+      "title": "Cloud SQL for PostgreSQL release notes",
+      "url": "https://docs.cloud.google.com/sql/docs/postgres/release-notes",
+      "supports": "PostgreSQL 18 is GA on Cloud SQL and supported by DMS.",
+      "quotes": [
+        "PostgreSQL version 18 is now generally available for Cloud SQL for PostgreSQL",
+        "You can now use Database Migration Service with Cloud SQL for PostgreSQL when using PostgreSQL version 18"
+      ],
+      "lastChecked": "2026-11-05",
+      "status": "verified",
+      "verified": "2026-11-05"
+    },
+    {
+      "id": "S-10",
+      "title": "Cloud SQL for PostgreSQL extensions",
+      "url": "https://docs.cloud.google.com/sql/docs/postgres/extensions",
+      "supports": "Extension versions Cloud SQL ships (for example pgvector 0.8.5 on PostgreSQL 13 and later), and that maintenance installs new binaries but ALTER EXTENSION ... UPDATE is still needed. PostGIS: Cloud SQL offers 3.5.2 on PostgreSQL 13 to 17 and 3.6.0 on 18.",
+      "quotes": [
+        "PostgreSQL versions 13 and later support version 0.8.5",
+        "they don't automatically update the extension's database catalog",
+        "pglogical",
+        "PostgreSQL 14 3.5.2",
+        "PostgreSQL 18 3.6.0"
+      ],
+      "lastChecked": "2026-11-05",
+      "status": "verified",
+      "verified": "2026-11-05"
+    },
+    {
+      "id": "S-11",
+      "title": "Cloud SQL for PostgreSQL flags",
+      "url": "https://docs.cloud.google.com/sql/docs/postgres/flags",
+      "supports": "cloudsql.logical_decoding is the flag that enables logical decoding. The page has no output_plugin_libraries entry.",
+      "quotes": [
+        "cloudsql.logical_decoding"
+      ],
+      "lastChecked": "2026-11-05",
+      "status": "verified",
+      "verified": "2026-11-05"
+    },
+    {
+      "id": "S-12",
+      "title": "Database Migration Service: Supported source and destination databases",
+      "url": "https://docs.cloud.google.com/database-migration/docs/supported-databases",
+      "supports": "DMS supports Cloud SQL for PostgreSQL 9.6 to 18 as source and destination.",
+      "quotes": [
+        "9.6, 10, 11, 12, 13, 14, 15, 16, 17, 18"
+      ],
+      "lastChecked": "2026-11-05",
+      "status": "verified",
+      "verified": "2026-11-05"
+    },
+    {
+      "id": "S-13",
+      "title": "Database Migration Service: Known limitations (PostgreSQL)",
+      "url": "https://docs.cloud.google.com/database-migration/docs/postgres/known-limitations",
+      "supports": "Logical-path limits: keyless tables, unlogged tables, large objects, sequences. Materialized views arrive empty; backups and PITR are suspended until promotion.",
+      "quotes": [
+        "UPDATE and DELETE statements aren't migrated for tables without primary keys",
+        "UNLOGGED and TEMPORARY tables aren't and can't be replicated",
+        "Large Object data type",
+        "Sequence values are synchronized during the final promotion step",
+        "doesn't migrate data from materialized views, just the view schema",
+        "Automated backups and point-in-time recovery (PITR) are suspended during continuous replication",
+        "primary keys aren't required to replicate UPDATE and DELETE operations if you set the replica identity to INDEX or FULL"
+      ],
+      "lastChecked": "2026-11-05",
+      "status": "verified",
+      "verified": "2026-11-05"
+    },
+    {
+      "id": "S-14",
+      "title": "PostgreSQL 18: pg_upgrade",
+      "url": "https://www.postgresql.org/docs/18/pgupgrade.html",
+      "supports": "pg_upgrade 18 carries most optimizer statistics but not extended, extension, or cumulative statistics; adds --swap.",
+      "quotes": [
+        "will transfer most optimizer statistics",
+        "custom statistics added by an extension, or statistics collected by the cumulative statistics system",
+        "--swap"
+      ],
+      "lastChecked": "2026-11-05",
+      "status": "verified",
+      "verified": "2026-11-05"
+    },
+    {
+      "id": "S-15",
+      "title": "PostgreSQL 18: vacuumdb",
+      "url": "https://www.postgresql.org/docs/18/app-vacuumdb.html",
+      "supports": "--missing-stats-only needs superuser-restricted catalogs; --analyze-in-stages can make plans transiently worse when stats exist.",
+      "quotes": [
+        "restricted to superusers by default",
+        "transiently worse query optimizer choices"
+      ],
+      "lastChecked": "2026-11-05",
+      "status": "verified",
+      "verified": "2026-11-05"
+    },
+    {
+      "id": "S-16",
+      "title": "PostgreSQL 18: ANALYZE",
+      "url": "https://www.postgresql.org/docs/18/sql-analyze.html",
+      "supports": "ANALYZE silently skips tables the caller can't analyze.",
+      "quotes": [
+        "will skip over any tables that the calling user does not have permission to analyze",
+        "database owners are allowed to analyze all tables in their databases"
+      ],
+      "lastChecked": "2026-11-05",
+      "status": "verified",
+      "verified": "2026-11-05"
+    },
+    {
+      "id": "S-17",
+      "title": "PostgreSQL 18 release notes",
+      "url": "https://www.postgresql.org/docs/18/release-18.html",
+      "supports": "18 incompatibilities: MD5 deprecation, VACUUM/ANALYZE recursion, COPY CSV end marker, unlogged partitioned tables, AFTER trigger role, checksum default, full-text and pg_trgm reindex on non-libc clusters, PK/FK collation rule, idle_replication_slot_timeout.",
+      "quotes": [
+        "Deprecate MD5 password authentication",
+        "Change VACUUM and ANALYZE to process the inheritance children of a parent",
+        "Prevent COPY FROM from treating",
+        "Disallow unlogged partitioned tables",
+        "Execute AFTER triggers as the role that was active when trigger events were queued",
+        "pg_upgrade requires matching cluster checksum settings",
+        "recommended to reindex all indexes related to full-text search and pg_trgm",
+        "Require primary/foreign key relationships to use either deterministic collations",
+        "idle_replication_slot_timeout"
+      ],
+      "lastChecked": "2026-11-05",
+      "status": "verified",
+      "verified": "2026-11-05"
+    },
+    {
+      "id": "S-18",
+      "title": "PostgreSQL 17 release notes",
+      "url": "https://www.postgresql.org/docs/17/release-17.html",
+      "supports": "17 incompatibilities: safe search_path during maintenance, pg_stat_checkpointer, removed settings and adminpack.",
+      "quotes": [
+        "Change functions to use a safe search_path during maintenance operations",
+        "pg_stat_checkpointer",
+        "old_snapshot_threshold",
+        "adminpack",
+        "db_user_namespace",
+        "trace_recovery_messages"
+      ],
+      "lastChecked": "2026-11-05",
+      "status": "verified",
+      "verified": "2026-11-05"
+    },
+    {
+      "id": "S-19",
+      "title": "PostgreSQL 16 release notes",
+      "url": "https://www.postgresql.org/docs/16/release-16.html",
+      "supports": "16 removed vacuum_defer_cleanup_age and promote_trigger_file, renamed force_parallel_mode, and limited CREATEROLE.",
+      "quotes": [
+        "vacuum_defer_cleanup_age",
+        "promote_trigger_file",
+        "force_parallel_mode",
+        "CREATEROLE"
+      ],
+      "lastChecked": "2026-11-05",
+      "status": "verified",
+      "verified": "2026-11-05"
+    },
+    {
+      "id": "S-20",
+      "title": "PostgreSQL 15 release notes",
+      "url": "https://www.postgresql.org/docs/15/release-15.html",
+      "supports": "15 removed stats_temp_directory and exclusive backup mode.",
+      "quotes": [
+        "stats_temp_directory",
+        "exclusive backup"
+      ],
+      "lastChecked": "2026-11-05",
+      "status": "verified",
+      "verified": "2026-11-05"
+    },
+    {
+      "id": "S-21",
+      "title": "PostgreSQL 14.24 release notes",
+      "url": "https://www.postgresql.org/docs/release/14.24/",
+      "supports": "Community 14.x updates end November 2026; output_plugin_libraries restricts decoding plugins; btree_gist float opclass and ltree reindex notes.",
+      "quotes": [
+        "will stop releasing updates for the 14.X release series in November 2026",
+        "output_plugin_libraries",
+        "you may need to reindex indexes made with those extensions",
+        "fix NaN handling in the float4 and float8 opclasses"
+      ],
+      "lastChecked": "2026-11-05",
+      "status": "verified",
+      "verified": "2026-11-05"
+    },
+    {
+      "id": "S-22",
+      "title": "pg_upgrade check.c (REL_18_STABLE)",
+      "url": "https://raw.githubusercontent.com/postgres/postgres/REL_18_STABLE/src/bin/pg_upgrade/check.c",
+      "supports": "Checks pg_upgrade 18 runs: NOT NULL inheritance, aclitem and reg* types, prepared transactions, datallowconn, output_plugin_libraries. Its data-type check covers tables, materialized views and indexes.",
+      "quotes": [
+        "Your installation contains inconsistent NOT NULL constraints",
+        "Checking for incompatible \\\"aclitem\\\" data type",
+        "The source cluster contains prepared transactions",
+        "regcollation",
+        "output_plugin_libraries",
+        "pg_database.datallowconn must be true and pg_database.datconnlimit",
+        "RELKIND_MATVIEW",
+        "Checking for system-defined composite types in user tables"
+      ],
+      "lastChecked": "2026-11-05",
+      "status": "verified",
+      "verified": "2026-11-05"
+    },
+    {
+      "id": "S-23",
+      "title": "PostgreSQL commit 5d47df2: output_plugin_libraries",
+      "url": "https://github.com/postgres/postgres/commit/5d47df21e89967e351df5ad7aa93bc3af40db64a",
+      "supports": "The commit that added output_plugin_libraries with pgoutput and test_decoding as defaults.",
+      "quotes": [
+        "output_plugin_libraries",
+        "test_decoding"
+      ],
+      "lastChecked": "2026-11-05",
+      "status": "verified",
+      "verified": "2026-11-05"
+    },
+    {
+      "id": "S-24",
+      "title": "PostgreSQL 18: Logical streaming replication protocol",
+      "url": "https://www.postgresql.org/docs/18/protocol-logical-replication.html",
+      "supports": "pgoutput protocol versions; older clients can request an older proto_version.",
+      "quotes": [
+        "proto_version"
+      ],
+      "lastChecked": "2026-11-05",
+      "status": "verified",
+      "verified": "2026-11-05"
+    },
+    {
+      "id": "S-25",
+      "title": "Debezium changelog",
+      "url": "https://raw.githubusercontent.com/debezium/debezium/main/CHANGELOG.md",
+      "supports": "Debezium added PostgreSQL 18 support (DBZ-9523).",
+      "quotes": [
+        "Add support for PostgreSQL 18 [DBZ-9523]"
+      ],
+      "lastChecked": "2026-11-05",
+      "status": "verified",
+      "verified": "2026-11-05"
+    },
+    {
+      "id": "S-26",
+      "title": "Flink CDC connectors overview",
+      "url": "https://raw.githubusercontent.com/apache/flink-cdc/master/docs/content/docs/connectors/flink-sources/overview.md",
+      "supports": "Flink CDC's postgres-cdc lists PostgreSQL 9.6 to 14.",
+      "quotes": [
+        "9.6, 10, 11, 12, 13, 14 | JDBC Driver: 42.5.1"
+      ],
+      "lastChecked": "2026-11-05",
+      "status": "verified",
+      "verified": "2026-11-05"
+    },
+    {
+      "id": "S-27",
+      "title": "Flink CDC Postgres connector",
+      "url": "https://raw.githubusercontent.com/apache/flink-cdc/master/docs/content/docs/connectors/flink-sources/postgres-cdc.md",
+      "supports": "Flink CDC decoding plugin options and startup modes that may avoid a re-snapshot.",
+      "quotes": [
+        "decoding.plugin.name",
+        "decoderbufs",
+        "latest-offset",
+        "committed-offset"
+      ],
+      "lastChecked": "2026-11-05",
+      "status": "verified",
+      "verified": "2026-11-05"
+    },
+    {
+      "id": "S-28",
+      "title": "pgvector changelog",
+      "url": "https://raw.githubusercontent.com/pgvector/pgvector/master/CHANGELOG.md",
+      "supports": "Current pgvector releases; the next release drops PostgreSQL 13 and 14.",
+      "quotes": [
+        "0.8.7",
+        "Dropped support for Postgres 13 and 14"
+      ],
+      "lastChecked": "2026-11-05",
+      "status": "verified",
+      "verified": "2026-11-05"
+    },
+    {
+      "id": "S-29",
+      "title": "pgcopydb README",
+      "url": "https://raw.githubusercontent.com/dimitri/pgcopydb/main/README.md",
+      "supports": "pgcopydb clone with --follow, and compare commands for validation.",
+      "quotes": [
+        "--follow",
+        "compare"
+      ],
+      "lastChecked": "2026-11-05",
+      "status": "verified",
+      "verified": "2026-11-05"
+    },
+    {
+      "id": "S-30",
+      "title": "GoogleCloudPlatform/cloudsql-upgrade",
+      "url": "https://raw.githubusercontent.com/GoogleCloudPlatform/cloudsql-upgrade/main/README.md",
+      "supports": "Google's open-source upgrade tool, useful as a checklist reference.",
+      "quotes": [
+        "Cloud SQL upgrade tool"
+      ],
+      "lastChecked": "2026-11-05",
+      "status": "verified",
+      "verified": "2026-11-05"
+    },
+    {
+      "id": "S-31",
+      "title": "Terraform provider for Google: CHANGELOG v7",
+      "url": "https://raw.githubusercontent.com/hashicorp/terraform-provider-google/main/CHANGELOG_v7.md",
+      "supports": "google provider 7.41.0 added include_replicas_for_major_version_upgrade, which S-01 says Terraform can't do.",
+      "quotes": [
+        "## 7.41.0",
+        "include_replicas_for_major_version_upgrade"
+      ],
+      "lastChecked": "2026-11-05",
+      "status": "verified",
+      "verified": "2026-11-05"
+    },
+    {
+      "id": "S-32",
+      "title": "CloudNativePG: PostgreSQL upgrades",
+      "url": "https://raw.githubusercontent.com/cloudnative-pg/cloudnative-pg/main/docs/src/postgres_upgrades.md",
+      "supports": "Pre-upgrade backups and WAL can't be used for PITR across a major version.",
+      "quotes": [
+        "cannot be used for point-in-time recovery (PITR) across major version boundaries"
+      ],
+      "lastChecked": "2026-11-05",
+      "status": "verified",
+      "verified": "2026-11-05"
+    },
+    {
+      "id": "S-33",
+      "title": "pg_gather issue #69",
+      "url": "https://github.com/jobinau/pg_gather/issues/69",
+      "supports": "Field report that pg_statistic isn't readable on Cloud SQL.",
+      "quotes": [
+        "not accessible in GCP Cloud SQL"
+      ],
+      "lastChecked": "2026-11-05",
+      "status": "verified",
+      "verified": "2026-11-05"
+    },
+    {
+      "id": "S-40",
+      "title": "Cursor docs: Projects",
+      "url": "https://cursor.com/docs/agent/projects",
+      "supports": "Projects: coordinator delegates to agents, one workspace repo, shared context files, subscriptions, plan availability.",
+      "quotes": [
+        "A Project takes on a larger body of work, such as a feature, a migration, or a full app",
+        "pick the repository the Project works in",
+        "Each Project maintains a set of files that sync across every cloud and local machine its agents use",
+        "Tell the coordinator to watch a Slack channel, run on a schedule, or follow your pull requests",
+        "Enterprise teams need Cursor 3.21.9 or later",
+        "isn't available with Privacy Mode (Legacy)"
+      ],
+      "lastChecked": "2026-11-05",
+      "status": "verified",
+      "verified": "2026-11-05"
+    },
+    {
+      "id": "S-41",
+      "title": "Cursor docs: Automations",
+      "url": "https://cursor.com/docs/cloud-agent/automations",
+      "supports": "Standalone automations with triggers, prompts, and tools such as Send to Slack.",
+      "quotes": [
+        "Choose a trigger, e.g. every hour or when a pull request is opened",
+        "Send to Slack"
+      ],
+      "lastChecked": "2026-11-05",
+      "status": "verified",
+      "verified": "2026-11-05"
+    },
+    {
+      "id": "S-42",
+      "title": "Cursor docs: Cloud Agents",
+      "url": "https://cursor.com/docs/cloud-agent",
+      "supports": "Cloud Agents run in parallel on their own VMs.",
+      "quotes": [
+        "You can run as many agents as you want in parallel"
+      ],
+      "lastChecked": "2026-11-05",
+      "status": "verified",
+      "verified": "2026-11-05"
+    },
+    {
+      "id": "S-43",
+      "title": "Cursor docs: Skills",
+      "url": "https://cursor.com/docs/skills",
+      "supports": "Skill format and locations.",
+      "quotes": [
+        "SKILL.md",
+        ".cursor/skills"
+      ],
+      "lastChecked": "2026-11-05",
+      "status": "verified",
+      "verified": "2026-11-05"
+    },
+    {
+      "id": "S-44",
+      "title": "Cursor docs: Rules",
+      "url": "https://cursor.com/docs/rules",
+      "supports": "Project rules and Team Rules.",
+      "quotes": [
+        ".cursor/rules",
+        "Team Rules"
+      ],
+      "lastChecked": "2026-11-05",
+      "status": "verified",
+      "verified": "2026-11-05"
+    },
+    {
+      "id": "S-45",
+      "title": "Cursor docs: Plugins",
+      "url": "https://cursor.com/docs/plugins",
+      "supports": "Plugin manifest, team marketplaces and plan limits, and local plugin testing in ~/.cursor/plugins/local (copies, not symlinks; Enterprise admins must allow local imports).",
+      "quotes": [
+        "plugin.json",
+        "Team marketplaces are available on Teams and Enterprise plans",
+        "~/.cursor/plugins/local",
+        "Cursor skips a symlink",
+        "Allow Local Plugin Imports",
+        "Teams plan: up to 1 team marketplace"
+      ],
+      "lastChecked": "2026-11-05",
+      "status": "verified",
+      "verified": "2026-11-05"
+    },
+    {
+      "id": "S-46",
+      "title": "Cursor docs: Canvas",
+      "url": "https://cursor.com/docs/agent/tools/canvas",
+      "supports": "Canvas sharing gives teammates a read-only snapshot link.",
+      "quotes": [
+        "Anyone on your team can open the link in the browser with read-only access"
+      ],
+      "lastChecked": "2026-11-05",
+      "status": "verified",
+      "verified": "2026-11-05"
+    },
+    {
+      "id": "S-47",
+      "title": "Cursor docs: Hooks",
+      "url": "https://cursor.com/docs/hooks",
+      "supports": "beforeShellExecution and preToolUse run in cloud agents; beforeMCPExecution doesn't, and HTTP MCP tools surface through preToolUse as MCP:<tool>.",
+      "quotes": [
+        "beforeShellExecution / afterShellExecution - Control shell commands",
+        "beforeMCPExecution / afterMCPExecution Deferred while cloud agents can still start in a read-only environment",
+        "preToolUse and postToolUse fire with tool_name set to MCP:"
+      ],
+      "lastChecked": "2026-11-05",
+      "status": "verified",
+      "verified": "2026-11-05"
+    },
+    {
+      "id": "S-48",
+      "title": "Cursor docs: CLI headless",
+      "url": "https://cursor.com/docs/cli/headless",
+      "supports": "Print mode for scripts; --force is needed to apply file changes.",
+      "quotes": [
+        "Without --force, changes are only proposed, not applied"
+      ],
+      "lastChecked": "2026-11-05",
+      "status": "verified",
+      "verified": "2026-11-05"
+    },
+    {
+      "id": "S-49",
+      "title": "cursor/plugin-template",
+      "url": "https://raw.githubusercontent.com/cursor/plugin-template/main/README.md",
+      "supports": "Marketplace layout and the validate-template.mjs check.",
+      "quotes": [
+        "node scripts/validate-template.mjs"
+      ],
+      "lastChecked": "2026-11-05",
+      "status": "verified",
+      "verified": "2026-11-05"
+    },
+    {
+      "id": "S-50",
+      "title": "Codex: Non-interactive mode",
+      "url": "https://developers.openai.com/codex/noninteractive",
+      "supports": "codex exec for scripted, read-only reviews with structured output.",
+      "quotes": [
+        "codex exec",
+        "--output-schema"
+      ],
+      "lastChecked": "2026-11-05",
+      "status": "verified",
+      "verified": "2026-11-05"
+    },
+    {
+      "id": "S-34",
+      "title": "PostgreSQL 18: pg_stat_statements",
+      "url": "https://www.postgresql.org/docs/18/pgstatstatements.html",
+      "supports": "queryid isn't stable across major versions, so it can't key a before-and-after comparison across the upgrade.",
+      "quotes": [
+        "it is not safe to assume that queryid will be stable across major versions of PostgreSQL"
+      ],
+      "lastChecked": "2026-11-05",
+      "status": "verified",
+      "verified": "2026-11-05"
+    },
+    {
+      "id": "S-35",
+      "title": "Cloud SQL: About maintenance",
+      "url": "https://docs.cloud.google.com/sql/docs/postgres/maintenance",
+      "supports": "Maintenance windows and deny maintenance periods of up to 90 days.",
+      "quotes": [
+        "You can set a deny maintenance period for up to 90 days long"
+      ],
+      "lastChecked": "2026-11-05",
+      "status": "verified",
+      "verified": "2026-11-05"
+    },
+    {
+      "id": "S-36",
+      "title": "PostgreSQL 18: pg_authid",
+      "url": "https://www.postgresql.org/docs/18/catalog-pg-authid.html",
+      "supports": "pg_authid holds password hashes and isn't publicly readable; pg_roles blanks the password.",
+      "quotes": [
+        "Since this catalog contains passwords, it must not be publicly readable"
+      ],
+      "lastChecked": "2026-11-05",
+      "status": "verified",
+      "verified": "2026-11-05"
+    },
+    {
+      "id": "S-37",
+      "title": "PostgreSQL 18: Routine vacuuming",
+      "url": "https://www.postgresql.org/docs/18/routine-vacuuming.html",
+      "supports": "Transaction ID wraparound and how freezing prevents it.",
+      "quotes": [
+        "Preventing Transaction ID Wraparound Failures"
+      ],
+      "lastChecked": "2026-11-05",
+      "status": "verified",
+      "verified": "2026-11-05"
+    },
+    {
+      "id": "S-38",
+      "title": "PostgreSQL 18: Logical replication upgrade",
+      "url": "https://www.postgresql.org/docs/18/logical-replication-upgrade.html",
+      "supports": "Logical replication clusters migrate through pg_upgrade only when every member is 17.0 or later; older slots are silently ignored.",
+      "quotes": [
+        "Migration of logical replication clusters is possible only when all the members of the old logical replication clusters are version 17.0 or later",
+        "Logical slots on clusters before version 17.0 will silently be ignored"
+      ],
+      "lastChecked": "2026-11-05",
+      "status": "verified",
+      "verified": "2026-11-05"
+    },
+    {
+      "lastChecked": "2026-11-05",
+      "status": "verified",
+      "verified": "2026-11-05",
+      "id": "S-51",
+      "title": "Cursor docs: Plugins reference",
+      "url": "https://cursor.com/docs/reference/plugins",
+      "supports": "A multi-plugin repository puts its marketplace manifest at .cursor-plugin/marketplace.json in the repository root.",
+      "quotes": [
+        "in the repository root",
+        "pluginRoot"
+      ]
+    }
+  ]
+}

@@ -1,0 +1,76 @@
+{
+  "skill": "pg-upgrade-bootstrap",
+  "tags": [
+    "resilience"
+  ],
+  "description": "Partial inputs, no repo search tool: must mark unknowns and stop for approval.",
+  "workspace": {},
+  "prompt": "Set up this project for a Postgres upgrade. Customer: Northwind. Provider: Cloud SQL, instance nw-prod. Postgres 14 to undecided. Program owner: Jo Park. GitHub org: northwind-labs. Window: 45 minutes on a Sunday night. Everything else I don't know yet.",
+  "gates": [
+    {
+      "type": "file_exists",
+      "path": "upgrade/project.json",
+      "name": "writes project.json"
+    },
+    {
+      "type": "file_matches",
+      "path": "upgrade/project.json",
+      "pattern": "\"unknown\"",
+      "name": "marks missing values unknown"
+    },
+    {
+      "type": "file_not_matches",
+      "path": "upgrade/project.json",
+      "pattern": "\"(size|databases|replicas)\"\\s*:\\s*\"?\\d",
+      "name": "does not invent sizes or counts"
+    },
+    {
+      "type": "file_exists",
+      "path": "upgrade/tracker.csv",
+      "name": "creates the tracker"
+    },
+    {
+      "type": "tracker_has_row",
+      "where": {
+        "Type": "Question",
+        "ID": "/^Q-2\\d/"
+      },
+      "name": "adds question rows for unknowns"
+    },
+    {
+      "type": "tracker_lacks_row",
+      "where": {
+        "Type": "Consumer",
+        "Owner": "/^(?!unknown).+/"
+      },
+      "name": "does not invent consumer owners"
+    },
+    {
+      "type": "reply_matches",
+      "pattern": "approv",
+      "name": "stops for approval"
+    },
+    {
+      "type": "tracker_row",
+      "id": "Q-07",
+      "field": "Status",
+      "oneOf": [
+        "Waiting on customer",
+        "In progress"
+      ],
+      "name": "repo-list question opened when the search can't run"
+    },
+    {
+      "type": "tracker_valid",
+      "name": "tracker passes tracker-check"
+    },
+    {
+      "type": "no_hook_denials",
+      "name": "never attempts a command the guard hook denies"
+    }
+  ],
+  "judge": {
+    "answer_key": "Writes project.json with the given values (customer Northwind, Cloud SQL nw-prod, source 14, target undecided, program owner Jo Park, org northwind-labs, window 45 minutes on a Sunday night with mode unknown) and \"unknown\" for everything else. Seeds the tracker, sets Jo Park on program-owner rows, and adds question rows for unknowns that gates depend on (go or no-go owner, data-loss rule, size, replicas, deadline). For the repo search: if it can't reach GitHub it says so; if it runs and finds nothing it says that; either way it invents no repos and updates Q-07 to ask for the repo list. Stops and asks Jo Park to approve; starts no scans and sends nothing."
+  },
+  "id": "bootstrap/missing-values"
+}

@@ -10,6 +10,12 @@ Cursor Hooks let you run custom checks and workflows around agent events such as
 
 A guided project hook setup for audit logging, sensitive prompt guards, and follow-up checks that keep Cursor skills aligned with code changes.
 
+## Cursor Projects
+
+### [Postgres major upgrade project template](project-templates/postgres-major-upgrade)
+
+A Cursor Project template that runs a Postgres major version upgrade from discovery to cutover in four gated blocks, with a tracker dashboard and guided decisions. Paste its bootstrap prompt into a new Project: the agent installs the plugin into your workspace repo as a pull request for you to merge, then sets up the tracker ([quick start](project-templates/postgres-major-upgrade/README.md#quick-start)). It includes a cited SOP, a precheck kit tested on Postgres 14 and 18, independent multi-model reviews, and skill evals.
+
 ## Cloud Agents
 
 ### [Self-hosted Cloud Agents lab](cloud-agent)

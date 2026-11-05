@@ -1,0 +1,44 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Independent review findings",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["reviewer", "rubric", "summary", "overall", "findings"],
+  "properties": {
+    "reviewer": { "type": "string" },
+    "rubric": { "type": "string", "enum": ["sop", "skills", "readme", "gate"] },
+    "summary": { "type": "string" },
+    "overall": { "type": "string", "enum": ["ship", "ship-with-fixes", "rework"] },
+    "findings": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "file",
+          "line",
+          "severity",
+          "category",
+          "claim",
+          "evidence",
+          "source_id",
+          "verifiable",
+          "suggested_fix"
+        ],
+        "properties": {
+          "id": { "type": "string" },
+          "file": { "type": "string" },
+          "line": { "type": ["integer", "null"] },
+          "severity": { "type": "string", "enum": ["blocker", "major", "minor"] },
+          "category": { "type": "string" },
+          "claim": { "type": "string" },
+          "evidence": { "type": "string" },
+          "source_id": { "type": ["string", "null"] },
+          "verifiable": { "type": "string", "enum": ["verified", "unverified", "judgment"] },
+          "suggested_fix": { "type": "string" }
+        }
+      }
+    }
+  }
+}

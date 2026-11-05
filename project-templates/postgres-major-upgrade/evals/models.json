@@ -1,0 +1,9 @@
+{
+  "about": "Executors run each case through the Cursor CLI. Pick models from `cursor-agent --list-models`. The judge should be a different model family from every executor.",
+  "cli": "cursor-agent",
+  "executors": ["claude-opus-5-5-high", "composer-2.5"],
+  "judge": { "backend": "codex", "model": "gpt-6-astra", "effort": "medium" },
+  "concurrency": 3,
+  "maxRuns": 120,
+  "timeoutSeconds": 900
+}

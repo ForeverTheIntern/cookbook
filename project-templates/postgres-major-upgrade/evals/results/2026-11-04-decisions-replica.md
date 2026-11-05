@@ -1,0 +1,14 @@
+# Eval results: decisions-replica
+
+Run 2026-11-04T21:04:54.580Z. Hard gates decide pass; the judge score is soft.
+
+| Case | claude-opus-5-5-high | composer-2.5 |
+|---|---|---|
+| decisions/replica-handling | pass (0.50) | FAIL (0.00) |
+
+- **claude-opus-5-5-high**: 1/1 hard-gate passes, mean judge score 0.50
+- **composer-2.5**: 0/1 hard-gate passes, mean judge score 0.00
+
+## Failed gates
+
+- `decisions/replica-handling` on composer-2.5: doesn't mark the decision made for the customer: D-08.Status = "Done"

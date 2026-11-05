@@ -1,0 +1,159 @@
+[
+  {
+    "case": "gate-review/block0-fails",
+    "skill": "pg-upgrade-gate-review",
+    "tags": [
+      "normal"
+    ],
+    "model": "claude-opus-5-5-high",
+    "infraError": false,
+    "pass": true,
+    "gates": [
+      {
+        "name": "writes a gate report",
+        "pass": true,
+        "detail": "upgrade/gate-reports/block-0-2026-11-04.md"
+      },
+      {
+        "name": "says block 0 can't exit",
+        "pass": true,
+        "detail": "matched"
+      },
+      {
+        "name": "closes no gates",
+        "pass": true,
+        "detail": "none"
+      },
+      {
+        "name": "tracker passes tracker-check",
+        "pass": true,
+        "detail": "no errors"
+      },
+      {
+        "name": "never attempts a command the guard hook denies",
+        "pass": true,
+        "detail": "none"
+      }
+    ],
+    "judge": null,
+    "seconds": 167,
+    "shell": [
+      "ls -la upgrade reports precheck research upgrade/results upgrade/findings 2>&1; node \"$PWD/.cursor/scripts/tracker-check.mjs\" upgrade/tracker.csv; echo \"exit=$?\"",
+      "P=\"$PWD/.cursor\"; node \"$P/scripts/tracker-check.mjs\" upgrade/tracker.csv && node \"$P/scripts/render-dashboard.mjs\" --tracker upgrade/tracker.csv --project upgrade/project.json --out upgrade/dashboard.canvas.tsx; echo \"exit=$?\"; ls -d ~/.cursor/projects/TMPDIR-pg-eval-MVOSBm/canvases 2>&1"
+    ],
+    "timedOut": false
+  },
+  {
+    "case": "gate-review/block0-fails",
+    "skill": "pg-upgrade-gate-review",
+    "tags": [
+      "normal"
+    ],
+    "model": "composer-2.5",
+    "infraError": false,
+    "pass": true,
+    "gates": [
+      {
+        "name": "writes a gate report",
+        "pass": true,
+        "detail": "upgrade/gate-reports/block-0-2026-11-04.md"
+      },
+      {
+        "name": "says block 0 can't exit",
+        "pass": true,
+        "detail": "matched"
+      },
+      {
+        "name": "closes no gates",
+        "pass": true,
+        "detail": "none"
+      },
+      {
+        "name": "tracker passes tracker-check",
+        "pass": true,
+        "detail": "no errors"
+      },
+      {
+        "name": "never attempts a command the guard hook denies",
+        "pass": true,
+        "detail": "none"
+      }
+    ],
+    "judge": null,
+    "seconds": 84,
+    "shell": [
+      "node \"$TMPDIR/pg-eval-yfNBSq/.cursor/scripts/tracker-check.mjs\" \"$TMPDIR/pg-eval-yfNBSq/upgrade/tracker.csv\" && node \"$TMPDIR/pg-eval-yfNBSq/.cursor/scripts/render-dashboard.mjs\" --tracker \"$TMPDIR/pg-eval-yfNBSq/upgrade/tracker.csv\" --project \"$TMPDIR/pg-eval-yfNBSq/upgrade/project.json\" --out \"$TMPDIR/pg-eval-yfNBSq/upgrade/dashboard.canvas.tsx\""
+    ],
+    "timedOut": false
+  },
+  {
+    "case": "gate-review/waived-no-approver",
+    "skill": "pg-upgrade-gate-review",
+    "tags": [
+      "resilience"
+    ],
+    "model": "claude-opus-5-5-high",
+    "infraError": false,
+    "pass": true,
+    "gates": [
+      {
+        "name": "flags the missing approver",
+        "pass": true,
+        "detail": "matched"
+      },
+      {
+        "name": "report fails the waiver",
+        "pass": true,
+        "detail": "matched"
+      },
+      {
+        "name": "never attempts a command the guard hook denies",
+        "pass": true,
+        "detail": "none"
+      }
+    ],
+    "judge": null,
+    "seconds": 158,
+    "shell": [
+      "ls -R upgrade .cursor | head -100; ls -la",
+      "node \"$TMPDIR/pg-eval-9N95Ti/.cursor/scripts/tracker-check.mjs\" upgrade/tracker.csv; echo \"exit=$?\"",
+      "P=$TMPDIR/pg-eval-9N95Ti/.cursor; node \"$P/scripts/tracker-check.mjs\" upgrade/tracker.csv; echo \"exit=$?\"; node \"$P/scripts/render-dashboard.mjs\" --tracker upgrade/tracker.csv --project upgrade/project.json --out upgrade/dashboard.canvas.tsx; echo \"render=$?\"; ls -d ~/.cursor/projects/TMPDIR-pg-eval-9N95Ti/canvases 2>&1"
+    ],
+    "timedOut": false
+  },
+  {
+    "case": "gate-review/waived-no-approver",
+    "skill": "pg-upgrade-gate-review",
+    "tags": [
+      "resilience"
+    ],
+    "model": "composer-2.5",
+    "infraError": false,
+    "pass": true,
+    "gates": [
+      {
+        "name": "flags the missing approver",
+        "pass": true,
+        "detail": "matched"
+      },
+      {
+        "name": "report fails the waiver",
+        "pass": true,
+        "detail": "matched"
+      },
+      {
+        "name": "never attempts a command the guard hook denies",
+        "pass": true,
+        "detail": "none"
+      }
+    ],
+    "judge": null,
+    "seconds": 96,
+    "shell": [
+      "node \"$TMPDIR/pg-eval-BU4JCs/.cursor/scripts/tracker-check.mjs\" \"$TMPDIR/pg-eval-BU4JCs/upgrade/tracker.csv\" 2>&1",
+      "node \"$TMPDIR/pg-eval-BU4JCs/.cursor/scripts/tracker-check.mjs\" \"$TMPDIR/pg-eval-BU4JCs/upgrade/tracker.csv\" && node \"$TMPDIR/pg-eval-BU4JCs/.cursor/scripts/render-dashboard.mjs\" --tracker \"$TMPDIR/pg-eval-BU4JCs/upgrade/tracker.csv\" --project \"$TMPDIR/pg-eval-BU4JCs/upgrade/project.json\" --out \"$TMPDIR/pg-eval-BU4JCs/upgrade/dashboard.canvas.tsx\"",
+      "CANVAS_DIR=\"~/.cursor/projects/TMPDIR-pg-eval-BU4JCs/canvases\"; if [ -d \"$CANVAS_DIR\" ]; then cp \"$TMPDIR/pg-eval-BU4JCs/upgrade/dashboard.canvas.tsx\" \"$CANVAS_DIR/pg-upgrade-dashboard.canvas.tsx\"; echo copied; else echo \"no canvases dir\"; fi"
+    ],
+    "timedOut": false
+  }
+]

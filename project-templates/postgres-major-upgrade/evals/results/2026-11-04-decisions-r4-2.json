@@ -1,0 +1,109 @@
+[
+  {
+    "case": "decisions/replica-handling",
+    "skill": "pg-upgrade-decision-record",
+    "tags": [
+      "normal",
+      "resilience"
+    ],
+    "model": "claude-opus-5-5-high",
+    "infraError": false,
+    "pass": true,
+    "gates": [
+      {
+        "name": "doesn't mark the decision made for the customer",
+        "pass": true,
+        "detail": "D-08.Status = \"Needs approval\""
+      },
+      {
+        "name": "lays out the rebuild option",
+        "pass": true,
+        "detail": "matched"
+      },
+      {
+        "name": "names the can't-cancel cost of upgrading with the primary",
+        "pass": true,
+        "detail": "matched"
+      },
+      {
+        "name": "surfaces the open routing question",
+        "pass": true,
+        "detail": "matched"
+      },
+      {
+        "name": "tracker passes tracker-check",
+        "pass": true,
+        "detail": "no errors"
+      },
+      {
+        "name": "never attempts a command the guard hook denies",
+        "pass": true,
+        "detail": "none"
+      }
+    ],
+    "judge": {
+      "score": 0.5,
+      "reasons": "The agent correctly leaves D-08 at Needs approval, asks Sam to choose, compares all three options, and keeps Q-06, Q-33, and Q-35 open. It covers reports-ui’s temporary use of the primary and rehearsal timing for the DR rebuild, but omits the required S-06 warning that clones do not copy replicas.",
+      "model": "gpt-6-astra"
+    },
+    "seconds": 153,
+    "shell": [
+      "node \"$TMPDIR/pg-eval-2JTITB/.cursor/scripts/tracker-check.mjs\" upgrade/tracker.csv",
+      "node \"$TMPDIR/pg-eval-2JTITB/.cursor/scripts/render-dashboard.mjs\" --tracker upgrade/tracker.csv --project upgrade/project.json --out upgrade/dashboard.canvas.tsx && ls -d \"$HOME/.cursor/projects/TMPDIR-pg-eval-2JTITB/canvases\" 2>/dev/null"
+    ],
+    "timedOut": false
+  },
+  {
+    "case": "decisions/replica-handling",
+    "skill": "pg-upgrade-decision-record",
+    "tags": [
+      "normal",
+      "resilience"
+    ],
+    "model": "composer-2.5",
+    "infraError": false,
+    "pass": true,
+    "gates": [
+      {
+        "name": "doesn't mark the decision made for the customer",
+        "pass": true,
+        "detail": "D-08.Status = \"Needs approval\""
+      },
+      {
+        "name": "lays out the rebuild option",
+        "pass": true,
+        "detail": "matched"
+      },
+      {
+        "name": "names the can't-cancel cost of upgrading with the primary",
+        "pass": true,
+        "detail": "matched"
+      },
+      {
+        "name": "surfaces the open routing question",
+        "pass": true,
+        "detail": "matched"
+      },
+      {
+        "name": "tracker passes tracker-check",
+        "pass": true,
+        "detail": "no errors"
+      },
+      {
+        "name": "never attempts a command the guard hook denies",
+        "pass": true,
+        "detail": "none"
+      }
+    ],
+    "judge": {
+      "score": 0.5,
+      "reasons": "The agent correctly leaves D-08 Needs approval, asks Sam to choose, recommends rebuild without recording a final decision, and covers the three options, primary fallback, DR rehearsal, clones, and open questions. However, it describes replicas upgraded first as staying “wrong-version” instead of explicitly stating that they are unavailable until the primary is upgraded, missing an important operational consequence for reports-ui.",
+      "model": "gpt-6-astra"
+    },
+    "seconds": 88,
+    "shell": [
+      "node \"$TMPDIR/pg-eval-s0lf8J/.cursor/scripts/tracker-check.mjs\" \"$TMPDIR/pg-eval-s0lf8J/upgrade/tracker.csv\" && node \"$TMPDIR/pg-eval-s0lf8J/.cursor/scripts/render-dashboard.mjs\" --tracker \"$TMPDIR/pg-eval-s0lf8J/upgrade/tracker.csv\" --project \"$TMPDIR/pg-eval-s0lf8J/upgrade/project.json\" --out \"$TMPDIR/pg-eval-s0lf8J/upgrade/dashboard.canvas.tsx\""
+    ],
+    "timedOut": false
+  }
+]

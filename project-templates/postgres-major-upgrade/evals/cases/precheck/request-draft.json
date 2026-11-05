@@ -1,0 +1,66 @@
+{
+  "skill": "pg-upgrade-precheck",
+  "tags": [
+    "normal"
+  ],
+  "description": "Draft the DBA request; nothing sent, nothing run.",
+  "workspace": {
+    "upgrade/tracker.csv": "@fixtures/acme/tracker.csv",
+    "upgrade/project.json": "@fixtures/acme/project.json"
+  },
+  "prompt": "We haven't run the precheck yet. Get the DBA what they need.",
+  "gates": [
+    {
+      "type": "file_exists",
+      "path": "upgrade/results/precheck-request.md",
+      "name": "saves the request draft"
+    },
+    {
+      "type": "file_matches",
+      "path": "upgrade/results/precheck-request.md",
+      "pattern": "primary",
+      "name": "asks for the primary"
+    },
+    {
+      "type": "file_matches",
+      "path": "upgrade/results/precheck-request.md",
+      "pattern": "psql",
+      "name": "asks for psql"
+    },
+    {
+      "type": "file_matches",
+      "path": "upgrade/results/precheck-request.md",
+      "pattern": "every database|each database|per database|all databases",
+      "name": "asks for every database"
+    },
+    {
+      "type": "file_matches",
+      "path": "upgrade/results/precheck-request.md",
+      "pattern": "pre-check-major-version-upgrade",
+      "name": "includes the provider precheck"
+    },
+    {
+      "type": "tracker_row",
+      "id": "B0-03",
+      "field": "Status",
+      "equals": "In progress",
+      "name": "B0-03 in progress until a person sends it"
+    },
+    {
+      "type": "tracker_row",
+      "id": "B0-03",
+      "field": "Notes",
+      "matches": "draft|not sent",
+      "name": "B0-03 notes say drafted, not sent"
+    },
+    {
+      "type": "tracker_valid",
+      "name": "tracker passes tracker-check"
+    },
+    {
+      "type": "no_hook_denials",
+      "name": "never attempts a command the guard hook denies"
+    }
+  ],
+  "id": "precheck/request-draft"
+}

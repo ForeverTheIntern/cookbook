@@ -1,0 +1,17 @@
+{
+  "preCheckMajorVersionUpgradeContext": {
+    "targetDatabaseVersion": "POSTGRES_18",
+    "preCheckResponse": [
+      {
+        "message": "Logical replication slots will be deleted during the upgrade: debezium_orders, search_feed, old_migration_test.",
+        "messageType": "WARNING",
+        "actionsRequired": ["Record slot configuration and recreate slots after the upgrade."]
+      },
+      {
+        "message": "Extension btree_gist version 1.6 is supported on the target version.",
+        "messageType": "INFO",
+        "actionsRequired": []
+      }
+    ]
+  }
+}

@@ -1,0 +1,68 @@
+{
+  "reviewer": "gpt-6-astra via codex",
+  "rubric": "skills",
+  "summary": "The skills contain strong safety instructions, but several workflows conflict or lack enough state handling to execute reliably. Fix the gate dependencies, catch-up initialization, external tracker synchronization, and independent-review inputs before shipping.",
+  "overall": "rework",
+  "findings": [
+    {
+      "id": "R-01",
+      "file": "review/plugins/pg-major-upgrade/skills/pg-upgrade-precheck/SKILL.md",
+      "line": 40,
+      "severity": "major",
+      "category": "instructions",
+      "claim": "Attaching unresolved remediation findings to G0.3 and G0.4 prevents Block 0 from exiting even when every finding has an owner and a Block 1 fix task. This conflicts with the SOP's intended discovery-to-remediation sequence.",
+      "evidence": "The precheck skill says, \"Errors and warnings from the provider precheck feed G0.3. Everything from the kit (sections 2 to 8) feeds G0.4.\" review/plugins/pg-major-upgrade/skills/pg-upgrade-gate-review/SKILL.md:15–19 requires every feeding row to be Done or Waived. However, review/plugins/pg-major-upgrade/reference/sop.md:39–40 explicitly permits these gates to pass when each error or blocker has an owner and a fix task; remediation is required at G1.1 on line 115.",
+      "source_id": null,
+      "verifiable": "judgment",
+      "suggested_fix": "Make Block 0 gates depend on triage and assignment evidence, and attach remediation findings to G1.1. Preserve the originating gate in a separate field or note."
+    },
+    {
+      "id": "R-02",
+      "file": "review/plugins/pg-major-upgrade/skills/pg-upgrade-catch-up/SKILL.md",
+      "line": 13,
+      "severity": "major",
+      "category": "inputs-and-failure-handling",
+      "claim": "Catch-up can overwrite an existing project configuration when only the tracker is missing. It skips bootstrap's existing-project protection and invokes the step that writes project.json.",
+      "evidence": "Catch-up says, \"If upgrade/tracker.csv doesn't exist, run pg-upgrade-bootstrap steps 2 and 3.\" In review/plugins/pg-major-upgrade/skills/pg-upgrade-bootstrap/SKILL.md:16, step 1 stops if either project.json or tracker.csv exists; step 2 writes project.json, including defaults for trackerBackend and approvedReviewBackends.",
+      "source_id": null,
+      "verifiable": "judgment",
+      "suggested_fix": "Check both files independently. Preserve existing project configuration, create only missing artifacts, and surface conflicts between existing values and the handoff for confirmation."
+    },
+    {
+      "id": "R-03",
+      "file": "review/plugins/pg-major-upgrade/skills/pg-upgrade-tracker/SKILL.md",
+      "line": 59,
+      "severity": "major",
+      "category": "inputs-and-failure-handling",
+      "claim": "The pending-sync workflow requires detecting concurrent backend changes without specifying any saved baseline or revision. It also leaves unresolved conflicts vulnerable to the following backend read overwriting the local pending version.",
+      "evidence": "Step 1 says, \"If the backend's row changed since the pending row was written, report the conflict instead of overwriting either one.\" Step 2 then says to read backend rows and \"Write them to upgrade/tracker.csv.\" Step 4 stores only the changed row in tracker-pending.csv; neither this skill nor review/plugins/pg-major-upgrade/reference/tracker-schema.md defines a baseline revision, conflict state, or replay ordering for repeated pending changes.",
+      "source_id": null,
+      "verifiable": "judgment",
+      "suggested_fix": "Store the original backend revision or row snapshot with each pending update, coalesce repeated changes by ID, and stop synchronization for conflicted rows while preserving both versions."
+    },
+    {
+      "id": "R-04",
+      "file": "review/plugins/pg-major-upgrade/skills/pg-upgrade-precheck/SKILL.md",
+      "line": 39,
+      "severity": "major",
+      "category": "instructions",
+      "claim": "External tracker support is inconsistent across skills: several workflows directly modify the local CSV without using the tracker skill's backend synchronization protocol. Their updates can therefore remain unsynced or be overwritten by the next backend read.",
+      "evidence": "The precheck skill explicitly says, \"Update the tracker with the pg-upgrade-tracker rules.\" In contrast, review/plugins/pg-major-upgrade/skills/pg-upgrade-catch-up/SKILL.md:17–23, pg-upgrade-gate-review/SKILL.md:30–33, and pg-upgrade-runbook/SKILL.md:44–47 instruct direct tracker updates without routing them through that protocol. review/plugins/pg-major-upgrade/skills/pg-upgrade-tracker/SKILL.md:60 replaces upgrade/tracker.csv with backend rows before applying its own change.",
+      "source_id": null,
+      "verifiable": "judgment",
+      "suggested_fix": "Require every skill to perform tracker mutations through one shared read, validate, write, and pending-sync workflow. Define initialization behavior for an external backend as well."
+    },
+    {
+      "id": "R-05",
+      "file": "review/plugins/pg-major-upgrade/skills/pg-upgrade-model-review/SKILL.md",
+      "line": 26,
+      "severity": "major",
+      "category": "inputs-and-output",
+      "claim": "Independent gate reviewers are not given a required evidence bundle or the SOP, although their rubric requires checking linked evidence and SOP requirements. The example invocation can produce an apparently complete review from artifacts alone.",
+      "evidence": "The skill instructs reviewers to see \"only the reviewer prompt, the rubric name and the artifact files\" and its example passes only upgrade/decision-record.md and upgrade/runbook.md. review/plugins/pg-major-upgrade/agents/independent-reviewer.md requires checking whether evidence actually supports completion and whether SOP requirements are missing. review/plugins/pg-major-upgrade/scripts/review-with-codex.sh copies only supplied artifacts plus sources.json into the isolated review directory.",
+      "source_id": null,
+      "verifiable": "judgment",
+      "suggested_fix": "Build a screened review bundle containing the applicable SOP sections, tracker rows, and referenced evidence before invoking reviewers. Treat missing required evidence as an incomplete review even if two reviewers return valid JSON."
+    }
+  ]
+}

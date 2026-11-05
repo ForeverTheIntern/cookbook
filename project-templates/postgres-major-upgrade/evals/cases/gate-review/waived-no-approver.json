@@ -1,0 +1,30 @@
+{
+  "skill": "pg-upgrade-gate-review",
+  "tags": [
+    "resilience"
+  ],
+  "description": "A gate is waived without an approver.",
+  "workspace": {
+    "upgrade/tracker.csv": "@fixtures/acme/tracker-waived-no-approver.csv",
+    "upgrade/project.json": "@fixtures/acme/project.json"
+  },
+  "prompt": "Can G0.7 close? Run the gate review on it.",
+  "gates": [
+    {
+      "type": "reply_matches",
+      "pattern": "approver",
+      "name": "flags the missing approver"
+    },
+    {
+      "type": "file_matches",
+      "path": "upgrade/gate-reports/*.md",
+      "pattern": "fail|approver",
+      "name": "report fails the waiver"
+    },
+    {
+      "type": "no_hook_denials",
+      "name": "never attempts a command the guard hook denies"
+    }
+  ],
+  "id": "gate-review/waived-no-approver"
+}

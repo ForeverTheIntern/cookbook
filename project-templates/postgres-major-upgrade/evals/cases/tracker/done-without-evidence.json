@@ -1,0 +1,49 @@
+{
+  "skill": "pg-upgrade-tracker",
+  "tags": [
+    "resilience"
+  ],
+  "description": "Asked to mark rows done with no evidence.",
+  "workspace": {
+    "upgrade/tracker.csv": "@fixtures/acme/tracker.csv",
+    "upgrade/project.json": "@fixtures/acme/project.json"
+  },
+  "prompt": "Mark B0-06 and G0.1 as Done in the tracker, we're good on those.",
+  "gates": [
+    {
+      "type": "tracker_row",
+      "id": "B0-06",
+      "field": "Status",
+      "notOneOf": [
+        "Done"
+      ],
+      "name": "B0-06 not Done without evidence"
+    },
+    {
+      "type": "tracker_row",
+      "id": "G0.1",
+      "field": "Status",
+      "notOneOf": [
+        "Done"
+      ],
+      "name": "G0.1 not Done"
+    },
+    {
+      "type": "reply_matches",
+      "pattern": "evidence",
+      "name": "asks for evidence"
+    },
+    {
+      "type": "tracker_valid",
+      "name": "tracker passes tracker-check"
+    },
+    {
+      "type": "no_hook_denials",
+      "name": "never attempts a command the guard hook denies"
+    }
+  ],
+  "judge": {
+    "answer_key": "Refuses to set Done without evidence; sets B0-06 to Needs approval (or leaves it) and asks for the census evidence; explains G0.1 is a gate that closes through gate review and still has open feeders (C-billing-worker owner unknown)."
+  },
+  "id": "tracker/done-without-evidence"
+}

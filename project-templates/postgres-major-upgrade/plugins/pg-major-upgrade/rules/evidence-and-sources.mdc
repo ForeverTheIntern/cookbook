@@ -1,0 +1,16 @@
+---
+description: How upgrade-project agents label claims, cite public sources, and record evidence in the tracker. Always applies.
+alwaysApply: true
+---
+
+# Evidence and sources
+
+1. **Label every factual claim** you write in a finding, plan, decision record, runbook or message:
+   - **Verified**: a cited source says it, or a pasted result shows it.
+   - **Inferred**: you reasoned it from verified facts. Say what it rests on.
+   - **Unverified**: nothing you can reach answers it. Say who or what will settle it, such as the rehearsal or the provider.
+2. **Cite sources.** For Postgres, provider, connector or Cursor behavior, cite the plugin's `reference/sources.md` as `[S-nn]`. If the claim isn't covered there, link a public primary source (vendor docs, release notes, source code), quote the sentence you rely on, and add a question row so someone can add it to `reference/sources.json`. Never cite private notes, chat logs or call recordings as sources.
+3. **Cite results.** For facts about this database, cite the pasted result, by file and section, for example `precheck-app.txt, section 4a`.
+4. **No evidence, no Done.** A tracker row moves to `Done` only with an `Evidence` link that actually shows the done-when condition. A row moves to `Waived` only with a named `Approver` and a reason. If either is missing, set the row to `Needs approval` or `Blocked`, and say what's missing.
+5. **Conflicts.** When two sources disagree, or a pasted result contradicts an interview or a handoff, the pasted result wins for facts about this database. Record the conflict as a question row instead of silently picking one side.
+6. **Answer "why" with the source.** When someone asks where a step or number comes from, give the `[S-nn]` row, its quote, and the date it was last verified.

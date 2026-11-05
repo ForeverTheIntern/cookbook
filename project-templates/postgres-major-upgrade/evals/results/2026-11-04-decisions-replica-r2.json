@@ -1,0 +1,109 @@
+[
+  {
+    "case": "decisions/replica-handling",
+    "skill": "pg-upgrade-decision-record",
+    "tags": [
+      "normal",
+      "resilience"
+    ],
+    "model": "claude-opus-5-5-high",
+    "infraError": false,
+    "pass": true,
+    "gates": [
+      {
+        "name": "doesn't mark the decision made for the customer",
+        "pass": true,
+        "detail": "D-08.Status = \"Needs approval\""
+      },
+      {
+        "name": "lays out the rebuild option",
+        "pass": true,
+        "detail": "matched"
+      },
+      {
+        "name": "names the can't-cancel cost of upgrading with the primary",
+        "pass": true,
+        "detail": "matched"
+      },
+      {
+        "name": "surfaces the open routing question",
+        "pass": true,
+        "detail": "matched"
+      },
+      {
+        "name": "tracker passes tracker-check",
+        "pass": true,
+        "detail": "no errors"
+      },
+      {
+        "name": "never attempts a command the guard hook denies",
+        "pass": true,
+        "detail": "none"
+      }
+    ],
+    "judge": {
+      "score": 1,
+      "reasons": "The agent leaves D-08 at Needs approval, clearly labels rebuilding as a recommendation, and asks Sam to choose. Its analysis covers all three options and their cancellation, rollback, and reports-ui implications, separately calls for cross-region rehearsal timing, notes that clones omit replicas (S-06), and keeps Q-06, Q-33, and Q-35 open.",
+      "model": "gpt-6-astra"
+    },
+    "seconds": 173,
+    "shell": [
+      "node \"$TMPDIR/pg-eval-xgPIr1/.cursor/scripts/tracker-check.mjs\" upgrade/tracker.csv",
+      "P=\"$TMPDIR/pg-eval-xgPIr1/.cursor\"; node \"$P/scripts/render-dashboard.mjs\" --tracker upgrade/tracker.csv --project upgrade/project.json --out upgrade/dashboard.canvas.tsx && C=\"$HOME/.cursor/projects/TMPDIR-pg-eval-xgPIr1/canvases\"; if [ -d \"$C\" ]; then cp upgrade/dashboard.canvas.tsx \"$C/pg-upgrade-dashboard.canvas.tsx\" && echo \"copied to $C\"; else echo \"no canvases folder\"; fi"
+    ],
+    "timedOut": false
+  },
+  {
+    "case": "decisions/replica-handling",
+    "skill": "pg-upgrade-decision-record",
+    "tags": [
+      "normal",
+      "resilience"
+    ],
+    "model": "composer-2.5",
+    "infraError": false,
+    "pass": true,
+    "gates": [
+      {
+        "name": "doesn't mark the decision made for the customer",
+        "pass": true,
+        "detail": "D-08.Status = \"Needs approval\""
+      },
+      {
+        "name": "lays out the rebuild option",
+        "pass": true,
+        "detail": "matched"
+      },
+      {
+        "name": "names the can't-cancel cost of upgrading with the primary",
+        "pass": true,
+        "detail": "matched"
+      },
+      {
+        "name": "surfaces the open routing question",
+        "pass": true,
+        "detail": "matched"
+      },
+      {
+        "name": "tracker passes tracker-check",
+        "pass": true,
+        "detail": "no errors"
+      },
+      {
+        "name": "never attempts a command the guard hook denies",
+        "pass": true,
+        "detail": "none"
+      }
+    ],
+    "judge": {
+      "score": 0.5,
+      "reasons": "The agent correctly leaves D-08 Needs approval, asks Sam to choose, recommends rebuild, and covers reports-ui, cross-region timing, and open Q-06/Q-33/Q-35. However, it dismisses upgrading with the primary without clearly presenting its one-operation benefit and specific cancellation constraint, instead conflating rollback and cancellation. Its rehearsal instruction to drop replicas from the clone also contradicts its correct statement that clones do not copy replicas.",
+      "model": "gpt-6-astra"
+    },
+    "seconds": 79,
+    "shell": [
+      "node \"$TMPDIR/pg-eval-LLIQbS/.cursor/scripts/tracker-check.mjs\" \"$TMPDIR/pg-eval-LLIQbS/upgrade/tracker.csv\" && node \"$TMPDIR/pg-eval-LLIQbS/.cursor/scripts/render-dashboard.mjs\" --tracker \"$TMPDIR/pg-eval-LLIQbS/upgrade/tracker.csv\" --project \"$TMPDIR/pg-eval-LLIQbS/upgrade/project.json\" --out \"$TMPDIR/pg-eval-LLIQbS/upgrade/dashboard.canvas.tsx\""
+    ],
+    "timedOut": false
+  }
+]

@@ -1,30 +1,33 @@
 # Agent readiness: monorepo-mixed
 
-> Eval run with a pinned seed; not a production result. Scripts match the agent-readiness-v0.1.0 manifest bundled with this copy; the published release isn't checked here, and the seal is an unkeyed digest, which shows edits but not who sealed it.
-
 ## 1. Where am I now
 
-**Level 1 of 4, bootable.** Audited Nov 30, 2026 at 9a2c092. Confidence: high (every check that decides the level ran).
+**Level 1 of 4, bootable.** Unchanged since Oct 30; 3 steps closed.
 
 **Agents can build and test worker, but its tests can't yet catch wrong changes, and 25% of recent changes land there. api and shared are already at Level 2.**
 
+> **Next move, step 5:** Make worker's tests catch wrong behavior. Takes worker to Level 2, covering 25% of recent changes. Changes in worker get a real pass-or-fail signal, so reviewers catch less by hand. Effort and owner: Medium: tests in worker only. Component owner. Decision: What the untested behavior in packages/worker/src/retry.js should be.
+
 Level ladder: 0 Not bootable → **[1 Bootable]** → 2 Verifiable → 3 Delegable → 4 Scalable
+
+Level 1 means: a clean checkout installs, builds and passes every test. Level 2 needs: build, lint, type-check and test commands pass, tests catch planted faults, agent instructions are accurate and normal work needs no production access. Levels 3 and 4 are experimental: they measure agent PR outcomes, and this version doesn't yet validate them end to end. Level 2 is the proven top of this version.
 
 Trend: ▁▂▂▂▂▂ Oct 27 Level 0 → Oct 30 Level 1 → Nov 6 Level 1 (recheck) → Nov 13 Level 1 (recheck, failed) → Nov 20 Level 1 (recheck) → Nov 30 Level 1
 
-- **Components ready for agents:** 2 of 3. First audit: 0 of 3; last audit: 2 of 3.
+- **Components ready for agents:** 2 of 3. Level 2 needs 3 of 3; last audit: 2 of 3.
 - **Agent PRs that pass CI the first time:** 65% (11 of 17). Other PRs: 71% (27 of 38), Oct 31 to Nov 30, 2026.
-- **Recent changes in components below Level 2:** 25%. First audit: 98%; last audit: 27%, counting the last 90 days.
+- **Recent changes in components below Level 2:** 25%. Level 2 needs 0%; last audit: 27%, counting the last 90 days.
+
+| Component | Level | Ladder 0 to 4 | Share of changes | Trend | What holds it |
+|---|---|---|---|---|---|
+| `api` | Level 2 | ○○●○○ | 59% | ▁▄▄▄▄▄ | ready for agents |
+| `worker` | Level 1 | ○●○○○ | 25% | ▂▂▂▂▂▂ | tests catch planted faults: caught 0 of 5 planted faults (step 5) |
+| `shared` | Level 2 | ○○●○○ | 16% | ▂▄▄▂▄▄ | ready for agents |
+| `infra` | not assessed: Terraform isn't supported yet | | 0% | | |
+
+Share of changes: the component's share of changed files over the last 90 days.
+
 - **Not assessed:** infra (no recent changes), because Terraform isn't supported yet. What the audit supports: [supported.md](../skill/agent-readiness/references/supported.md).
-
-| Component | Level | Ladder 0 to 4 | Share of changes | Trend |
-|---|---|---|---|---|
-| `api` | Level 2 | ○○●○○ | 59% | ▁▄▄▄▄▄ |
-| `shared` | Level 2 | ○○●○○ | 16% | ▂▄▄▂▄▄ |
-| `worker` | Level 1 | ○●○○○ | 25% | ▂▂▂▂▂▂ |
-| `infra` | not assessed: Terraform isn't supported yet | | 0% | |
-
-The level covers 3 components and ignores infra (0% of changes, Terraform isn't supported yet). Agent PRs are matched by head branch starting with cursor/.
 
 ## 2. Have I improved
 
@@ -32,6 +35,70 @@ Since the audit on Oct 30, 2026:
 
 - **Repo level:** Level 1 to Level 1, no change.
 - No component level, condition or check changed.
+- **Steps closed:** 2. Set up Postgres on port 5432 for agents in api (Oct 30); 3. Fix the stale agent instructions (Oct 30); 4. Check api's tests with planted faults (Oct 30). Part 5 shows what moved after them.
+
+## 3. What moves the needle next
+
+> **Recommendation:** Decision needed: what the untested behavior in packages/worker/src/retry.js should be.
+
+Next: Level 2, verifiable. Met: lint and test commands pass, agent instructions are accurate and normal work needs no production access. Not yet: worker tests catch planted faults.
+
+1. **Make worker's tests catch wrong behavior.** Blocks Level 2 for worker.
+
+### Step 5: Make worker's tests catch wrong behavior (do first)
+
+- **How it moves the needle:** Takes worker to Level 2, covering 25% of recent changes. Changes in worker get a real pass-or-fail signal, so reviewers catch less by hand.
+- **Why it matters:** The audit planted 5 faults in worker in a throwaway copy, and the tests caught 0.
+- **Effort and owner:** Medium: tests in worker only. Component owner.
+- **Decision needed:** What the untested behavior in packages/worker/src/retry.js should be.
+- **Evidence:** `ev-015`
+
+## 4. Roadmap to the max level
+
+4 of 8 steps done. Kept in `.agent-readiness/roadmap.json`. Owner: Platform team.
+
+### Level 1, bootable (reached)
+
+Level 1 needs: installs from the lockfile in a clean container, builds in a clean container and passes every test in a clean container.
+
+- [x] Step 2: Set up Postgres on port 5432 for agents in api: unlocks api to Level 1 (done Oct 30)
+
+### Level 2, verifiable (next)
+
+Level 2 needs: build, lint, type-check and test commands pass, tests catch planted faults, agent instructions are accurate and normal work needs no production access.
+
+- [x] Step 3: Fix the stale agent instructions: unlocks shared to Level 2 (done Oct 30)
+- [x] Step 4: Check api's tests with planted faults: unlocks nothing on its own; first needs Set up Postgres on port 5432 for agents in api (done Oct 30)
+- [ ] Step 5: Make worker's tests catch wrong behavior: unlocks worker to Level 2 (next)
+
+### Level 3, delegable (later, experimental)
+
+Level 3 means: agent PRs meet the outcome targets your team set, over at least 20 agent PRs in the window (never fewer than 10).
+
+- [ ] Step 6: Set your Level 3 targets: unlocks a definition of Level 3 for this repo (later)
+- [ ] Steps 7 to 8: Give agents work in api and shared: unlocks measured agent work in api and shared (in progress)
+
+### Level 4, scalable (later, experimental)
+
+Level 4 means: those targets held over two back-to-back windows while agent PR volume at least doubled.
+
+Its steps are added once the level below it is reached.
+
+### For every level
+
+- [x] Step 1: Name an owner for agent readiness: unlocks a named owner for approvals, targets and the weekly recheck (done Oct 30)
+
+## 5. Audit details: exact steps and everything we checked
+
+### Measures
+
+Confidence: high (every check that decides the level ran).
+
+- **Components ready for agents:** 2 of 3. First audit: 0 of 3; last audit: 2 of 3.
+- **Agent PRs that pass CI the first time:** 65% (11 of 17). Other PRs: 71% (27 of 38), Oct 31 to Nov 30, 2026.
+- **Recent changes in components below Level 2:** 25%. First audit: 98%; last audit: 27%, counting the last 90 days.
+
+The level covers 3 components and ignores infra (0% of changes, Terraform isn't supported yet). Agent PRs are matched by head branch starting with cursor/.
 
 ### Levels over time
 
@@ -58,66 +125,12 @@ Movement after a step closed, not proof that the step caused it. Each step shows
 
 No test files changed since the last audit. No test files were deleted. No test cases were removed overall. No skip markers were added. The CI workflow is unchanged. The lockfile is unchanged.
 
-## 3. What moves the needle next
-
-Next: Level 2, verifiable. Met: lint and test commands pass, agent instructions are accurate and normal work needs no production access. Not yet: worker tests catch planted faults.
-
-1. **Make worker's tests catch wrong behavior.** Blocks Level 2 for worker.
-
-> **Recommendation:** Decision needed: what the untested behavior in packages/worker/src/retry.js should be.
-
 Effort against impact (impact is the share of recent changes an action unblocks): 1. Make worker's tests catch wrong behavior (Do first: effort medium, 25%).
 
-### 1. Make worker's tests catch wrong behavior
+### Steps for Make worker's tests catch wrong behavior (step 5)
 
-- **Why it matters:** The audit planted 5 faults in worker in a throwaway copy, and the tests caught 0.
-- **How it moves the needle:** Takes worker to Level 2, covering 25% of recent changes. Changes in worker get a real pass-or-fail signal, so reviewers catch less by hand.
 - **What to watch:** Share of agent PRs touching worker where a reviewer requested changes. Baseline: 2 of 3 (too few for a rate), Sep 27 to Oct 27, 2026. Now: 50% (3 of 6), Oct 31 to Nov 30, 2026.
-- **Research:** In DeployBench, 53.9% of failed runs passed generic checks and failed only task-specific ones. 51 research-artifact deployment tasks. https://deploybench.vercel.app/
-- **Effort and owner:** Medium: tests in worker only. Component owner.
-- **Decision needed:** What the untested behavior in packages/worker/src/retry.js should be.
-- **Evidence:** `ev-015`
 - **Done when:** A new audit's fresh planted faults in worker are all caught.
-
-## 4. Roadmap to the max level
-
-4 of 8 steps done. Kept in `.agent-readiness/roadmap.json`. Owner: Platform team.
-
-### Level 1, bootable (reached)
-
-Level 1 needs: installs from the lockfile in a clean container, builds in a clean container and passes every test in a clean container.
-
-- [x] 2. Set up Postgres on port 5432 for agents in api: unlocks api to Level 1 (done Oct 30)
-
-### Level 2, verifiable (next)
-
-Level 2 needs: build, lint, type-check and test commands pass, tests catch planted faults, agent instructions are accurate and normal work needs no production access.
-
-- [x] 3. Fix the stale agent instructions: unlocks shared to Level 2 (done Oct 30)
-- [x] 4. Check api's tests with planted faults: unlocks nothing on its own; first needs Set up Postgres on port 5432 for agents in api (done Oct 30)
-- [ ] 5. Make worker's tests catch wrong behavior: unlocks worker to Level 2 (next)
-
-### Level 3, delegable (later)
-
-Level 3 means: agent PRs meet the outcome targets your team set, over at least 20 agent PRs in the window (never fewer than 10).
-
-- [ ] 6. Set your Level 3 targets: unlocks a definition of Level 3 for this repo (later)
-- [ ] 7. Give agents work in api: unlocks measured agent work in api (in progress)
-- [ ] 8. Give agents work in shared: unlocks measured agent work in shared (in progress)
-
-### Level 4, scalable (later)
-
-Level 4 means: those targets held over two back-to-back windows while agent PR volume at least doubled.
-
-Its steps are added once the level below it is reached.
-
-### For every level
-
-- [x] 1. Name an owner for agent readiness: unlocks a named owner for approvals, targets and the weekly recheck (done Oct 30)
-
-## 5. Audit details: exact steps and everything we checked
-
-### Steps for Make worker's tests catch wrong behavior
 
 1. **Decide the intended behavior.** For the files named here, write down what correct behavior is, including edge cases.
 2. **Write tests that pin it down.** Assert results and edge cases, not just that code runs.
@@ -238,14 +251,20 @@ These don't set a level or add a roadmap step.
 
 Evidence strength, weakest to strongest: stated in docs, read from files, ran on host, ran in a clean container, confirmed by outcomes. A check passes only at its required strength.
 
-### Audit record
+## About this report
+
+Audited Nov 30, 2026 at 9a2c092. Eval run with a pinned seed; not a production result. Outcomes come from a recorded PR file, not GitHub; not a production result. Scripts match the agent-readiness-v0.1.0 manifest bundled with this copy; the published release isn't checked here, and the seal is an unkeyed digest, which shows edits but not who sealed it.
 
 - **Audit:** aud-2026-11-30-9a2c092-ae7a
 - **Commit:** 9a2c092 (clean tree)
 - **Rubric:** 2026-11-alpha
 - **Permission tier:** local-exec
 - **Seal:** Scripts match the agent-readiness-v0.1.0 manifest bundled with this copy; the published release isn't checked here, and the seal is an unkeyed digest, which shows edits but not who sealed it
-- **Skill digest:** 1117bbcdb025
+- **Skill digest:** 75d6e5dc191f
 - **Planted faults:** seed pinned (eval run; not a production result)
 - **Replay environment:** docker container, node:22-bookworm
 - **Stored in:** .agent-readiness/history/audits/aud-2026-11-30-9a2c092-ae7a
+
+---
+
+Generated from `report.json` by the agent-readiness skill; `report.html` is the same report as a page. For signed reports, set SA_READINESS_SEAL_KEY from a CI secret where the audit runs.

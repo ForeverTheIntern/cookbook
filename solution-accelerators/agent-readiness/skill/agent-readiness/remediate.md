@@ -6,7 +6,7 @@ The rules in [SKILL.md](SKILL.md) still hold. You don't decide that a fix worked
 
 ## Before you start
 
-1. Take the item the user named, or item 1 under "What moves the needle next" in `.agent-readiness/latest/report.md`. Read its "Why it matters", "Done when" and steps in part 5.
+1. Take the step the user named, or the first step under "What moves the needle next" in `.agent-readiness/latest/report.md` (it is also part 1's "Next move"). Read its "Why it matters", "Done when" and steps in part 5.
 2. Work on a new branch. The audit reads `git archive HEAD`, so a fix only counts once it's committed.
 3. If the item lists a decision ("Decision needed: ..."), ask the user before acting on it, unless they already gave the answer.
 

@@ -21,10 +21,10 @@ export function testCounts(output: string): { passed: number; failed: number; to
     const all = [...text.matchAll(new RegExp(re.source, re.flags.includes("g") ? re.flags : re.flags + "g"))];
     return all.length ? Number(all[all.length - 1][1]) : null;
   };
-  const nodePass = num(/^\s*[#ℹ] pass (\d+)\s*$/m);
+  const nodePass = num(/^\s*[#\u2139] pass (\d+)\s*$/m);
   if (nodePass !== null) {
-    const failed = num(/^\s*[#ℹ] fail (\d+)\s*$/m) ?? 0;
-    return { passed: nodePass, failed, total: num(/^\s*[#ℹ] tests (\d+)\s*$/m) ?? nodePass + failed };
+    const failed = num(/^\s*[#\u2139] fail (\d+)\s*$/m) ?? 0;
+    return { passed: nodePass, failed, total: num(/^\s*[#\u2139] tests (\d+)\s*$/m) ?? nodePass + failed };
   }
   const bunRan = num(/^Ran (\d+) tests? across \d+ files?\./m);
   if (bunRan !== null) {

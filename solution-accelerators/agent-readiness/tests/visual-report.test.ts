@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, test } from "node:test";
 import { renderHtml } from "../skill/agent-readiness/scripts/lib/render-html.ts";
-import { ladderLine, renderMarkdown, scaleLine, trendLine, validatePart1 } from "../skill/agent-readiness/scripts/lib/render.ts";
+import { ladderLine, nextMove, pageNumbers, renderMarkdown, scaleLine, shortReason, trendLine, validatePart1 } from "../skill/agent-readiness/scripts/lib/render.ts";
 import { loadRubric } from "../skill/agent-readiness/scripts/lib/rubric.ts";
 import { validateAgainst } from "../skill/agent-readiness/scripts/lib/schema.ts";
 import type { HistoryLine } from "../skill/agent-readiness/scripts/lib/types.ts";
@@ -45,12 +45,13 @@ describe("the cascade in report.md", () => {
     const md = renderMarkdown(later, rubric);
     assert.match(md, /- \*\*worker:\*\* Level 1 to Level 2\./);
     assert.match(trendLine(later), /^Trend: ▁▁ /);
+    assert.match(pageNumbers(later)[0].comparison, /^Level 2 needs \d+ of \d+; last audit: \d+ of \d+$/);
     assert.match(md, /\| `worker` \| Level 2 \| ○○●○○ \| 27% \| ▂▄ \|/);
   });
 
   test("roadmap steps are grouped by the level they reach, up to Level 4", () => {
     const md = renderMarkdown(reportFor(makeAudit(mixed)), rubric);
-    const idx = ["### Level 1, bootable (next)", "### Level 2, verifiable (later)", "### Level 3, delegable (later)", "### Level 4, scalable (later)"].map((h) => md.indexOf(h));
+    const idx = ["### Level 1, bootable (next)", "### Level 2, verifiable (later)", "### Level 3, delegable (later, experimental)", "### Level 4, scalable (later, experimental)"].map((h) => md.indexOf(h));
     assert.ok(idx.every((i, n) => i >= 0 && (n === 0 || i > idx[n - 1])), String(idx));
     assert.match(md.slice(idx[0], idx[1]), /Set up Postgres on port 5432 for agents in api/);
   });
@@ -115,6 +116,25 @@ describe("report.html", () => {
     assert.match(html, /prefers-color-scheme:dark/);
     assert.match(html, /@media print/);
     assert.match(html, /<svg role="img" aria-label="Level 0 of 4, Not bootable"/);
+    assert.match(html, /<p class="ladder-text small">Level ladder: <b>0 not bootable<\/b> → 1 bootable → 2 verifiable → 3 delegable \(experimental\) → 4 scalable \(experimental\)<\/p>/);
+  });
+
+  test("page 1 says what holds a component without the missed-fault list", () => {
+    const md = renderMarkdown(reportFor(makeAudit(mixed)), rubric);
+    const part1 = md.slice(0, md.indexOf("## 2."));
+    assert.doesNotMatch(part1, /; missed:/);
+    assert.equal(shortReason("caught 0 of 5 planted faults; missed: change_constant at src/retry.js:5"), "caught 0 of 5 planted faults");
+  });
+
+  test("page 1 leads with the next move and labels Levels 3 and 4 experimental", () => {
+    const r = reportFor(makeAudit(mixed));
+    const html = renderHtml(r);
+    const md = renderMarkdown(r, rubric);
+    const move = nextMove(r)!;
+    assert.ok(html.indexOf('id="next-move"') < html.indexOf('id="improved"'));
+    assert.match(md.slice(0, md.indexOf("## 2.")), new RegExp(`> \\*\\*Next move, step ${move.step}:\\*\\* `));
+    assert.match(md, /### Level 3, delegable \(later, experimental\)/);
+    assert.match(md.slice(0, md.indexOf("## 2.")), /Level 2 is the proven top of this version\./);
   });
 
   test("follows the cascade, shows the sealed headline, and every evidence link has a row to land on", () => {

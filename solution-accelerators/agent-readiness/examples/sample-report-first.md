@@ -1,36 +1,39 @@
 # Agent readiness: monorepo-mixed
 
-> Eval run with a pinned seed; not a production result. Scripts match the agent-readiness-v0.1.0 manifest bundled with this copy; the published release isn't checked here, and the seal is an unkeyed digest, which shows edits but not who sealed it.
-
 ## 1. Where am I now
 
-**Level 0 of 4, not bootable.** Audited Oct 27, 2026 at 7070f44. Confidence: high (every check that decides the level ran).
+**Level 0 of 4, not bootable.**
 
 **Agents can't pass the tests in api from a clean checkout because its tests need Postgres running, which the setup doesn't start, and 56% of recent changes land there.**
 
+> **Next move, step 2:** Set up Postgres on port 5432 for agents in api. Takes api to Level 1, covering 56% of recent changes. Agents can run api's checks before they push, so fewer agent PRs fail CI the first time. Effort and owner: Small: setup scripts and environment config, no source changes. Repo maintainer. Decision: Approve committing the setup files.
+
 Level ladder: **[0 Not bootable]** → 1 Bootable → 2 Verifiable → 3 Delegable → 4 Scalable
 
-Trend: this is the first audit, so there is no trend yet.
+Level 0 means: a clean checkout can't install, build and pass its tests. Level 1 needs: installs from the lockfile in a clean container, builds in a clean container and passes every test in a clean container. Levels 3 and 4 are experimental: they measure agent PR outcomes, and this version doesn't yet validate them end to end. Level 2 is the proven top of this version.
 
 - **Components ready for agents:** 0 of 3. Level 2 needs 3 of 3.
 - **Agent PRs that pass CI the first time:** 33% (3 of 9). Other PRs: 71% (29 of 41), Sep 27 to Oct 27, 2026.
 - **Recent changes in components below Level 2:** 98%. Level 2 needs 0%, counting the last 90 days.
+
+| Component | Level | Ladder 0 to 4 | Share of changes | Trend | What holds it |
+|---|---|---|---|---|---|
+| `api` | Level 0 | ●○○○○ | 56% | first audit | passes every test in a clean container: test failed: connection refused on port 5432 (1 of 1 tests failed) (step 2) |
+| `worker` | Level 1 | ○●○○○ | 27% | first audit | tests catch planted faults: caught 0 of 5 planted faults (step 5) |
+| `shared` | Level 1 | ○●○○○ | 15% | first audit | agent instructions are accurate: 3 of 7 instruction items are wrong (step 3) |
+| `infra` | not assessed: Terraform isn't supported yet | | 2% | | |
+
+Share of changes: the component's share of changed files over the last 90 days.
+
 - **Not assessed:** 2% of recent changes aren't assessed: infra (2%), because Terraform isn't supported yet. What the audit supports: [supported.md](../skill/agent-readiness/references/supported.md).
-
-| Component | Level | Ladder 0 to 4 | Share of changes | Trend |
-|---|---|---|---|---|
-| `api` | Level 0 | ●○○○○ | 56% | first audit |
-| `shared` | Level 1 | ○●○○○ | 15% | first audit |
-| `worker` | Level 1 | ○●○○○ | 27% | first audit |
-| `infra` | not assessed: Terraform isn't supported yet | | 2% | |
-
-The level covers 3 components and ignores infra (2% of changes, Terraform isn't supported yet). Agent PRs are matched by head branch starting with cursor/.
 
 ## 2. Have I improved
 
-This is the first audit, so there is nothing to compare yet. The next audit shows what changed.
+This is the first audit, so there is nothing to compare yet. Rerun the audit after your first fix to see what changed here.
 
 ## 3. What moves the needle next
+
+> **Recommendation:** Decision needed: approve committing the setup files. Also name an owner for agent readiness.
 
 Next: Level 1, bootable. Met: installs from the lockfile in a clean container. Not yet: api passes every test in a clean container.
 
@@ -38,40 +41,28 @@ Next: Level 1, bootable. Met: installs from the lockfile in a clean container. N
 2. **Fix the stale agent instructions.** Blocks Level 2 for shared.
 3. **Make worker's tests catch wrong behavior.** Blocks Level 2 for worker.
 
-> **Recommendation:** Decision needed: approve committing the setup files. Also name an owner for agent readiness.
+### Step 2: Set up Postgres on port 5432 for agents in api (do first)
 
-Effort against impact (impact is the share of recent changes an action unblocks): 1. Set up Postgres on port 5432 for agents in api (Do first: effort small, 56%); 2. Fix the stale agent instructions (Quick fills: effort small, 15%); 3. Make worker's tests catch wrong behavior (Do first: effort medium, 0%).
-
-### 1. Set up Postgres on port 5432 for agents in api
-
-- **Why it matters:** In a clean container, api's tests fail because nothing starts Postgres on port 5432: the connection was refused.
 - **How it moves the needle:** Takes api to Level 1, covering 56% of recent changes. Agents can run api's checks before they push, so fewer agent PRs fail CI the first time.
-- **What to watch:** Share of agent PRs touching api that pass CI the first time. Now: 20% (1 of 5), Sep 27 to Oct 27, 2026.
-- **Research:** In the BootstrapAgent study, a reusable, verified setup cut later agents' token use by 25.9% and build time by 22.3%. Measured on the study's benchmark repositories. https://arxiv.org/abs/2605.15815
+- **Why it matters:** In a clean container, api's tests fail because nothing starts Postgres on port 5432: the connection was refused.
 - **Effort and owner:** Small: setup scripts and environment config, no source changes. Repo maintainer.
 - **Decision needed:** Approve committing the setup files.
 - **Evidence:** `ev-011`
-- **Done when:** `readiness replay --component api` passes every test.
 
-### 2. Fix the stale agent instructions
+### Step 3: Fix the stale agent instructions (then)
 
-- **Why it matters:** 3 instructions agents would follow are wrong: npm run changelog (no "changelog" script in package.json), pnpm test (uses pnpm, but the repo uses npm).
 - **How it moves the needle:** Takes shared to Level 2, covering 15% of recent changes. Agents stop following stale steps, such as running pnpm in a repo that doesn't use it.
-- **What to watch:** Agent PRs that add a stray pnpm-lock.yaml. Now: 11% (1 of 9), Sep 27 to Oct 27, 2026.
+- **Why it matters:** 3 instructions agents would follow are wrong: npm run changelog (no "changelog" script in package.json), pnpm test (uses pnpm, but the repo uses npm).
 - **Effort and owner:** Small: 2 instruction files. Repo maintainer.
 - **Evidence:** `ev-001`, `ev-002`, `ev-003`
-- **Done when:** `readiness run --instructions` replays every instruction item.
 
-### 3. Make worker's tests catch wrong behavior
+### Step 5: Make worker's tests catch wrong behavior (then)
 
-- **Why it matters:** The audit planted 5 faults in worker in a throwaway copy, and the tests caught 0.
 - **How it moves the needle:** Takes shared to Level 2, worker to Level 2 together with Fix the stale agent instructions. Changes in worker get a real pass-or-fail signal, so reviewers catch less by hand.
-- **What to watch:** Share of agent PRs touching worker where a reviewer requested changes. Now: 2 of 3 (too few for a rate), Sep 27 to Oct 27, 2026.
-- **Research:** In DeployBench, 53.9% of failed runs passed generic checks and failed only task-specific ones. 51 research-artifact deployment tasks. https://deploybench.vercel.app/
+- **Why it matters:** The audit planted 5 faults in worker in a throwaway copy, and the tests caught 0.
 - **Effort and owner:** Medium: tests in worker only. Component owner.
 - **Decision needed:** What the untested behavior in packages/worker/src/retry.js should be.
 - **Evidence:** `ev-017`
-- **Done when:** A new audit's fresh planted faults in worker are all caught.
 
 ## 4. Roadmap to the max level
 
@@ -81,23 +72,23 @@ Effort against impact (impact is the share of recent changes an action unblocks)
 
 Level 1 needs: installs from the lockfile in a clean container, builds in a clean container and passes every test in a clean container.
 
-- [ ] 2. Set up Postgres on port 5432 for agents in api: unlocks api to Level 1 (next, alongside step 1)
+- [ ] Step 2: Set up Postgres on port 5432 for agents in api: unlocks api to Level 1 (next, alongside step 1)
 
 ### Level 2, verifiable (later)
 
 Level 2 needs: build, lint, type-check and test commands pass, tests catch planted faults, agent instructions are accurate and normal work needs no production access.
 
-- [ ] 3. Fix the stale agent instructions: unlocks shared to Level 2 (next, alongside step 1)
-- [ ] 4. Check api's tests with planted faults: unlocks nothing on its own; first needs Set up Postgres on port 5432 for agents in api (waiting on step 2)
-- [ ] 5. Make worker's tests catch wrong behavior: unlocks shared to Level 2, worker to Level 2 together with Fix the stale agent instructions (next, alongside step 1)
+- [ ] Step 3: Fix the stale agent instructions: unlocks shared to Level 2 (next, alongside step 1)
+- [ ] Step 4: Check api's tests with planted faults: unlocks nothing on its own; first needs Set up Postgres on port 5432 for agents in api (waiting on step 2)
+- [ ] Step 5: Make worker's tests catch wrong behavior: unlocks shared to Level 2, worker to Level 2 together with Fix the stale agent instructions (next, alongside step 1)
 
-### Level 3, delegable (later)
+### Level 3, delegable (later, experimental)
 
 Level 3 means: agent PRs meet the outcome targets your team set, over at least 20 agent PRs in the window (never fewer than 10).
 
-- [ ] 6. Set your Level 3 targets: unlocks a definition of Level 3 for this repo (later)
+- [ ] Step 6: Set your Level 3 targets: unlocks a definition of Level 3 for this repo (later)
 
-### Level 4, scalable (later)
+### Level 4, scalable (later, experimental)
 
 Level 4 means: those targets held over two back-to-back windows while agent PR volume at least doubled.
 
@@ -105,11 +96,26 @@ Its steps are added once the level below it is reached.
 
 ### For every level
 
-- [ ] 1. Name an owner for agent readiness: unlocks a named owner for approvals, targets and the weekly recheck (next)
+- [ ] Step 1: Name an owner for agent readiness: unlocks a named owner for approvals, targets and the weekly recheck (next)
 
 ## 5. Audit details: exact steps and everything we checked
 
-### Steps for Set up Postgres on port 5432 for agents in api
+### Measures
+
+Confidence: high (every check that decides the level ran).
+
+- **Components ready for agents:** 0 of 3. Level 2 needs 3 of 3.
+- **Agent PRs that pass CI the first time:** 33% (3 of 9). Other PRs: 71% (29 of 41), Sep 27 to Oct 27, 2026.
+- **Recent changes in components below Level 2:** 98%. Level 2 needs 0%, counting the last 90 days.
+
+The level covers 3 components and ignores infra (2% of changes, Terraform isn't supported yet). Agent PRs are matched by head branch starting with cursor/.
+
+Effort against impact (impact is the share of recent changes an action unblocks): 1. Set up Postgres on port 5432 for agents in api (Do first: effort small, 56%); 2. Fix the stale agent instructions (Quick fills: effort small, 15%); 3. Make worker's tests catch wrong behavior (Do first: effort medium, 0%).
+
+### Steps for Set up Postgres on port 5432 for agents in api (step 2)
+
+- **What to watch:** Share of agent PRs touching api that pass CI the first time. Now: 20% (1 of 5), Sep 27 to Oct 27, 2026.
+- **Done when:** `readiness replay --component api` passes every test.
 
 1. **Ask the agent to fix it.** Say "fix the primary blocker". It drafts install and start scripts and a `.cursor/environment.json` with `readiness draft-env`.
 2. **The agent proves it.** `readiness replay --component api` must pass every test before the fix is offered.
@@ -117,12 +123,18 @@ Its steps are added once the level below it is reached.
 4. **Point Cloud Agents at it.** A team admin sets the Cloud Agent environment to read `.cursor/environment.json`; committing the file alone changes no environment.
 5. **Re-audit.** The next audit confirms Level 1 and can now plant faults in api.
 
-### Steps for Fix the stale agent instructions
+### Steps for Fix the stale agent instructions (step 3)
+
+- **What to watch:** Agent PRs that add a stray pnpm-lock.yaml. Now: 11% (1 of 9), Sep 27 to Oct 27, 2026.
+- **Done when:** `readiness run --instructions` replays every instruction item.
 
 1. **Fix each listed item.** `.cursor/skills/release-notes/SKILL.md:8` `npm run changelog`: no "changelog" script in package.json; `AGENTS.md:7` `pnpm test`: uses pnpm, but the repo uses npm; `AGENTS.md:8` `docs/architecture.md`: docs/architecture.md doesn't exist
 2. **Prove it.** `readiness run --instructions` replays every command and checks every path.
 
-### Steps for Make worker's tests catch wrong behavior
+### Steps for Make worker's tests catch wrong behavior (step 5)
+
+- **What to watch:** Share of agent PRs touching worker where a reviewer requested changes. Now: 2 of 3 (too few for a rate), Sep 27 to Oct 27, 2026.
+- **Done when:** A new audit's fresh planted faults in worker are all caught.
 
 1. **Decide the intended behavior.** For the files named here, write down what correct behavior is, including edge cases.
 2. **Write tests that pin it down.** Assert results and edge cases, not just that code runs.
@@ -236,14 +248,20 @@ These don't set a level or add a roadmap step.
 
 Evidence strength, weakest to strongest: stated in docs, read from files, ran on host, ran in a clean container, confirmed by outcomes. A check passes only at its required strength.
 
-### Audit record
+## About this report
+
+Audited Oct 27, 2026 at 7070f44. Eval run with a pinned seed; not a production result. Outcomes come from a recorded PR file, not GitHub; not a production result. Scripts match the agent-readiness-v0.1.0 manifest bundled with this copy; the published release isn't checked here, and the seal is an unkeyed digest, which shows edits but not who sealed it.
 
 - **Audit:** aud-2026-10-27-7070f44-e101
 - **Commit:** 7070f44 (clean tree)
 - **Rubric:** 2026-11-alpha
 - **Permission tier:** local-exec
 - **Seal:** Scripts match the agent-readiness-v0.1.0 manifest bundled with this copy; the published release isn't checked here, and the seal is an unkeyed digest, which shows edits but not who sealed it
-- **Skill digest:** 1117bbcdb025
+- **Skill digest:** 75d6e5dc191f
 - **Planted faults:** seed pinned (eval run; not a production result)
 - **Replay environment:** docker container, node:22-bookworm
 - **Stored in:** .agent-readiness/history/audits/aud-2026-10-27-7070f44-e101
+
+---
+
+Generated from `report.json` by the agent-readiness skill; `report.html` is the same report as a page. For signed reports, set SA_READINESS_SEAL_KEY from a CI secret where the audit runs.

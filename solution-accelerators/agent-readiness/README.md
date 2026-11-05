@@ -44,13 +44,14 @@ node --experimental-strip-types --no-warnings .cursor/skills/agent-readiness/scr
 
 ## Reading the report
 
-`.agent-readiness/latest/` holds the report three ways, all from the same sealed data: `report.json`, `report.md`, and `report.html`, a self-contained page (inline CSS and SVG, no scripts, nothing fetched) that opens offline, prints, and follows light or dark mode. Both views run in the same five parts:
+`.agent-readiness/latest/` holds the report three ways, all from the same sealed data: `report.json`, `report.md`, and `report.html`, a self-contained page (inline CSS and SVG, no scripts, nothing fetched) that opens offline, prints, and follows light or dark mode. Both views run in the same order, five parts and a closing note:
 
-1. **Where am I now.** The level and what it means, the agent's one-message headline, the level ladder with the repo marked on it, the trend over past audits, three numbers each with a comparison, what isn't assessed and why, and for a monorepo each component with its level, change share and trend.
+1. **Where am I now.** Only what the reader acts on: a notice when something needs doing, the level and what changed, the agent's one-message headline, the next move with what it unlocks, the level ladder (Levels 3 and 4 marked experimental), three numbers compared with the next level, and for a monorepo each component with its level, change share, trend and what holds it.
 2. **Have I improved.** What changed since the last audit: level changes, conditions now met or now failing, checks that flipped, and the steps closed. A first audit says so.
-3. **What moves the needle next.** What the next level still needs, at most three gaps, and each action with the level it unlocks and the share of recent changes that covers, its effort, the evidence behind it and the metric to watch, then the one ask.
+3. **What moves the needle next.** The one ask, what the next level still needs, at most three gaps, and each step (numbered as in the roadmap) with what it unlocks, its effort, the evidence behind it and when it's done.
 4. **Roadmap to the max level.** The steps for each level up to Level 4, and the ones that serve every level.
-5. **Audit details.** Exact steps, every check with why it matters and its evidence, levels by component with any scenarios nested under each, the repo level and its rule, agent PR outcomes, agent assets and their authors, and the evidence log.
+5. **Audit details.** The measures, coverage and history, exact steps, every check with why it matters and its evidence, levels by component with any scenarios nested under each, the repo level and its rule, agent PR outcomes, agent assets and their authors, and the evidence log.
+6. **About this report.** Provenance, the seal status and eval-mode notes.
 
 `report.json` (schema `agent-readiness/report@1`) is the view model. The markdown, the HTML page and any other renderer are views of it. See [references/report.md](skill/agent-readiness/references/report.md).
 

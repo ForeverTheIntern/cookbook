@@ -272,7 +272,7 @@ describe("part 1 rules", () => {
     assert.match(r.executive.ask, /^Decision needed: where to rerun this audit so it can prove Level 1, for example a CI job\. Meanwhile, make app's tests catch wrong behavior can start now\./);
     assert.match(r.executive.headline, /^Level 1 couldn't be proved for app because this machine has no container runtime/);
     assert.ok(!r.actions.some((a) => a.itemId.startsWith("delegate:")), "delegation waits for a real Level 2");
-    assert.match(renderMarkdown(r, rubric), /### 1\. Make app's tests catch wrong behavior \(can start now\)/);
+    assert.match(renderMarkdown(r, rubric), /### Step \d+: Make app's tests catch wrong behavior \(can start now\)/);
   });
 
   test("a level that couldn't be proved for a reason other than this machine says so, with no rerun advice", () => {

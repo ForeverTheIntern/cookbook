@@ -410,6 +410,9 @@ export interface ReportJson {
     unassessed: { share: number; text: string; supportDoc: string | null } | null;
   };
   actions: ReportAction[];
+  // Page 1 notices, each phrased as what the reader should do. Provenance and eval-mode notes that
+  // need no action live in the report's "About this report" section instead.
+  notices?: { text: string }[];
   // y is the plotted impact; impact is the share of recent changes the action unblocks.
   matrix: { quadrants: string[]; points: { label: string; x: number; y: number; impact?: number; quadrant?: string; itemId: string }[] };
   roadmap: { owner: string | null; doneCount: number; total: number; items: ReportRoadmapItem[] };

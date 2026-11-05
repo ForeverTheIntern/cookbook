@@ -6,13 +6,13 @@ The rules in [SKILL.md](SKILL.md) still hold. You don't decide that a fix worked
 
 ## Before you start
 
-1. Take the item the user named, or item 1 under "Next actions" in `.agent-readiness/latest/report.md`. Read its "Why it matters", "Done when" and steps in part 4.
+1. Take the step the user named, or the first step under "What moves the needle next" in `.agent-readiness/latest/report.md` (it is also part 1's "Next move"). Read its "Why it matters", "Done when" and steps in part 5.
 2. Work on a new branch. The audit reads `git archive HEAD`, so a fix only counts once it's committed.
 3. If the item lists a decision ("Decision needed: ..."), ask the user before acting on it, unless they already gave the answer.
 
 ## The environment setup contract
 
-For an item about install, build or test setup in a clean checkout, such as "Set up Postgres for agents in api", produce committed setup files that a clean container can run:
+For an item about install, build or test setup in a clean checkout, such as "Set up the service the tests expect on port 5432 for agents in api", produce committed setup files that a clean container can run:
 
 1. `readiness draft-env --remediate` writes:
    - `scripts/agent-install.sh`: system packages, then the repo's frozen install. Safe to rerun.

@@ -124,7 +124,10 @@ export interface Evidence {
 export interface Diagnosis {
   cause: "service" | "credential" | "registry" | "missing_tool" | "missing_module" | "network" | "permission" | "timeout" | "compile" | "unknown";
   detail: string;
+  // For a refused connection, the service usually on that port. It names the service in report text
+  // only when serviceNamed says the output named it; otherwise it only guides remediation drafts.
   service?: string;
+  serviceNamed?: boolean;
 }
 
 export interface InstructionItem {
@@ -247,7 +250,7 @@ export interface Audit {
   outcomes: OutcomesSnapshot | null;
   narration: Narration | null;
   signals?: Signal[];
-  sealed?: { at: string; digest: string; reportJsonDigest: string; reportMdDigest: string; roadmapItemsDigest?: string; historyLineDigest?: string; keyed?: boolean };
+  sealed?: { at: string; digest: string; reportJsonDigest: string; reportMdDigest: string; reportHtmlDigest?: string; roadmapItemsDigest?: string; historyLineDigest?: string; keyed?: boolean };
 }
 
 // found is null when the signal doesn't apply, for example no AGENTS.md to measure.
@@ -410,6 +413,9 @@ export interface ReportJson {
     unassessed: { share: number; text: string; supportDoc: string | null } | null;
   };
   actions: ReportAction[];
+  // Page 1 notices, each phrased as what the reader should do. Provenance and eval-mode notes that
+  // need no action live in the report's "About this report" section instead.
+  notices?: { text: string }[];
   // y is the plotted impact; impact is the share of recent changes the action unblocks.
   matrix: { quadrants: string[]; points: { label: string; x: number; y: number; impact?: number; quadrant?: string; itemId: string }[] };
   roadmap: { owner: string | null; doneCount: number; total: number; items: ReportRoadmapItem[] };
@@ -456,6 +462,8 @@ export interface ReportAction {
   dependsOn: string[];
   impact: number;
   effort: Effort;
+  // The evidence rows the roadmap item was raised from.
+  evidence?: string[];
 }
 
 export interface ReportRoadmapItem {
@@ -466,6 +474,20 @@ export interface ReportRoadmapItem {
   statusText: string;
   unlocks: string;
   decision: string | null;
+  // The level of the scale this step is part of reaching; null for steps that serve every level.
+  level?: Level | null;
+}
+
+// What changed against the audit before this one, from its sealed report.
+export interface ReportChanges {
+  since: { audit: string; date: string };
+  repo: { from: Level | null; to: Level | null };
+  components: { id: string; from: Level | null; to: Level | null }[];
+  // Conditions that held a component's level last time and don't now, and the reverse for a level the component had reached.
+  nowMet: { component: string; label: string }[];
+  nowFailing: { component: string; label: string; reason: string }[];
+  // Checks whose result flipped between a pass and a failure.
+  checks: { id: string; name: string; from: boolean | null; to: boolean | null }[];
 }
 
 export interface ReportProgress {
@@ -473,6 +495,8 @@ export interface ReportProgress {
   closed: { title: string; closed: string; expected: string; observed: string }[];
   weakening: string | null;
   rubricChanges: { date: string; from: string; to: string }[];
+  // Null when the previous audit's sealed report isn't readable here.
+  changes?: ReportChanges | null;
 }
 
 export interface ReportDetails {

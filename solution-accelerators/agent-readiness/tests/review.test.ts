@@ -77,7 +77,7 @@ describe("fixes from the independent pre-ship review", () => {
 
   test("a test runner that prints failures and exits 0 hasn't passed", async () => {
     const cmd: ContractCommand = { id: "cmd-api-test", kind: "test", component: "api", cwd: ".", command: "vitest; true", source: "package.json scripts.test", reason: "test", timeoutSec: 60 };
-    const ex = fakeExecutor({ "vitest; true": { exitCode: 0, output: "ℹ tests 3\nℹ pass 2\nℹ fail 1\n" } }, true);
+    const ex = fakeExecutor({ "vitest; true": { exitCode: 0, output: "\u2139 tests 3\n\u2139 pass 2\n\u2139 fail 1\n" } }, true);
     const [r] = await runContract(ex, [cmd], { components: new Set(["api"]), budget: newBudget(10, 10), registryValues: [] });
     assert.equal(r.status, "fail");
     assert.match(r.diagnosis!.detail, /reported 1 failing tests but exited 0/);

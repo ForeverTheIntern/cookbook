@@ -19,7 +19,7 @@ export function rerenderLatest(ws: Workspace): ReportJson | null {
     if (line.kind === "audit") {
       const storedAt = `.agent-readiness/history/audits/${line.id}`;
       const audit = JSON.parse(readFileSync(join(ws.dir, storedAt, "audit.json"), "utf8")) as Audit;
-      const r = buildSealedReport(audit, loadRubric(audit.rubric), [...before], roadmap, ws.dir, storedAt);
+      const r = buildSealedReport(audit, loadRubric(audit.rubric), [...before], roadmap, ws.dir, storedAt, report);
       roadmap = r.roadmap;
       report = r.report;
     }

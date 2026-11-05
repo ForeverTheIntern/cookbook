@@ -13,20 +13,22 @@ function guardSecrets(label: string, text: string): void {
   if (hits.length > 0) fail(`Refusing to write ${label}: it contains ${hits.map((h) => `${h.type} (line ${h.line})`).join(", ")}. Nothing was written.`);
 }
 
-export function storeAudit(p: Paths, audit: Audit, report: ReportJson, md: string): string {
+export function storeAudit(p: Paths, audit: Audit, report: ReportJson, md: string, html: string): string {
   const dir = join(p.history, "audits", audit.id);
   const auditText = JSON.stringify(audit, null, 2) + "\n";
   const reportText = JSON.stringify(report, null, 2) + "\n";
-  guardSecrets(`audit ${audit.id}`, auditText + reportText + md);
+  guardSecrets(`audit ${audit.id}`, auditText + reportText + md + html);
   writeText(join(dir, "audit.json"), auditText);
   writeText(join(dir, "report.json"), reportText);
   writeText(join(dir, "report.md"), md);
+  writeText(join(dir, "report.html"), html);
   return dir;
 }
 
-export function writeLatest(p: Paths, report: ReportJson, md: string): void {
+export function writeLatest(p: Paths, report: ReportJson, md: string, html: string): void {
   writeJson(join(p.latest, "report.json"), report);
   writeText(join(p.latest, "report.md"), md);
+  writeText(join(p.latest, "report.html"), html);
 }
 
 export function readRoadmap(p: Paths): Roadmap | null {

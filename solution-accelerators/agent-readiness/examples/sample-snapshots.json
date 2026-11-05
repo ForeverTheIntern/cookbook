@@ -11,7 +11,7 @@
         "dirtyTree": false,
         "rubric": "2026-11-alpha",
         "tier": "local-exec",
-        "scriptsDigest": "69143fa1640c1f19366db7d161ffc15ea932624aca0e62724c7ba6d417dfde34",
+        "scriptsDigest": "e832a2321a324d1611b9f9b13336ba2944acea9ae80f867e36d4a0f214e9512f",
         "seedPinned": true,
         "sealStatus": "Scripts match the agent-readiness-v0.1.0 manifest bundled with this copy; the published release isn't checked here, and the seal is an unkeyed digest, which shows edits but not who sealed it",
         "staleCopy": null,
@@ -172,16 +172,16 @@
             "id": "infra",
             "path": "infra",
             "toolchain": "Terraform",
-            "manifest": null,
+            "manifest": "infra/main.tf",
             "lockfile": null,
             "changeShare": 0.02,
-            "reason": "Terraform isn't supported by this rubric"
+            "reason": "Terraform isn't supported yet"
           }
         ]
       },
       "executive": {
         "heading": "Level 0 of 4, not bootable",
-        "headline": "Agents can't pass the tests in api from a clean checkout because its tests need Postgres running, which the setup doesn't start, and 56% of recent changes land there.",
+        "headline": "Agents can't pass the tests in api from a clean checkout because its tests need a service on port 5432 running, which the setup doesn't start, and 56% of recent changes land there.",
         "numbers": [
           {
             "label": "Components ready for agents",
@@ -203,7 +203,7 @@
         "gaps": [
           {
             "rank": 1,
-            "text": "Set up Postgres for agents in api",
+            "text": "Set up the service the tests expect on port 5432 for agents in api",
             "blocks": "Blocks Level 1 for api",
             "itemId": "clean.test:api"
           },
@@ -221,16 +221,21 @@
           }
         ],
         "ask": "Decision needed: approve committing the setup files. Also name an owner for agent readiness.",
-        "coverage": "The level covers 3 components and ignores infra (2% of changes, Terraform isn't supported by this rubric). Agent PRs are matched by head branch starting with cursor/.",
-        "noBlocker": false
+        "coverage": "The level covers 3 components and ignores infra (2% of changes, Terraform isn't supported yet). Agent PRs are matched by head branch starting with cursor/.",
+        "noBlocker": false,
+        "unassessed": {
+          "share": 0.02,
+          "text": "2% of recent changes aren't assessed: infra (2%), because Terraform isn't supported yet",
+          "supportDoc": "references/supported.md"
+        }
       },
       "actions": [
         {
           "rank": 1,
           "itemId": "clean.test:api",
-          "title": "Set up Postgres for agents in api",
+          "title": "Set up the service the tests expect on port 5432 for agents in api",
           "startNow": false,
-          "why": "In a clean container, api's tests fail because nothing starts Postgres: connection refused on port 5432.",
+          "why": "In a clean container, api's tests fail because nothing starts the service the tests expect on port 5432: the connection was refused.",
           "movesTheNeedle": "Takes api to Level 1, covering 56% of recent changes. Agents can run api's checks before they push, so fewer agent PRs fail CI the first time.",
           "watch": "Share of agent PRs touching api that pass CI the first time. Now: 20% (1 of 5), Sep 27 to Oct 27, 2026.",
           "research": "In the BootstrapAgent study, a reusable, verified setup cut later agents' token use by 25.9% and build time by 22.3%. Measured on the study's benchmark repositories. https://arxiv.org/abs/2605.15815",
@@ -239,7 +244,10 @@
           "doneWhen": "`readiness replay --component api` passes every test.",
           "dependsOn": [],
           "impact": 0.56,
-          "effort": "small"
+          "effort": "small",
+          "evidence": [
+            "ev-011"
+          ]
         },
         {
           "rank": 2,
@@ -255,7 +263,12 @@
           "doneWhen": "`readiness run --instructions` replays every instruction item.",
           "dependsOn": [],
           "impact": 0.15,
-          "effort": "small"
+          "effort": "small",
+          "evidence": [
+            "ev-001",
+            "ev-002",
+            "ev-003"
+          ]
         },
         {
           "rank": 3,
@@ -271,7 +284,10 @@
           "doneWhen": "A new audit's fresh planted faults in worker are all caught.",
           "dependsOn": [],
           "impact": 0,
-          "effort": "medium"
+          "effort": "medium",
+          "evidence": [
+            "ev-017"
+          ]
         }
       ],
       "matrix": {
@@ -283,7 +299,7 @@
         ],
         "points": [
           {
-            "label": "1. Set up Postgres for agents in api",
+            "label": "1. Set up the service the tests expect on port 5432 for agents in api",
             "x": 0.2,
             "y": 1,
             "impact": 0.56,
@@ -320,25 +336,28 @@
             "status": "next",
             "statusText": "next",
             "unlocks": "a named owner for approvals, targets and the weekly recheck",
-            "decision": "Who owns agent readiness for this repo"
+            "decision": "Who owns agent readiness for this repo",
+            "level": null
           },
           {
             "id": "clean.test:api",
             "order": 2,
-            "title": "Set up Postgres for agents in api",
+            "title": "Set up the service the tests expect on port 5432 for agents in api",
             "status": "next",
-            "statusText": "next",
+            "statusText": "next, alongside step 1",
             "unlocks": "api to Level 1",
-            "decision": "Approve committing the setup files"
+            "decision": "Approve committing the setup files",
+            "level": 1
           },
           {
             "id": "instructions:repo",
             "order": 3,
             "title": "Fix the stale agent instructions",
             "status": "next",
-            "statusText": "next",
+            "statusText": "next, alongside step 1",
             "unlocks": "shared to Level 2",
-            "decision": null
+            "decision": null,
+            "level": 2
           },
           {
             "id": "faults:api",
@@ -346,17 +365,19 @@
             "title": "Check api's tests with planted faults",
             "status": "waiting",
             "statusText": "waiting on step 2",
-            "unlocks": "nothing on its own; first needs Set up Postgres for agents in api",
-            "decision": "What the untested behavior in packages/api should be"
+            "unlocks": "nothing on its own; first needs Set up the service the tests expect on port 5432 for agents in api",
+            "decision": "What the untested behavior in packages/api should be",
+            "level": 2
           },
           {
             "id": "faults:worker",
             "order": 5,
             "title": "Make worker's tests catch wrong behavior",
             "status": "next",
-            "statusText": "next",
+            "statusText": "next, alongside step 1",
             "unlocks": "shared to Level 2, worker to Level 2 together with Fix the stale agent instructions",
-            "decision": "What the untested behavior in packages/worker/src/retry.js should be"
+            "decision": "What the untested behavior in packages/worker/src/retry.js should be",
+            "level": 2
           },
           {
             "id": "targets",
@@ -365,7 +386,8 @@
             "status": "later",
             "statusText": "later",
             "unlocks": "a definition of Level 3 for this repo",
-            "decision": "The merge rate, first-time CI pass rate and review load that mean agents handle work here"
+            "decision": "The merge rate, first-time CI pass rate and review load that mean agents handle work here",
+            "level": 3
           }
         ]
       },
@@ -374,7 +396,7 @@
         "steps": [
           {
             "itemId": "clean.test:api",
-            "title": "Set up Postgres for agents in api",
+            "title": "Set up the service the tests expect on port 5432 for agents in api",
             "steps": [
               {
                 "title": "Ask the agent to fix it",
@@ -486,8 +508,8 @@
               "ev-005",
               "ev-006",
               "ev-007",
-              "ev-009",
               "ev-011",
+              "ev-012",
               "ev-013",
               "ev-014"
             ]
@@ -852,17 +874,17 @@
           },
           {
             "id": "ev-009",
-            "check": "bootstrap.cold_replay",
-            "component": "api",
-            "ran": "npm run test",
+            "check": "verify.canonical_interface",
+            "component": "shared",
+            "ran": "npm run lint",
             "where": "ran in a clean container",
-            "result": "fail",
-            "summary": "test failed: connection refused on port 5432 (1 of 1 tests failed)"
+            "result": "pass",
+            "summary": "lint passed"
           },
           {
             "id": "ev-010",
             "check": "verify.canonical_interface",
-            "component": "shared",
+            "component": "worker",
             "ran": "npm run lint",
             "where": "ran in a clean container",
             "result": "pass",
@@ -871,20 +893,20 @@
           {
             "id": "ev-011",
             "check": "bootstrap.cold_replay",
+            "component": "api",
+            "ran": "npm run test",
+            "where": "ran in a clean container",
+            "result": "fail",
+            "summary": "test failed: connection refused on port 5432 (1 of 1 tests failed)"
+          },
+          {
+            "id": "ev-012",
+            "check": "bootstrap.cold_replay",
             "component": "shared",
             "ran": "npm run test",
             "where": "ran in a clean container",
             "result": "pass",
             "summary": "test passed (3 of 3 tests)"
-          },
-          {
-            "id": "ev-012",
-            "check": "verify.canonical_interface",
-            "component": "worker",
-            "ran": "npm run lint",
-            "where": "ran in a clean container",
-            "result": "pass",
-            "summary": "lint passed"
           },
           {
             "id": "ev-013",
@@ -973,7 +995,7 @@
           },
           {
             "label": "Skill digest",
-            "value": "69143fa1640c"
+            "value": "e832a2321a32"
           },
           {
             "label": "Planted faults",
@@ -988,7 +1010,8 @@
             "value": ".agent-readiness/history/audits/aud-2026-10-27-7070f44-e101"
           }
         ]
-      }
+      },
+      "notices": []
     },
     {
       "schema": "agent-readiness/report@1",
@@ -1000,7 +1023,7 @@
         "dirtyTree": false,
         "rubric": "2026-11-alpha",
         "tier": "local-exec",
-        "scriptsDigest": "69143fa1640c1f19366db7d161ffc15ea932624aca0e62724c7ba6d417dfde34",
+        "scriptsDigest": "e832a2321a324d1611b9f9b13336ba2944acea9ae80f867e36d4a0f214e9512f",
         "seedPinned": true,
         "sealStatus": "Scripts match the agent-readiness-v0.1.0 manifest bundled with this copy; the published release isn't checked here, and the seal is an unkeyed digest, which shows edits but not who sealed it",
         "staleCopy": null,
@@ -1186,10 +1209,10 @@
             "id": "infra",
             "path": "infra",
             "toolchain": "Terraform",
-            "manifest": null,
+            "manifest": "infra/main.tf",
             "lockfile": null,
             "changeShare": 0,
-            "reason": "Terraform isn't supported by this rubric"
+            "reason": "Terraform isn't supported yet"
           }
         ]
       },
@@ -1223,8 +1246,13 @@
           }
         ],
         "ask": "Decision needed: what the untested behavior in packages/worker/src/retry.js should be.",
-        "coverage": "The level covers 3 components and ignores infra (0% of changes, Terraform isn't supported by this rubric). Agent PRs are matched by head branch starting with cursor/.",
-        "noBlocker": false
+        "coverage": "The level covers 3 components and ignores infra (0% of changes, Terraform isn't supported yet). Agent PRs are matched by head branch starting with cursor/.",
+        "noBlocker": false,
+        "unassessed": {
+          "share": 0,
+          "text": "infra (no recent changes), because Terraform isn't supported yet",
+          "supportDoc": "references/supported.md"
+        }
       },
       "actions": [
         {
@@ -1241,7 +1269,10 @@
           "doneWhen": "A new audit's fresh planted faults in worker are all caught.",
           "dependsOn": [],
           "impact": 0.254,
-          "effort": "medium"
+          "effort": "medium",
+          "evidence": [
+            "ev-015"
+          ]
         }
       ],
       "matrix": {
@@ -1274,16 +1305,18 @@
             "status": "done",
             "statusText": "done Oct 30",
             "unlocks": "a named owner for approvals, targets and the weekly recheck",
-            "decision": "Who owns agent readiness for this repo"
+            "decision": "Who owns agent readiness for this repo",
+            "level": null
           },
           {
             "id": "clean.test:api",
             "order": 2,
-            "title": "Set up Postgres for agents in api",
+            "title": "Set up the service the tests expect on port 5432 for agents in api",
             "status": "done",
             "statusText": "done Oct 30",
             "unlocks": "api to Level 1",
-            "decision": "Approve committing the setup files"
+            "decision": "Approve committing the setup files",
+            "level": 1
           },
           {
             "id": "instructions:repo",
@@ -1292,7 +1325,8 @@
             "status": "done",
             "statusText": "done Oct 30",
             "unlocks": "shared to Level 2",
-            "decision": null
+            "decision": null,
+            "level": 2
           },
           {
             "id": "faults:api",
@@ -1300,8 +1334,9 @@
             "title": "Check api's tests with planted faults",
             "status": "done",
             "statusText": "done Oct 30",
-            "unlocks": "nothing on its own; first needs Set up Postgres for agents in api",
-            "decision": "What the untested behavior in packages/api should be"
+            "unlocks": "nothing on its own; first needs Set up the service the tests expect on port 5432 for agents in api",
+            "decision": "What the untested behavior in packages/api should be",
+            "level": 2
           },
           {
             "id": "faults:worker",
@@ -1310,7 +1345,8 @@
             "status": "next",
             "statusText": "next",
             "unlocks": "worker to Level 2",
-            "decision": "What the untested behavior in packages/worker/src/retry.js should be"
+            "decision": "What the untested behavior in packages/worker/src/retry.js should be",
+            "level": 2
           },
           {
             "id": "targets",
@@ -1319,7 +1355,8 @@
             "status": "later",
             "statusText": "later",
             "unlocks": "a definition of Level 3 for this repo",
-            "decision": "The merge rate, first-time CI pass rate and review load that mean agents handle work here"
+            "decision": "The merge rate, first-time CI pass rate and review load that mean agents handle work here",
+            "level": 3
           },
           {
             "id": "delegate:api",
@@ -1328,7 +1365,8 @@
             "status": "in_progress",
             "statusText": "in progress",
             "unlocks": "measured agent work in api",
-            "decision": "Which tasks go to agents first, and who reviews them"
+            "decision": "Which tasks go to agents first, and who reviews them",
+            "level": 3
           },
           {
             "id": "delegate:shared",
@@ -1337,7 +1375,8 @@
             "status": "in_progress",
             "statusText": "in progress",
             "unlocks": "measured agent work in shared",
-            "decision": "Which tasks go to agents first, and who reviews them"
+            "decision": "Which tasks go to agents first, and who reviews them",
+            "level": 3
           }
         ]
       },
@@ -1424,7 +1463,7 @@
         ],
         "closed": [
           {
-            "title": "2. Set up Postgres for agents in api",
+            "title": "2. Set up the service the tests expect on port 5432 for agents in api",
             "closed": "2026-10-30",
             "expected": "Agents can run api's checks before they push, so fewer agent PRs fail CI the first time. Watch: Share of agent PRs touching api that pass CI the first time, 20% (1 of 5).",
             "observed": "20% (1 of 5) to 78% (7 of 9) (closed with step 3 and step 4)"
@@ -1443,7 +1482,21 @@
           }
         ],
         "weakening": "No test files changed since the last audit. No test files were deleted. No test cases were removed overall. No skip markers were added. The CI workflow is unchanged. The lockfile is unchanged.",
-        "rubricChanges": []
+        "rubricChanges": [],
+        "changes": {
+          "since": {
+            "audit": "aud-2026-10-30-7e84b7e-c404",
+            "date": "2026-10-30"
+          },
+          "repo": {
+            "from": 1,
+            "to": 1
+          },
+          "components": [],
+          "nowMet": [],
+          "nowFailing": [],
+          "checks": []
+        }
       },
       "details": {
         "steps": [
@@ -1521,9 +1574,9 @@
               "ev-002",
               "ev-003",
               "ev-004",
-              "ev-005",
-              "ev-007",
+              "ev-008",
               "ev-009",
+              "ev-010",
               "ev-011",
               "ev-012"
             ]
@@ -1541,9 +1594,9 @@
               "notRun": 0
             },
             "evidence": [
+              "ev-005",
               "ev-006",
               "ev-007",
-              "ev-008",
               "ev-009",
               "ev-010",
               "ev-011"
@@ -1909,6 +1962,33 @@
           },
           {
             "id": "ev-005",
+            "check": "verify.canonical_interface",
+            "component": "api",
+            "ran": "npm run lint",
+            "where": "ran in a clean container",
+            "result": "pass",
+            "summary": "lint passed"
+          },
+          {
+            "id": "ev-006",
+            "check": "verify.canonical_interface",
+            "component": "shared",
+            "ran": "npm run lint",
+            "where": "ran in a clean container",
+            "result": "pass",
+            "summary": "lint passed"
+          },
+          {
+            "id": "ev-007",
+            "check": "verify.canonical_interface",
+            "component": "worker",
+            "ran": "npm run lint",
+            "where": "ran in a clean container",
+            "result": "pass",
+            "summary": "lint passed"
+          },
+          {
+            "id": "ev-008",
             "check": "bootstrap.cold_replay",
             "component": null,
             "ran": "bash scripts/agent-start.sh",
@@ -1917,16 +1997,7 @@
             "summary": "start passed"
           },
           {
-            "id": "ev-006",
-            "check": "verify.canonical_interface",
-            "component": "api",
-            "ran": "npm run lint",
-            "where": "ran in a clean container",
-            "result": "pass",
-            "summary": "lint passed"
-          },
-          {
-            "id": "ev-007",
+            "id": "ev-009",
             "check": "bootstrap.cold_replay",
             "component": "api",
             "ran": "npm run test",
@@ -1935,31 +2006,13 @@
             "summary": "test passed (1 of 1 tests)"
           },
           {
-            "id": "ev-008",
-            "check": "verify.canonical_interface",
-            "component": "shared",
-            "ran": "npm run lint",
-            "where": "ran in a clean container",
-            "result": "pass",
-            "summary": "lint passed"
-          },
-          {
-            "id": "ev-009",
+            "id": "ev-010",
             "check": "bootstrap.cold_replay",
             "component": "shared",
             "ran": "npm run test",
             "where": "ran in a clean container",
             "result": "pass",
             "summary": "test passed (3 of 3 tests)"
-          },
-          {
-            "id": "ev-010",
-            "check": "verify.canonical_interface",
-            "component": "worker",
-            "ran": "npm run lint",
-            "where": "ran in a clean container",
-            "result": "pass",
-            "summary": "lint passed"
           },
           {
             "id": "ev-011",
@@ -2075,7 +2128,7 @@
           },
           {
             "label": "Skill digest",
-            "value": "69143fa1640c"
+            "value": "e832a2321a32"
           },
           {
             "label": "Planted faults",
@@ -2090,7 +2143,8 @@
             "value": ".agent-readiness/history/audits/aud-2026-11-30-9a2c092-ae7a"
           }
         ]
-      }
+      },
+      "notices": []
     }
   ]
 }

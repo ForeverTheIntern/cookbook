@@ -11,6 +11,26 @@ const PORTS: Record<string, string> = {
   "11211": "Memcached",
 };
 
+// The words that show the output itself named the service on a port, not just the port.
+const NAMED: Record<string, RegExp> = {
+  "5432": /postgres/i,
+  "3306": /mysql|mariadb/i,
+  "6379": /redis/i,
+  "27017": /mongo/i,
+  "9200": /elasticsearch/i,
+  "5672": /rabbitmq|amqp/i,
+  "9092": /kafka/i,
+  "11211": /memcache/i,
+};
+
+// How report text names the service a refused connection points at: by name only when the output
+// named it, otherwise by its port.
+export function serviceLabel(d: Diagnosis, unnamed: (port: string) => string): string {
+  const port = d.detail.match(/port (\d+)/)?.[1];
+  if (!port) return d.service ?? "a service";
+  return d.serviceNamed && d.service ? `${d.service} on port ${port}` : unnamed(port);
+}
+
 const SECRET_NAME = /(KEY|SECRET|TOKEN|PASSWORD|CREDENTIAL)/;
 
 // The test totals a runner prints, so the report can say "82 of 82 tests" instead of "passed".
@@ -21,10 +41,10 @@ export function testCounts(output: string): { passed: number; failed: number; to
     const all = [...text.matchAll(new RegExp(re.source, re.flags.includes("g") ? re.flags : re.flags + "g"))];
     return all.length ? Number(all[all.length - 1][1]) : null;
   };
-  const nodePass = num(/^\s*[#ℹ] pass (\d+)\s*$/m);
+  const nodePass = num(/^\s*[#\u2139] pass (\d+)\s*$/m);
   if (nodePass !== null) {
-    const failed = num(/^\s*[#ℹ] fail (\d+)\s*$/m) ?? 0;
-    return { passed: nodePass, failed, total: num(/^\s*[#ℹ] tests (\d+)\s*$/m) ?? nodePass + failed };
+    const failed = num(/^\s*[#\u2139] fail (\d+)\s*$/m) ?? 0;
+    return { passed: nodePass, failed, total: num(/^\s*[#\u2139] tests (\d+)\s*$/m) ?? nodePass + failed };
   }
   const bunRan = num(/^Ran (\d+) tests? across \d+ files?\./m);
   if (bunRan !== null) {
@@ -153,6 +173,7 @@ export function diagnose(rawOutput: string, timedOut: boolean, phase: string): D
   if (refused) {
     const port = refused[1] ?? refused[2];
     const service = PORTS[port] ?? `a service on port ${port}`;
+    if (PORTS[port] && NAMED[port]?.test(output)) return { cause: "service", detail: `connection refused on port ${port}; the output names ${service}`, service, serviceNamed: true };
     return { cause: "service", detail: `connection refused on port ${port}`, service };
   }
   const cred = output.match(/\bMissing (?:required )?(?:env(?:ironment)? (?:var(?:iable)?)?\s*)?([A-Z][A-Z0-9_]{2,})\b|\b([A-Z][A-Z0-9_]{2,}) (?:is )?(?:not set|required|missing)\b/);

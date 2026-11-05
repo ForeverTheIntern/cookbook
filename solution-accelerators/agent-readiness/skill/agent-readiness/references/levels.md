@@ -3,7 +3,7 @@
 Every audit reports levels in three tiers, in the report, the seal, `report.json` and the history:
 
 1. **The repo:** one rollup level, Level 0 to 4.
-2. **Each app or component the scan finds:** one standard level, Level 0 to 4. Part 4 lists every component found, included or excluded, with the reason for each exclusion.
+2. **Each app or component the scan finds:** one standard level, Level 0 to 4. Part 5 lists every component found, included or excluded, with the reason for each exclusion.
 3. **Scenarios:** optional breakdowns for a kind of work, nested under the components they cover. They appear only when someone adds them.
 
 ## The scale

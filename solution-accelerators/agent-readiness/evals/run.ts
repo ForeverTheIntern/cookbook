@@ -7,6 +7,8 @@ import type { Baseline } from "./lib/baseline.ts";
 import { scriptedAudit } from "./lib/controls.ts";
 import { releaseVerdict } from "./lib/release.ts";
 import { isolateHome } from "./lib/isolation.ts";
+import { loadCases, planJobs, select } from "./lib/plan.ts";
+import type { Job } from "./lib/plan.ts";
 import { gradeCase, latestReport } from "./lib/grade.ts";
 import { renderMarkdown } from "../skill/agent-readiness/scripts/lib/render.ts";
 import { loadRubric } from "../skill/agent-readiness/scripts/lib/rubric.ts";
@@ -37,26 +39,6 @@ function args() {
     }
   }
   return flags;
-}
-
-async function loadCases(): Promise<EvalCase[]> {
-  const dir = join(HERE, "cases");
-  const out: EvalCase[] = [];
-  for (const f of readdirSync(dir).filter((x) => x.endsWith(".ts")).sort()) {
-    const mod = (await import(join(dir, f))) as { cases?: EvalCase[]; default?: EvalCase };
-    const list = mod.cases ?? (mod.default ? [mod.default] : []);
-    const prefix = basename(f, ".ts");
-    for (const c of list) out.push({ ...c, id: `${prefix}/${c.id}` });
-  }
-  return out;
-}
-
-function select(all: EvalCase[], flags: Record<string, string | true>): EvalCase[] {
-  const tag = typeof flags.tag === "string" ? flags.tag : undefined;
-  const only = typeof flags.case === "string" ? flags.case.split(",") : undefined;
-  // A hill-climb round never sees the held-out cases unless asked to report them.
-  const holdoutOut = Boolean(flags["hill-climb"]) && !flags["include-holdout"];
-  return all.filter((c) => (!tag || c.tags.includes(tag as EvalCase["tags"][number])) && (!only || only.some((o) => c.id === o || c.id.endsWith("/" + o))) && !(holdoutOut && c.tags.includes("holdout")));
 }
 
 function holdoutIds(all: EvalCase[]): Set<string> {
@@ -118,12 +100,6 @@ async function worker(flags: Record<string, string | true>): Promise<void> {
 // How long a worker may run on after writing a complete result before the parent stops it.
 const RESULT_GRACE_MS = Number(process.env.SA_READINESS_EVAL_RESULT_GRACE_SEC ?? 60) * 1000;
 
-interface Job {
-  c: EvalCase;
-  m: string;
-  r: number;
-  arm: Arm;
-}
 
 async function spawnOnce(j: Job, out: string, timeoutMin: string, judgeModel: string | null): Promise<void> {
   const argv = [fileURLToPath(import.meta.url), "--worker", "--case", j.c.id, "--repeat", String(j.r), "--model", j.m, "--arm", j.arm, "--out", out, "--timeout-min", timeoutMin, ...(judgeModel ? ["--judge-model", judgeModel] : [])];
@@ -345,10 +321,7 @@ async function main(): Promise<void> {
   }
   const judgeModel = driven.length ? await pickJudgeModel(flags, models[0]) : null;
   const maxRuns = Number(flags["max-runs"] ?? 120);
-  const jobs: Job[] = [
-    ...driven.flatMap((c) => drivenArms.flatMap((arm) => (arm === "scripted" ? ["scripted"] : models).flatMap((m) => Array.from({ length: repeats }, (_, i) => ({ c, m, r: i + 1, arm }))))),
-    ...scripted.flatMap((c) => Array.from({ length: repeats }, (_, i) => ({ c, m: "scripted", r: i + 1, arm: "agent" as Arm }))),
-  ];
+  const jobs = planJobs([...driven, ...scripted], drivenArms, models, repeats);
   if (jobs.length > maxRuns) throw new Error(`${jobs.length} runs exceed --max-runs ${maxRuns}.`);
   const outDir = join(HERE, "runs", new Date().toISOString().replace(/[:.]/g, "-"));
   mkdirSync(outDir, { recursive: true });

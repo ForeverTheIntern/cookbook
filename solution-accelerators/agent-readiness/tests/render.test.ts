@@ -85,9 +85,9 @@ describe("report.json", () => {
     }
   });
 
-  test("the markdown has the four parts in order", () => {
+  test("the markdown has the five parts of the cascade in order", () => {
     const md = renderMarkdown(reportFor(makeAudit(mixed)), rubric);
-    const idx = ["## 1. Where you stand", "## 2. Next actions", "## 3. Where you are on the roadmap", "## 4. Details"].map((h) => md.indexOf(h));
+    const idx = ["## 1. Where am I now", "## 2. Have I improved", "## 3. What moves the needle next", "## 4. Roadmap to the max level", "## 5. Audit details"].map((h) => md.indexOf(h));
     assert.ok(idx.every((i, n) => i >= 0 && (n === 0 || i > idx[n - 1])), String(idx));
   });
 });
@@ -172,7 +172,7 @@ describe("part 1 rules", () => {
     withBuild.evidence.push({ ...withBuild.evidence[0], id: "ev-build", condition: "clean.build", component: "app", kind: "build", contractId: "cmd-app-build", command: "npm run build", summary: "build passed" });
     assert.match(reportFor(withBuild).executive.headline, /^Nothing blocks agents in app: from a clean checkout it installs, builds and passes its tests/);
     assert.equal(reportFor(makeAudit({ components: [{ id: "app", share: 1, test: "fail", faults: "not_run" }] })).executive.headline, "Agents can't pass the tests in app from a clean checkout.");
-    assert.equal(reportFor(makeAudit(mixed)).executive.headline, "Agents can't pass the tests in api from a clean checkout because its tests need Postgres running, which the setup doesn't start, and 56% of recent changes land there. shared is already at Level 2.");
+    assert.equal(reportFor(makeAudit(mixed)).executive.headline, "Agents can't pass the tests in api from a clean checkout because its tests need a service on port 5432 running, which the setup doesn't start, and 56% of recent changes land there. shared is already at Level 2.");
     const registry = makeAudit({ install: "fail", components: [{ id: "app", share: 1, test: "not_run", faults: "not_run" }] });
     for (const e of registry.evidence) if (e.condition === "clean.install") e.diagnosis = { cause: "registry", detail: "registry credentials not provided" };
     assert.equal(reportFor(registry).executive.headline, "app doesn't install from a clean checkout because private registry credentials weren't provided, so agents can't build or test it yet.");
@@ -272,7 +272,7 @@ describe("part 1 rules", () => {
     assert.match(r.executive.ask, /^Decision needed: where to rerun this audit so it can prove Level 1, for example a CI job\. Meanwhile, make app's tests catch wrong behavior can start now\./);
     assert.match(r.executive.headline, /^Level 1 couldn't be proved for app because this machine has no container runtime/);
     assert.ok(!r.actions.some((a) => a.itemId.startsWith("delegate:")), "delegation waits for a real Level 2");
-    assert.match(renderMarkdown(r, rubric), /### 1\. Make app's tests catch wrong behavior \(can start now\)/);
+    assert.match(renderMarkdown(r, rubric), /### Step \d+: Make app's tests catch wrong behavior \(can start now\)/);
   });
 
   test("a level that couldn't be proved for a reason other than this machine says so, with no rerun advice", () => {
@@ -287,7 +287,7 @@ describe("part 1 rules", () => {
     const r = reportFor(makeAudit({ components: [{ id: "services", share: 1, assessed: false }] }));
     const ex = r.executive;
     assert.equal(r.maturity.assessedComponents, 0);
-    assert.equal(ex.heading, "Not assessed: no component could be assessed");
+    assert.equal(ex.heading, "Not assessed: none of the components found can be assessed yet");
     assert.equal(ex.headline, "No component could be assessed, so this audit can't give a level yet: it skipped services (100% of changes) because Terraform isn't supported yet.");
     assert.equal(ex.nextLine, "Next: Level 1, bootable, once a component can be assessed. No condition has been checked yet.");
     assert.deepEqual(ex.numbers.map((n) => n.value), ["none assessed", "not measured", "100%"]);

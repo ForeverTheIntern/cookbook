@@ -10,9 +10,9 @@ Informational. Walks the whole tree for manifests at any depth: workspace packag
 
 A Python, PHP or Ruby app next to a root `package.json` is its own component, not assessed, and takes the root's files of its type plus everything that isn't a Node file. When the root package has no test script, it goes with that app and isn't assessed on its own either; the report says so, so release tooling at the root never makes the repo "have no tests".
 
-A nested manifest under a folder that usually holds tests, samples or tooling (`test`, `tests`, `spec`, `e2e`, `sample`, `example`, `demo`, `bench`, `plugin`, `util`, `config`), another toolchain's project under a packaging or platform folder (`HomebrewFormula`, `pkg`, `packaging`, `android`, `ios`), or a shared config package such as `@acme/eslint-config`, is a satellite: it's listed in part 4, not made a component, and only becomes one when the repo has nothing else to assess.
+A nested manifest under a folder that usually holds tests, samples or tooling (`test`, `tests`, `spec`, `e2e`, `sample`, `example`, `demo`, `bench`, `plugin`, `util`, `config`), another toolchain's project under a packaging or platform folder (`HomebrewFormula`, `pkg`, `packaging`, `android`, `ios`), or a shared config package such as `@acme/eslint-config`, is a satellite: it's listed in part 5, not made a component, and only becomes one when the repo has nothing else to assess.
 
-Each component's share counts changed files over 90 days. Bot authors, lockfile-only commits, generated files and renames don't count. The most active six supported components are assessed; when there are more, the report labels the scope "sampled" and lists the rest. Part 4 lists every component found, included or excluded, with its path, toolchain, manifest, lockfile and reason. Whenever a component that isn't assessed holds a share of changes, part 1 says how much, by name.
+Each component's share counts changed files over 90 days. Bot authors, lockfile-only commits, generated files and renames don't count. The most active six supported components are assessed; when there are more, the report labels the scope "sampled" and lists the rest. Part 5 lists every component found, included or excluded, with its path, toolchain, manifest, lockfile and reason. Whenever a component that isn't assessed holds a share of changes, part 1 says how much, by name.
 
 ## `scope.agent_assets`: agent assets in the repo
 
@@ -67,7 +67,7 @@ Informational and never scored. Lists AGENTS.md and CLAUDE.md, skills (`.cursor/
 
 ## Other signals (informational)
 
-Part 4 lists five signals read from files. None of them sets a level, adds a roadmap step or appears in part 1.
+Part 5 lists five signals read from files. None of them sets a level, adds a roadmap step or appears in part 1.
 
 - **CI config:** a GitHub Actions, GitLab CI, CircleCI or Buildkite config, and whether it runs tests.
 - **A way to run one test file:** whether each assessed component's test runner takes a file or a name filter (`node --test`, vitest, jest, mocha, pytest), so an agent can rerun only the tests near its change.

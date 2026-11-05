@@ -159,6 +159,35 @@ describe("narration and action checks", () => {
     assert.deepEqual(narrationCheck(["Its tests need SECRET_TOKEN and port 6379."], r, null).problems, ["names SECRET_TOKEN as a cause, but no evidence row mentions it", "names port 6379 as a cause, but no evidence row mentions it"]);
   });
 
+  test("a share binds to the component written next to it", () => {
+    const r = loadBase("monorepo-mixed");
+    assert.deepEqual(narrationCheck(["api (56% of changes) and worker (27%) need work."], r, null).problems, []);
+    assert.deepEqual(narrationCheck(["Api (27% of changes) and worker (56%) need work."], r, null).problems, [
+      "says 27% of changes next to api, but api has 56%",
+      "says 56% of changes next to worker, but worker has 27%",
+    ]);
+  });
+
+  test("a share may be the whole-percent rounding of the exact share, and no further off", () => {
+    const r = loadBase("monorepo-mixed");
+    r.components.included.find((c) => c.id === "shared")!.changeShare = 0.048;
+    r.components.excluded.find((c) => c.id === "infra")!.changeShare = 0.024;
+    assert.deepEqual(narrationCheck(["Shared (5% of changes) and infra (2%) weren't assessed."], r, null).problems, []);
+    assert.deepEqual(narrationCheck(["shared (4.8% of changes) is next."], r, null).problems, []);
+    assert.deepEqual(narrationCheck(["Shared (2% of changes) and infra (5%) weren't assessed."], r, null).problems, [
+      "says 2% of changes next to shared, but shared has 5%",
+      "says 5% of changes next to infra, but infra has 2%",
+    ]);
+    assert.equal(narrationCheck(["shared (6% of changes) is next."], r, null).problems.length, 1);
+  });
+
+  test("a share next to a list of components may be their sum", () => {
+    const r = loadBase("monorepo-mixed");
+    assert.deepEqual(narrationCheck(["api and worker hold 83% of recent changes."], r, null).problems, []);
+    assert.deepEqual(narrationCheck(["api, worker and shared hold 98% of recent changes."], r, null).problems, []);
+    assert.deepEqual(narrationCheck(["api and worker hold 70% of recent changes."], r, null).problems, ["says 70% of changes next to api and worker, but api has 56% and worker has 27% (83% together)"]);
+  });
+
   test("every failed condition needs an open item the report shows", () => {
     const r = loadBase("monorepo-mixed");
     const rm = { items: [{ id: "clean.test:api", status: "next", fixes: [{ condition: "clean.test", component: "api" }] }, { id: "instructions:repo", status: "next", fixes: [{ condition: "instructions", component: "*" }] }, { id: "faults:worker", status: "next", fixes: [{ condition: "faults", component: "worker" }] }] };

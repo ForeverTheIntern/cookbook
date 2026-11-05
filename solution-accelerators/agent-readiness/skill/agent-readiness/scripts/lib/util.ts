@@ -20,6 +20,10 @@ export function containedPath(root: string, parts: string[], what: string): stri
   return real;
 }
 
+// Emoji, flags and the variation selector that turns a symbol into one. Reports, narration and
+// CLI output show status in words or SVG shapes instead.
+export const EMOJI = /[\p{Extended_Pictographic}\u{1F1E6}-\u{1F1FF}\u{FE0F}\u{20E3}]/u;
+
 export function sha256(data: string | Buffer): string {
   return createHash("sha256").update(data).digest("hex");
 }

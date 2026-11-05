@@ -5,6 +5,7 @@ import { strengthRank } from "./rubric.ts";
 import { ELEVATED } from "./static.ts";
 import type { Audit, ContractCommand, Diagnosis, Evidence } from "./types.ts";
 import { SKILL_ROOT, exists, fail, readText, writeText } from "./util.ts";
+import { serviceLabel } from "./diagnose.ts";
 
 function passingEvidence(audit: Audit, cmd: ContractCommand, rubric: Rubric): Evidence | undefined {
   const evs = audit.evidence.filter((e) => e.contractId === cmd.id);
@@ -17,7 +18,7 @@ function passingEvidence(audit: Audit, cmd: ContractCommand, rubric: Rubric): Ev
 function advice(d: Diagnosis, startCmd: string | null): string {
   switch (d.cause) {
     case "service":
-      return startCmd ? `start the services first with \`${startCmd}\`, then retry` : `${d.service ?? "a service"} isn't running; start it, then retry`;
+      return startCmd ? `start the services first with \`${startCmd}\`, then retry` : `${serviceLabel(d, (p) => `the service on port ${p}`)} isn't running; start it, then retry`;
     case "credential":
       return "a test needs a credential; use the sandbox value from the test setup, never a production one";
     case "registry":

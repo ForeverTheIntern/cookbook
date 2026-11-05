@@ -5,12 +5,13 @@ import { tmpdir } from "node:os";
 import { isAbsolute, join, relative, sep } from "node:path";
 import { weakening, weakeningText } from "./diff.ts";
 import { ghJson } from "./gh.ts";
-import { appendHistory, loadSealedAudit, readHistory, readRoadmap, readSealedFile, storeAudit, storeRecheck, writeLatest, writeRoadmap } from "./history.ts";
+import { HISTORY_BRANCH, appendHistory, loadSealedAudit, readHistory, readRoadmap, readSealedFile, storeAudit, storeRecheck, writeLatest, writeRoadmap } from "./history.ts";
 import type { LevelResult } from "./levels.ts";
 import { activeComponents, capAt, componentLevel, level3Run, outcomeLevel, partialCoverage, previousAtLevel3, recheckStates, repoLevel, scenariosFor, statesOf } from "./levels.ts";
 import { emptyStats } from "./outcomes.ts";
 import { makeExecutor, newBudget, registryValuesOf, revealMutants, runContract } from "./replay.ts";
 import { allowedNumbers, buildReport, danglingEvidence, renderMarkdown, validatePart1 } from "./render.ts";
+import { renderHtml } from "./render-html.ts";
 import { updateRoadmap } from "./roadmap.ts";
 import type { Rubric } from "./rubric.ts";
 import { loadRubric } from "./rubric.ts";
@@ -103,7 +104,7 @@ export function supportDocIn(repo: string): string | null {
   return rel.startsWith("..") || isAbsolute(rel) ? null : rel.split(sep).join("/");
 }
 
-export function buildSealedReport(audit: Audit, rubric: Rubric, history: HistoryLine[], prevRoadmap: Roadmap | null, repo: string, storedAt: string): SealedReport {
+export function buildSealedReport(audit: Audit, rubric: Rubric, history: HistoryLine[], prevRoadmap: Roadmap | null, repo: string, storedAt: string, previousReport: ReportJson | null = null): SealedReport {
   if (!audit.profile) fail("Run `readiness scan` before sealing.");
   refreshAssetStatus(audit.assets, audit.instructions);
   const c = compute(audit, rubric, history, prevRoadmap?.targets ?? null);
@@ -160,6 +161,7 @@ export function buildSealedReport(audit: Audit, rubric: Rubric, history: History
     partial: partialCoverage(rubric, audit.profile.components),
     noResults,
     supportDoc: supportDocIn(repo),
+    previousReport,
   });
   return { report, roadmap: rm.roadmap, line };
 }
@@ -216,6 +218,21 @@ export function trustedHistory(p: Paths, history: HistoryLine[], log: (s: string
   return kept;
 }
 
+// The last audit's sealed report.json, only when it still matches that audit's seal, so "what
+// changed" is never read from an edited file. Null on a first audit or when it can't be read.
+export function previousSealedReport(p: Paths, history: HistoryLine[]): ReportJson | null {
+  const prev = [...history].reverse().find((h) => h.kind === "audit");
+  if (!prev) return null;
+  try {
+    const { audit, dir } = loadSealedAudit(p, prev.id);
+    const text = readSealedFile(p, dir, "report.json") ?? readSealedFile(p, `${HISTORY_BRANCH}:audits/${prev.id}`, "report.json");
+    if (!text || !audit.sealed || sha256(text) !== audit.sealed.reportJsonDigest) return null;
+    return JSON.parse(text) as ReportJson;
+  } catch {
+    return null;
+  }
+}
+
 export function seal(audit: Audit, local: LocalInfo, p: Paths, log: (s: string) => void): SealResult {
   if (audit.state !== "draft") fail(`Audit ${audit.id} is already sealed.`);
   if (!audit.profile) fail("Run `readiness scan` before sealing.");
@@ -224,7 +241,8 @@ export function seal(audit: Audit, local: LocalInfo, p: Paths, log: (s: string) 
   revealMutants(audit, local.tree);
   audit.seed.value = realSeed(audit, local);
   const storedAt = join(p.history, "audits", audit.id).replace(p.repo + "/", "");
-  const { report, roadmap, line } = buildSealedReport(audit, rubric, trustedHistory(p, readHistory(p), log), readRoadmap(p), p.repo, storedAt);
+  const history = trustedHistory(p, readHistory(p), log);
+  const { report, roadmap, line } = buildSealedReport(audit, rubric, history, readRoadmap(p), p.repo, storedAt, previousSealedReport(p, history));
   const errors = [
     ...consistencyErrors(audit, report, roadmap),
     ...danglingEvidence(report, audit).map((id) => `the report cites ${id}, which isn't in the audit`),
@@ -234,14 +252,15 @@ export function seal(audit: Audit, local: LocalInfo, p: Paths, log: (s: string) 
   ];
   if (errors.length) fail(`Seal refused. Fix these and seal again:\n- ${errors.join("\n- ")}`);
   const md = renderMarkdown(report, rubric);
+  const html = renderHtml(report);
   audit.state = "sealed";
   const key = sealKey();
-  audit.sealed = { at: nowIso(), digest: "", reportJsonDigest: sha256(JSON.stringify(report, null, 2) + "\n"), reportMdDigest: sha256(md), roadmapItemsDigest: sha256(stableStringify(roadmap.items)), historyLineDigest: sha256(stableStringify(line)), keyed: Boolean(key) };
+  audit.sealed = { at: nowIso(), digest: "", reportJsonDigest: sha256(JSON.stringify(report, null, 2) + "\n"), reportMdDigest: sha256(md), reportHtmlDigest: sha256(html), roadmapItemsDigest: sha256(stableStringify(roadmap.items)), historyLineDigest: sha256(stableStringify(line)), keyed: Boolean(key) };
   audit.sealed.digest = auditDigest(audit, key);
   const auditErrors = validateAgainst("audit", audit);
   if (auditErrors.length) fail(`Internal error: the sealed audit doesn't match its schema:\n- ${auditErrors.join("\n- ")}`);
-  const dir = storeAudit(p, audit, report, md);
-  writeLatest(p, report, md);
+  const dir = storeAudit(p, audit, report, md, html);
+  writeLatest(p, report, md, html);
   writeRoadmap(p, roadmap);
   appendHistory(p, line);
   clearCurrent(p);
@@ -288,6 +307,9 @@ export function verifySeal(p: Paths, ref: string, opts: { releaseRepo?: string; 
   } else if (sha256(rjText) !== audit.sealed.reportJsonDigest || sha256(mdText) !== audit.sealed.reportMdDigest) {
     ok = false;
     lines.push("FAIL: report.json or report.md was edited after sealing.");
+  } else if (audit.sealed.reportHtmlDigest && sha256(readSealedFile(p, dir, "report.html") ?? "") !== audit.sealed.reportHtmlDigest) {
+    ok = false;
+    lines.push("FAIL: report.html is missing from the sealed audit or was edited after sealing.");
   } else lines.push("OK: report files match the seal.");
   const history = readHistory(p);
   const ownLine = history.find((h) => h.id === audit.id);
@@ -308,6 +330,9 @@ export function verifySeal(p: Paths, ref: string, opts: { releaseRepo?: string; 
     } else if (sha256(readText(lj)) !== audit.sealed.reportJsonDigest || sha256(readText(lm)) !== audit.sealed.reportMdDigest) {
       ok = false;
       lines.push("FAIL: .agent-readiness/latest/ was edited after sealing.");
+    } else if (audit.sealed.reportHtmlDigest && (!exists(join(p.latest, "report.html")) || sha256(readText(join(p.latest, "report.html"))) !== audit.sealed.reportHtmlDigest)) {
+      ok = false;
+      lines.push("FAIL: .agent-readiness/latest/report.html is missing or was edited after sealing.");
     }
     if (audit.sealed.roadmapItemsDigest && !exists(p.roadmap)) {
       ok = false;

@@ -7,8 +7,9 @@ import { sampledScope } from "./scope.ts";
 import { blockedBy, checkCounts } from "./score.ts";
 import type { ComponentResult } from "./seal.ts";
 import { NOT_SUPPORTED, SUPPORTED_DOC } from "./support.ts";
-import type { Asset, Audit, CondId, Component, ComponentLevel, HistoryLine, Level, OutcomeStats, OutcomesSnapshot, ReportAction, ReportJson, Roadmap, RoadmapItem, ScenarioId } from "./types.ts";
-import { fmtDate, fmtShortDate, pct, wordCount } from "./util.ts";
+import type { Asset, Audit, CondId, Component, ComponentLevel, HistoryLine, Level, OutcomeStats, OutcomesSnapshot, ReportAction, ReportChanges, ReportJson, Roadmap, RoadmapItem, ScenarioId } from "./types.ts";
+import { EMOJI, fmtDate, fmtShortDate, pct, wordCount } from "./util.ts";
+import { serviceLabel } from "./diagnose.ts";
 
 export interface RenderInput {
   audit: Audit;
@@ -34,6 +35,8 @@ export interface RenderInput {
   noResults?: string | null;
   // references/supported.md as a repo-relative path when the skill is installed in the repo.
   supportDoc?: string | null;
+  // The previous audit's sealed report, for what changed since; null on a first audit or when it can't be read.
+  previousReport?: ReportJson | null;
 }
 
 const STATUS_TEXT: Record<RoadmapItem["status"], string> = { done: "done", in_progress: "in progress", next: "next", start_now: "can start now", waiting: "waiting", later: "later" };
@@ -114,7 +117,24 @@ function action(item: RoadmapItem, rank: number, rubric: Rubric, roadmap: Roadma
     dependsOn: item.dependsOn.map((d) => roadmap.items.find((i) => i.id === d)?.title ?? d),
     impact: item.impact,
     effort: item.effort,
+    evidence: item.evidence,
   };
+}
+
+// The level of the scale a roadmap step is part of reaching: the lowest level whose conditions it
+// fixes. Steps such as naming an owner serve every level.
+function itemLevel(rubric: Rubric, item: RoadmapItem): Level | null {
+  // Targets define Level 3, and giving agents work is what produces the PRs it is measured on.
+  if (item.template === "targets" || item.kind === "rollout") return 3;
+  const conds = item.fixes.map((f) => f.condition);
+  if (conds.some((c) => rubric.level1.includes(c))) return 1;
+  if (conds.some((c) => rubric.level2.includes(c))) return 2;
+  return null;
+}
+
+// A not-assessed reason reads after "because": "outside the 6 most active components" needs a subject.
+function becauseOf(reason: string): string {
+  return /^outside /.test(reason) ? `it's ${reason}` : reason;
 }
 
 function compLevel(input: RenderInput, id: string): ComponentResult | undefined {
@@ -189,7 +209,7 @@ function blockedCauses(input: RenderInput): string[] {
 function whyNoneAssessed(input: RenderInput): string[] {
   const skipped = input.components.filter((c) => !c.assessed).sort((a, b) => b.changeShare - a.changeShare);
   if (skipped.length === 0) return ["found no package it supports"];
-  const detailed = `skipped ${list(skipped.map((c) => `${c.id} (${pct(c.changeShare, 1)}% of changes) because ${c.notAssessedReason ?? "it isn't supported"}`))}`;
+  const detailed = `skipped ${list(skipped.map((c) => `${c.id} (${pct(c.changeShare, 1)}% of changes) because ${becauseOf(c.notAssessedReason ?? "it isn't supported")}`))}`;
   return [detailed, `skipped ${skipped.length} ${skipped.length === 1 ? "component whose toolchain" : "components whose toolchains"} the audit doesn't support yet`];
 }
 
@@ -307,7 +327,7 @@ function because(input: RenderInput, cond: CondId, their: string): string {
   const fails = input.audit.evidence.filter((e) => e.condition === cond && e.result === "fail" && e.diagnosis);
   const d = (fails.filter((e) => input.rollup.setBy.includes(e.component ?? "")).at(-1) ?? fails.at(-1))?.diagnosis;
   if (!d) return "";
-  if (d.cause === "service") return ` because ${their} tests need ${d.service ?? "a service"} running, which the setup doesn't start`;
+  if (d.cause === "service") return ` because ${their} tests need ${serviceLabel(d, (p) => `a service on port ${p}`)} running, which the setup doesn't start`;
   if (d.cause === "registry") return " because private registry credentials weren't provided";
   if (d.cause === "credential") return ` because it ${d.detail}`;
   if (d.cause === "unknown") return "";
@@ -349,6 +369,9 @@ function stats3(input: RenderInput): ReportJson["executive"]["numbers"] {
   const days = audit.profile?.historyDays ?? 90;
   const readyThen = (h: HistoryLine) => `${h.active.filter((id) => (h.levels[id] ?? 0) >= 2).length} of ${h.active.length}`;
   const belowThen = (h: HistoryLine) => `${pct(h.active.filter((id) => (h.levels[id] ?? 0) < bar).reduce((s, id) => s + (h.shares[id] ?? 0), 0), 1)}%`;
+  // Assessed components under the change-share line are left out of the count; say so next to it.
+  const inactive = input.components.filter((c) => c.assessed && !input.active.has(c.id)).map((c) => c.id);
+  const inactiveNote = inactive.length ? `; ${list(inactive)} ${inactive.length > 1 ? "get" : "gets"} under ${Math.round(rubric.repoLevel.activeShare * 100)}% of changes, so ${inactive.length > 1 ? "they aren't" : "it isn't"} counted` : "";
   let readyComparison = `Level 2 needs ${activeIds.length} of ${activeIds.length}`;
   let belowComparison = `Level ${bar} needs 0%, counting the last ${days} days`;
   if (prev && first && first.id !== prev.id) {
@@ -365,7 +388,7 @@ function stats3(input: RenderInput): ReportJson["executive"]["numbers"] {
   if (noneAssessed(input)) {
     const found = input.components.length;
     return [
-      { label: "Components ready for agents", value: "none assessed", comparison: `${found} ${found === 1 ? "component" : "components"} found, none of them assessable by this rubric` },
+      { label: "Components ready for agents", value: "none assessed", comparison: `${found} ${found === 1 ? "component" : "components"} found, and ${found === 1 ? "it can't" : "none can"} be assessed yet` },
       ci,
       { label: "Recent changes this audit couldn't assess", value: `${pct(input.partial.unassessedShare, 1)}%`, comparison: `Counting the last ${days} days; a level needs at least one assessed component` },
     ];
@@ -380,7 +403,7 @@ function stats3(input: RenderInput): ReportJson["executive"]["numbers"] {
     ];
   }
   return [
-    { label: "Components ready for agents", value: `${ready} of ${activeIds.length}`, comparison: readyComparison },
+    { label: "Components ready for agents", value: `${ready} of ${activeIds.length}`, comparison: readyComparison + inactiveNote },
     ci,
     {
       label: unprovenOnly ? `Recent changes in components not yet proven at Level ${bar}` : someUnproven ? `Recent changes in components below or not yet proven at Level ${bar}` : `Recent changes in components below Level ${bar}`,
@@ -439,11 +462,14 @@ function unassessedOf(input: RenderInput): ReportJson["executive"]["unassessed"]
   const unsupported = held.length > 0 || input.components.some((c) => !c.assessed && NOT_SUPPORTED.test(c.notAssessedReason ?? ""));
   if (!skipped.length && !unsupported) return null;
   const share = skipped.reduce((s, c) => s + c.changeShare, 0);
-  const shown = skipped.slice(0, 3).map((c) => `${c.id} (${pct(c.changeShare, 1)}%), because ${c.notAssessedReason ?? "it isn't assessed"}`);
+  const shown = skipped.slice(0, 3).map((c) => `${c.id} (${pct(c.changeShare, 1)}%), because ${becauseOf(c.notAssessedReason ?? "it isn't assessed")}`);
   const more = skipped.length > 3 ? `; and ${skipped.length - 3} more` : "";
   const heldIds = [...new Set(held.map((e) => (e.component && e.component !== "*" ? e.component : "the repo")))];
   const heldText = held.length ? `${list(heldIds)} ${heldIds.length > 1 ? "have" : "has"} no proven level, because ${blockedBy(held[0])}` : "";
-  const text = [skipped.length ? `${pct(share, 1)}% of recent changes aren't assessed: ${shown.join("; ")}${more}` : "", heldText].filter(Boolean).join(". ");
+  // An unsupported component with no recent changes still needs its own words, or the line is empty.
+  const quiet = skipped.length || held.length ? [] : input.components.filter((c) => !c.assessed && NOT_SUPPORTED.test(c.notAssessedReason ?? ""));
+  const quietText = quiet.map((c) => `${c.id} (no recent changes), because ${becauseOf(c.notAssessedReason!)}`).join("; ");
+  const text = [skipped.length ? `${pct(share, 1)}% of recent changes aren't assessed: ${shown.join("; ")}${more}` : "", heldText, quietText].filter(Boolean).join(". ");
   return { share: Math.round(share * 1000) / 1000, text, supportDoc: unsupported ? (input.supportDoc ?? SUPPORTED_DOC) : null };
 }
 
@@ -477,8 +503,9 @@ function coverageLine(input: RenderInput): string {
     if (missing.length) line += ` On this machine ${list(missing)}, an environment limit rather than a repo defect${inImage.length ? `; the declared image installs ${list(inImage)}` : ""}.`;
     if (audit.evidence.some((e) => /uses sudo/.test(e.blocked ?? ""))) line += " Setup commands that use sudo weren't run on this machine.";
   }
+  // With no outcomes, the numbers already say agent PRs weren't measured.
   const f = audit.outcomes?.filter;
-  line += f ? ` Agent PRs are matched by ${describeFilter(f)}.` : " Agent PRs weren't measured.";
+  if (f) line += ` Agent PRs are matched by ${describeFilter(f)}.`;
   return line;
 }
 
@@ -667,7 +694,7 @@ export function buildReport(input: RenderInput): ReportJson {
     components: componentsOf(input),
     executive: {
       heading: noneAssessed(input)
-        ? "Not assessed: no component could be assessed"
+        ? "Not assessed: none of the components found can be assessed yet"
         : none
           ? `Not assessed: ${audit.tier === "read-only" ? "the read-only tier runs no repo code" : "no check could run on this machine"}`
           : !none && unprovenLevel1(L, input.rollup.couldBe, caps)
@@ -688,7 +715,12 @@ export function buildReport(input: RenderInput): ReportJson {
       owner: roadmap.owner,
       doneCount: roadmap.items.filter((i) => i.status === "done").length,
       total: roadmap.items.length,
-      items: roadmap.items.map((i) => ({ id: i.id, order: i.order, title: i.title, status: i.status, statusText: statusText(i, roadmap), unlocks: i.unlocks, decision: i.decision })),
+      items: roadmap.items.map((i) => {
+        // Several steps can be next at once; only the first says so, the others say which one they run alongside.
+        const firstNext = roadmap.items.find((x) => x.status === "next");
+        const text = i.status === "next" && firstNext && firstNext.id !== i.id ? `next, alongside step ${firstNext.order}` : statusText(i, roadmap);
+        return { id: i.id, order: i.order, title: i.title, status: i.status, statusText: text, unlocks: i.unlocks, decision: i.decision, level: itemLevel(rubric, i) };
+      }),
     },
     progress,
     details: {
@@ -749,12 +781,57 @@ export function buildReport(input: RenderInput): ReportJson {
         { label: "Seal", value: input.sealStatus },
         { label: "Skill digest", value: audit.skill.scriptsDigest.slice(0, 12) },
         { label: "Planted faults", value: plantedFaultsRecord(audit) },
-        { label: "Replay environment", value: audit.environment.containerRuntime ? `${audit.environment.containerRuntime} container, ${audit.environment.image}` : "fresh copy on the host (no container runtime)" },
+        {
+          label: "Replay environment",
+          value: audit.environment.containerRuntime
+            ? `${audit.environment.containerRuntime} container, ${audit.environment.image}`
+            : audit.evidence.some((e) => e.where === "fresh_copy" || e.where === "container")
+              ? "fresh copy on the host (no container runtime)"
+              : `none: no repo command ran${noneAssessed(input) ? ", because no component could be assessed" : ""}`,
+        },
         { label: "Stored in", value: input.storedAt },
       ],
     },
   };
+  if (report.progress) report.progress.changes = input.previousReport ? changesOf(input.previousReport, report, rubric) : null;
+  report.notices = noticesOf(input);
   return report;
+}
+
+// Only what the reader should act on reaches page 1, phrased as the action. An eval seed, a recorded
+// PR file and an unkeyed seal need no action from a reader and stay in "About this report".
+function noticesOf(input: RenderInput): { text: string }[] {
+  const { audit } = input;
+  const out: string[] = [];
+  const release = input.sealStatus.match(/differ from release (\S+?);/)?.[1];
+  if (release) out.push(`This audit ran with scripts that differ from the released skill (${release}), so it isn't a released result. Reinstall the released skill and rerun the audit.`);
+  else if (input.sealStatus.startsWith("Seal not verified: no release manifest")) out.push("This copy of the skill ships no release manifest, so its scripts can't be checked against a release. Install a released copy and rerun the audit.");
+  if (input.staleCopy) out.push(`${input.staleCopy} Update the installed skill and rerun the audit.`);
+  if (audit.tier === "read-only") out.push("This audit ran at the read-only tier, so it ran no repo command. Rerun it with --tier local-exec to get a level.");
+  else if (!audit.environment.containerRuntime && audit.evidence.some((e) => e.where === "fresh_copy")) out.push("This audit ran without a container runtime, so Level 1 is unproven. Install Docker or Podman, or run it in CI, and rerun the audit.");
+  if (audit.repo.dirtyTree) out.push("Uncommitted changes weren't audited. Commit them and rerun the audit to include them.");
+  return out.map((text) => ({ text }));
+}
+
+// What changed since the previous audit, read from its sealed report and this one only.
+export function changesOf(prev: ReportJson, now: ReportJson, rubric: Rubric): ReportChanges {
+  const repoLevel = (r: ReportJson) => (r.maturity.outcome === "not_assessed" ? null : r.maturity.level);
+  const levels = (r: ReportJson) => new Map(r.components.included.map((c) => [c.id, c.level] as [string, Level | null]));
+  const before = levels(prev);
+  const after = levels(now);
+  const ids = [...new Set([...before.keys(), ...after.keys()])];
+  const components = ids.map((id) => ({ id, from: before.get(id) ?? null, to: after.get(id) ?? null })).filter((c) => c.from !== c.to);
+  // The level a condition is needed for: a failing Level 1 condition only regresses a component that had reached Level 1.
+  const condLevel = (c: string) => (rubric.level1.includes(c as CondId) ? 1 : rubric.level2.includes(c as CondId) ? 2 : 3);
+  const caps = (r: ReportJson) => new Map(r.components.included.flatMap((c) => c.capReasons.map((k) => [`${c.id}\u0000${k.condition}`, { component: c.id, condition: k.condition, label: k.label, reason: k.reason, state: k.state }] as const)));
+  const was = caps(prev);
+  const is = caps(now);
+  const held = (id: string) => (after.get(id) ?? -1) >= (before.get(id) ?? 0);
+  const nowMet = [...was.entries()].filter(([k, v]) => !is.has(k) && after.get(v.component) != null && held(v.component)).map(([, v]) => ({ component: v.component, label: v.label }));
+  const nowFailing = [...is.entries()].filter(([k, v]) => !was.has(k) && v.state === "not_met" && (before.get(v.component) ?? -1) >= condLevel(v.condition)).map(([, v]) => ({ component: v.component, label: v.label, reason: v.reason }));
+  const okBefore = new Map(prev.details.checks.map((c) => [c.id, c.ok]));
+  const checks = now.details.checks.filter((c) => okBefore.has(c.id) && okBefore.get(c.id) !== c.ok && (okBefore.get(c.id) === false || c.ok === false)).map((c) => ({ id: c.id, name: c.name, from: okBefore.get(c.id) ?? null, to: c.ok }));
+  return { since: { audit: prev.audit.id, date: prev.audit.date }, repo: { from: repoLevel(prev), to: repoLevel(now) }, components, nowMet, nowFailing, checks };
 }
 
 function plantedFaultsRecord(audit: Audit): string {
@@ -843,6 +920,7 @@ export function validatePart1(report: ReportJson, rubric: Rubric, narratedAllowe
   ];
   for (const [name, text] of fields) {
     if (text.includes("`")) errors.push(`${name} uses code formatting`);
+    if (EMOJI.test(text)) errors.push(`${name} uses an emoji; say the status in words`);
     if (/\bev-\d+/.test(text)) errors.push(`${name} cites an evidence id`);
     if (/\b(bootstrap|verify|context|safety|scope)\.[a-z_]+/.test(text)) errors.push(`${name} names a check id`);
     for (const term of rubric.part1.bannedTerms) if (text.toLowerCase().includes(term.toLowerCase())) errors.push(`${name} uses the banned term "${term}"`);
@@ -914,51 +992,248 @@ export function scaleLine(r: ReportJson): string {
   return r.scale.map((s) => (s.level === here ? `[Level ${s.level} ${s.name}]` : `Level ${s.level} ${s.name}`)).join(" > ");
 }
 
+// The level the report can mark on the scale, or null when it can't prove one.
+export function markedLevel(r: ReportJson): Level | null {
+  return r.maturity.assessedComponents === 0 || r.maturity.outcome === "not_assessed" || r.maturity.unproven ? null : r.maturity.level;
+}
+
+// Part 1's compact ladder: the scale left to right, with the repo's level bracketed.
+export function ladderLine(r: ReportJson): string {
+  const here = markedLevel(r);
+  const steps = r.scale.map((s) => (s.level === here ? `**[${s.level} ${s.name}]**` : `${s.level} ${s.name}`)).join(" → ");
+  return `Level ladder: ${steps}${here === null ? " (no level marked: this audit couldn't give one)" : ""}`;
+}
+
+// Levels 3 and 4 rest on agent PR outcomes, which this version tests only in unit tests.
+export const EXPERIMENTAL_NOTE = "Levels 3 and 4 are experimental: they measure agent PR outcomes, and this version doesn't yet validate them end to end. Level 2 is the proven top of this version.";
+
+export function isExperimental(level: Level | null | undefined): boolean {
+  return level !== null && level !== undefined && level >= 3;
+}
+
+// The roadmap's own number for a step, so an action and its roadmap line carry the same number.
+export function stepOf(r: ReportJson, itemId: string): number | null {
+  return r.roadmap.items.find((i) => i.id === itemId)?.order ?? null;
+}
+
+// What the marked level means and what the next one needs, so "not bootable" never stands alone
+// next to a headline that says the repo installs and builds.
+export function levelDefinition(r: ReportJson): string | null {
+  const here = markedLevel(r);
+  if (here === null) return null;
+  const meaning = r.scale[here].meaning.replace(/\.$/, "");
+  const next = here === 0 ? r.details.levelRules.level1 : here === 1 ? r.details.levelRules.level2 : here < 4 ? `Level ${here + 1} (experimental) needs: ${r.scale[here + 1].meaning.charAt(0).toLowerCase()}${r.scale[here + 1].meaning.slice(1).replace(/\.$/, "")}` : null;
+  return `Level ${here} means: ${meaning.charAt(0).toLowerCase()}${meaning.slice(1)}.${next ? ` ${next}.` : ""}`;
+}
+
+// Page 1's three numbers, compared with what the next level needs. The sealed comparisons stay in
+// report.json and in part 5; only the view's wording changes.
+export function pageNumbers(r: ReportJson): ReportJson["executive"]["numbers"] {
+  const here = markedLevel(r);
+  return r.executive.numbers.map((n, i) => {
+    if (n.value === "not measured") return { ...n, comparison: "Not measured yet: give the audit read access to pull requests, then rerun it to measure this" };
+    if (here !== null && here >= 2 && i === 0) return { ...n, comparison: "Every active component is at Level 2. Level 3 (experimental) is measured on agent PRs, not components" };
+    if (here !== null && here >= 2 && i === 2) return { ...n, comparison: "Nothing is below Level 2. Level 3 (experimental) needs agent PRs that meet targets your team sets" };
+    // With history the sealed comparison is against past audits; page 1 leads with what Level 2 needs.
+    const last = n.comparison.match(/last audit: ([^;.,]+)/i)?.[1];
+    if (!last) return n;
+    const total = n.value.match(/^\d+ of (\d+)$/)?.[1];
+    if (i === 0 && total) return { ...n, comparison: `Level 2 needs ${total} of ${total}; last audit: ${last}` };
+    if (i === 2 && /%$/.test(n.value)) return { ...n, comparison: `Level 2 needs 0%; last audit: ${last}, counting the last 90 days` };
+    return n;
+  });
+}
+
+// The first action, as page 1's next move: what it unlocks, its effort and owner, and the decision.
+export function nextMove(r: ReportJson): { step: number | null; title: string; unlocks: string; effort: string; decision: string | null; itemId: string; experimental: boolean } | null {
+  const a = r.actions[0];
+  if (!a) return null;
+  const item = r.roadmap.items.find((i) => i.id === a.itemId);
+  return { step: stepOf(r, a.itemId), title: a.title, unlocks: a.movesTheNeedle, effort: a.effortAndOwner, decision: a.decision, itemId: a.itemId, experimental: isExperimental(item?.level) };
+}
+
+// "Give agents work in alpha", "… in bravo" and so on read as one step for the reader.
+export function groupedSteps(items: ReportJson["roadmap"]["items"]): { orders: number[]; title: string; unlocks: string; statusText: string; done: boolean }[] {
+  const out: { orders: number[]; title: string; unlocks: string; statusText: string; done: boolean }[] = [];
+  const work = items.filter((i) => /^Give agents work in /.test(i.title));
+  for (const i of items) {
+    if (work.length > 1 && work.includes(i)) {
+      if (i !== work[0]) continue;
+      const names = work.map((w) => w.title.replace(/^Give agents work in /, ""));
+      const statuses = [...new Set(work.map((w) => w.statusText))];
+      out.push({ orders: work.map((w) => w.order), title: `Give agents work in ${list(names)}`, unlocks: `measured agent work in ${list(names)}`, statusText: statuses.join(" / "), done: work.every((w) => w.status === "done") });
+    } else out.push({ orders: [i.order], title: i.title, unlocks: i.unlocks, statusText: i.statusText, done: i.status === "done" });
+  }
+  return out;
+}
+
+const SPARK = ["▁", "▂", "▄", "▆", "█"];
+
+// One glyph per record, taller for a higher level; a dot where a record gave no level.
+export function sparkline(levels: (Level | null | undefined)[]): string {
+  return levels.map((l) => (l === null || l === undefined ? "·" : SPARK[l])).join("");
+}
+
+function recordLabel(h: { date: string; kind: string; result: string }, level: Level | null | undefined): string {
+  const what = level === null || level === undefined ? "no level" : `Level ${level}`;
+  return `${fmtShortDate(h.date)} ${what}${h.kind === "recheck" ? ` (recheck${h.result === "failed" ? ", failed" : ""})` : ""}`;
+}
+
+// The repo level at every audit and recheck, oldest first.
+export function trendLine(r: ReportJson): string {
+  const h = r.progress?.history ?? [];
+  if (h.length < 2) return "Trend: this is the first audit, so there is no trend yet.";
+  return `Trend: ${sparkline(h.map((x) => x.repoLevel))} ${h.map((x) => recordLabel(x, x.repoLevel)).join(" → ")}`;
+}
+
+function componentTrend(r: ReportJson, id: string): string {
+  const h = r.progress?.history ?? [];
+  return h.length < 2 ? "first audit" : sparkline(h.map((x) => x.levels[id]));
+}
+
+function miniLadder(level: Level | null): string {
+  return [0, 1, 2, 3, 4].map((l) => (l === level ? "●" : "○")).join("");
+}
+
+function supportLink(doc: string | null): string {
+  if (!doc) return "";
+  // report.md sits in .agent-readiness/latest/, two folders below the repo root.
+  return doc.startsWith("references/") ? ` What the audit supports: ${doc} in the agent-readiness skill.` : ` What the audit supports: [supported.md](../../${doc}).`;
+}
+
+function levelText(l: Level | null): string {
+  return l === null ? "no level" : `Level ${l}`;
+}
+
+// The provenance and eval-mode lines that need no action from a reader; they close the report.
+function aboutLines(r: ReportJson): string[] {
+  const fromFile = r.details.outcomes !== null && r.details.outcomes.source !== "GitHub through gh";
+  const lines: string[] = [];
+  if (r.audit.seedPinned) lines.push("Eval run with a pinned seed; not a production result.");
+  if (fromFile) lines.push("Outcomes come from a recorded PR file, not GitHub; not a production result.");
+  lines.push(`${r.audit.sealStatus}.`);
+  if (r.audit.staleCopy) lines.push(r.audit.staleCopy);
+  return lines;
+}
+
+function keyNote(r: ReportJson): string | null {
+  return /unkeyed/.test(r.audit.sealStatus) ? "For signed reports, set SA_READINESS_SEAL_KEY from a CI secret where the audit runs." : null;
+}
+
+// One line on what changed since the last audit, or null on a first audit.
+export function changeSummary(r: ReportJson): string | null {
+  const ch = r.progress?.changes;
+  if (!ch) return null;
+  const since = fmtShortDate(ch.since.date);
+  const { from, to } = ch.repo;
+  const move = from === to ? `Unchanged since ${since}` : from !== null && to !== null && to > from ? `Up from Level ${from} since ${since}` : from !== null && to !== null ? `Down from Level ${from} since ${since}` : `Changed since ${since}`;
+  const closed = r.progress!.closed.length;
+  return `${move}${closed ? `; ${closed} ${closed === 1 ? "step" : "steps"} closed` : ""}`;
+}
+
+// Page 1 names the reason; the missed-fault locations stay in the audit details.
+export function shortReason(reason: string): string {
+  return reason.split("; missed:")[0];
+}
+
+// What holds a component where it is, and the roadmap step that moves it.
+function holdsText(r: ReportJson, c: ReportJson["components"]["included"][number]): string {
+  if (c.level !== null && c.level >= 2) return "ready for agents";
+  const cap = c.capReasons.find((k) => k.state !== "met");
+  const item = r.roadmap.items.find((i) => i.status !== "done" && new RegExp(`(^|, )${c.id.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")} to Level`).test(i.unlocks));
+  return `${cap ? `${cap.label}: ${shortReason(cap.reason)}`.replace(/\|/g, "\\|") : ""}${item ? ` (step ${item.order})` : ""}`;
+}
+
 export function renderMarkdown(r: ReportJson, rubric: Rubric): string {
   const out: string[] = [];
   const ex = r.executive;
-  out.push(`# Agent readiness: ${r.repo}`, "");
-  const fromFile = r.details.outcomes !== null && r.details.outcomes.source !== "GitHub through gh";
-  out.push(`> ${r.audit.seedPinned ? "Eval run with a pinned seed; not a production result. " : fromFile ? "Outcomes come from a recorded PR file, not GitHub; not a production result. " : ""}${r.audit.sealStatus}.${r.audit.staleCopy ? ` ${r.audit.staleCopy}` : ""}`, "");
   const conf = r.maturity.confidence;
-  out.push(`## 1. Where you stand: ${ex.heading}`, "", `Audited ${fmtDate(r.audit.date)} at ${r.audit.commit}. Confidence: ${conf.level} (${conf.reasons.join("; ")}).`, "", `**${ex.headline}**`, "");
-  for (const n of ex.numbers) out.push(`- **${n.label}:** ${n.value}. ${n.comparison}.`);
-  if (ex.unassessed) {
-    const doc = ex.unassessed.supportDoc;
-    const link = !doc ? "" : doc.startsWith("references/") ? ` What the audit supports: ${doc} in the agent-readiness skill.` : ` What the audit supports: [supported.md](/${doc}).`;
-    out.push(`- **Not assessed:** ${ex.unassessed.text}.${link}`);
-  }
+  const noResults = r.maturity.outcome === "not_assessed";
+  out.push(`# Agent readiness: ${r.repo}`, "");
+  for (const n of r.notices ?? []) out.push(`> **Action needed:** ${n.text}`, "");
+
+  // Page 1: where the repo stands, what changed and what to do next. Measures, methodology and
+  // provenance are in part 5 and "About this report".
+  out.push("## 1. Where am I now", "", `**${ex.heading}.**${changeSummary(r) ? ` ${changeSummary(r)}.` : ""}`, "", `**${ex.headline}**`, "");
+  const move = nextMove(r);
+  out.push(move ? `> **Next move${move.step !== null ? `, step ${move.step}` : ""}:** ${move.title}${move.experimental ? " (experimental)" : ""}. ${move.unlocks} Effort and owner: ${move.effort}${move.decision ? ` Decision: ${move.decision}.` : ""}` : `> **Next move:** ${ex.ask}`, "");
+  out.push(ladderLine(r), "", `${levelDefinition(r) ?? "No level is marked: this audit couldn't give one."} ${EXPERIMENTAL_NOTE}`, "");
+  if ((r.progress?.history.length ?? 0) > 2) out.push(trendLine(r), "");
+  for (const n of pageNumbers(r)) out.push(`- **${n.label}:** ${n.value}. ${n.comparison}.`);
   out.push("");
-  out.push(scaleLine(r), "", ex.nextLine, "");
+  const comps = r.components;
+  const listed = comps.excluded.filter((c) => !c.reason.startsWith("not a component"));
+  if (comps.included.length + listed.length > 1) {
+    out.push("| Component | Level | Ladder 0 to 4 | Share of changes | Trend | What holds it |", "|---|---|---|---|---|---|");
+    for (const c of [...comps.included].sort((a, b) => b.changeShare - a.changeShare)) {
+      const level = c.unproven ? "Level 1 unproven here" : levelText(c.level);
+      out.push(`| \`${c.id}\` | ${level} | ${c.unproven ? miniLadder(null) : miniLadder(c.level)} | ${Math.round(c.changeShare * 100)}%${c.active ? "" : " (under 10%)"} | ${componentTrend(r, c.id)} | ${holdsText(r, c)} |`);
+    }
+    for (const c of listed) out.push(`| \`${c.id}\` | not assessed: ${c.reason} | | ${Math.round(c.changeShare * 100)}% | | |`);
+    out.push("", "Share of changes: the component's share of changed files over the last 90 days.", "");
+  }
+  if (ex.unassessed) out.push(`- **Not assessed:** ${ex.unassessed.text}.${supportLink(ex.unassessed.supportDoc)}`, "");
+
+  out.push("## 2. Have I improved", "");
+  if (!r.progress) out.push("This is the first audit, so there is nothing to compare yet. Rerun the audit after your first fix to see what changed here.", "");
+  else {
+    const ch = r.progress.changes;
+    if (ch) {
+      out.push(`Since the audit on ${fmtDate(ch.since.date)}:`, "");
+      out.push(`- **Repo level:** ${levelText(ch.repo.from)} to ${levelText(ch.repo.to)}${ch.repo.from === ch.repo.to ? ", no change" : ""}.`);
+      for (const c of ch.components) out.push(`- **${c.id}:** ${levelText(c.from)} to ${levelText(c.to)}.`);
+      if (ch.nowMet.length) out.push(`- **Now met:** ${ch.nowMet.map((m) => `${m.component}: ${m.label}`).join("; ")}.`);
+      if (ch.nowFailing.length) out.push(`- **Now failing:** ${ch.nowFailing.map((m) => `${m.component}: ${m.label} (${m.reason})`).join("; ")}.`);
+      const word = (ok: boolean | null) => (ok === true ? "passed" : ok === false ? "failed" : "not proven");
+      if (ch.checks.length) out.push(`- **Checks that changed:** ${ch.checks.map((c) => `${c.name}, ${word(c.from)} then ${word(c.to)}`).join("; ")}.`);
+      if (!ch.components.length && !ch.nowMet.length && !ch.nowFailing.length && !ch.checks.length) out.push("- No component level, condition or check changed.");
+    } else out.push("The previous audit's sealed report isn't readable here, so only the levels in part 5 are compared.");
+    if (r.progress.closed.length) out.push(`- **Steps closed:** ${r.progress.closed.map((c) => `${c.title} (${fmtShortDate(c.closed)})`).join("; ")}. Part 5 shows what moved after them.`);
+    out.push("");
+  }
+
+  out.push("## 3. What moves the needle next", "", `> **Recommendation:** ${ex.ask}`, "", ex.nextLine, "");
   if (ex.gaps.length) {
     for (const g of ex.gaps) out.push(`${g.rank}. **${g.text}.** ${g.blocks}.`);
     out.push("");
   }
-  out.push(`> **Recommendation:** ${ex.ask}`, "", ex.coverage, "");
-  out.push("## 2. Next actions and how they move the needle", "");
-  if (r.matrix.points.length) {
-    out.push(`Effort against impact (impact is the share of recent changes an action unblocks): ${r.matrix.points.map((p) => `${p.label} (${p.quadrant ? `${p.quadrant}: ` : ""}effort ${p.x <= 0.35 ? "small" : p.x <= 0.7 ? "medium" : "large"}, ${Math.round((p.impact ?? p.y) * 100)}%)`).join("; ")}.`, "");
-  }
-  for (const a of r.actions) {
-    out.push(`### ${a.rank}. ${a.title}${a.startNow ? " (can start now)" : ""}`, "");
-    out.push(`- **Why it matters:** ${a.why}`, `- **How it moves the needle:** ${a.movesTheNeedle}`, `- **What to watch:** ${a.watch}`);
-    if (a.research) out.push(`- **Research:** ${a.research}`);
-    out.push(`- **Effort and owner:** ${a.effortAndOwner}`);
+  r.actions.forEach((a, i) => {
+    const item = r.roadmap.items.find((x) => x.id === a.itemId);
+    out.push(`### Step ${stepOf(r, a.itemId) ?? a.rank}: ${a.title} (${a.startNow ? "can start now" : i === 0 ? "do first" : "then"}${isExperimental(item?.level) ? ", experimental" : ""})`, "");
+    out.push(`- **How it moves the needle:** ${a.movesTheNeedle}`, `- **Why it matters:** ${a.why}`, `- **Effort and owner:** ${a.effortAndOwner}`);
     if (a.decision) out.push(`- **Decision needed:** ${a.decision}.`);
     if (a.dependsOn.length) out.push(`- **Depends on:** ${list(a.dependsOn)}`);
-    out.push(`- **Done when:** ${a.doneWhen}`, "");
-  }
-  const noResults = r.maturity.outcome === "not_assessed";
+    if (a.evidence?.length) out.push(`- **Evidence:** ${a.evidence.map((e) => `\`${e}\``).join(", ")}`);
+    out.push("");
+  });
   if (r.actions.length === 0) out.push(r.maturity.assessedComponents === 0 ? "No actions can be planned yet: no component could be assessed, so nothing was checked. Part 1 says why." : noResults ? "No actions can be planned yet: this audit has no real check results to plan from. Part 1 says why." : r.maturity.outcome === "blocked" ? `No actions are open: nothing in the repo blocks Level ${r.maturity.level + 1}. Proving it needs a rerun where this machine's limits don't apply, such as CI with Docker or Podman.` : "No actions are open.", "");
-  out.push("## 3. Where you are on the roadmap", "");
+
+  out.push("## 4. Roadmap to the max level", "");
   if (noResults) out.push("This audit added no steps, because it has no real check results to plan from. The roadmap is as the last audit left it.", "");
   out.push(`${r.roadmap.doneCount} of ${r.roadmap.total} steps done. Kept in \`.agent-readiness/roadmap.json\`.${r.roadmap.owner ? ` Owner: ${r.roadmap.owner}.` : ""}`, "");
-  for (const i of r.roadmap.items) out.push(`- [${i.status === "done" ? "x" : " "}] ${i.order}. ${i.title}: unlocks ${i.unlocks} (${i.statusText})`);
-  out.push("");
+  const here = markedLevel(r);
+  const step = (g: ReturnType<typeof groupedSteps>[number]) => `- [${g.done ? "x" : " "}] ${g.orders.length > 1 ? `Steps ${g.orders[0]} to ${g.orders[g.orders.length - 1]}` : `Step ${g.orders[0]}`}: ${g.title}: unlocks ${g.unlocks} (${g.statusText})`;
+  for (const L of [1, 2, 3, 4] as Level[]) {
+    const s = r.scale[L];
+    const state = here !== null && here >= L ? "reached" : (here ?? -1) + 1 === L ? "next" : "later";
+    const needs = L === 1 ? r.details.levelRules.level1 : L === 2 ? r.details.levelRules.level2 : `Level ${L} means: ${s.meaning.charAt(0).toLowerCase()}${s.meaning.slice(1).replace(/\.$/, "")}`;
+    out.push(`### Level ${L}, ${s.plain} (${state}${isExperimental(L) ? ", experimental" : ""})`, "", `${needs}.`, "");
+    const items = groupedSteps(r.roadmap.items.filter((i) => i.level === L));
+    if (items.length) out.push(...items.map(step), "");
+    else if (state !== "reached") out.push(state === "next" ? "No step is open for it in the roadmap yet." : "Its steps are added once the level below it is reached.", "");
+  }
+  const every = groupedSteps(r.roadmap.items.filter((i) => i.level === null || i.level === undefined));
+  if (every.length) out.push("### For every level", "", ...every.map(step), "");
+
+  out.push("## 5. Audit details: exact steps and everything we checked", "");
+  out.push("### Measures", "", `Confidence: ${conf.level} (${conf.reasons.join("; ")}).`, "");
+  for (const n of ex.numbers) out.push(`- **${n.label}:** ${n.value}. ${n.comparison}.`);
+  out.push("", ex.coverage, "");
   if (r.progress) {
-    out.push("### Levels over time", "", "| Date | Record | Repo | " + Object.keys(r.progress.history[r.progress.history.length - 1].levels).join(" | ") + " |", "|---|---|---|" + Object.keys(r.progress.history[r.progress.history.length - 1].levels).map(() => "---|").join(""));
+    const keys = Object.keys(r.progress.history[r.progress.history.length - 1].levels);
+    out.push("### Levels over time", "", "| Date | Record | Repo | " + keys.join(" | ") + " |", "|---|---|---|" + keys.map(() => "---|").join(""));
     const cell = (v: Level | null | undefined) => (v === undefined ? "-" : v === null ? "not assessed" : String(v));
-    for (const h of r.progress.history) out.push(`| ${fmtShortDate(h.date)} | ${h.kind}${h.result === "failed" ? " failed" : ""}${h.note ? `, ${h.note}` : ""} | ${cell(h.repoLevel)} | ${Object.keys(r.progress.history[r.progress.history.length - 1].levels).map((k) => cell(h.levels[k])).join(" | ")} |`);
+    for (const h of r.progress.history) out.push(`| ${fmtShortDate(h.date)} | ${h.kind}${h.result === "failed" ? " failed" : ""}${h.note ? `, ${h.note}` : ""} | ${cell(h.repoLevel)} | ${keys.map((k) => cell(h.levels[k])).join(" | ")} |`);
     out.push("", "A failed recheck lowers a level and a later passing recheck restores it. Only an audit can raise a level above the last audit.", "");
     if (r.progress.rubricChanges.length) out.push(`Rubric changes: ${r.progress.rubricChanges.map((c) => `${fmtShortDate(c.date)} ${c.from} to ${c.to}`).join("; ")}. A level change at a rubric change can come from the rubric, not the repo.`, "");
     if (r.progress.closed.length) {
@@ -968,9 +1243,13 @@ export function renderMarkdown(r: ReportJson, rubric: Rubric): string {
     }
     if (r.progress.weakening) out.push(r.progress.weakening, "");
   }
-  out.push("## 4. Details: exact steps and everything we checked", "");
+  if (r.matrix.points.length) {
+    out.push(`Effort against impact (impact is the share of recent changes an action unblocks): ${r.matrix.points.map((p) => `${p.label} (${p.quadrant ? `${p.quadrant}: ` : ""}effort ${p.x <= 0.35 ? "small" : p.x <= 0.7 ? "medium" : "large"}, ${Math.round((p.impact ?? p.y) * 100)}%)`).join("; ")}.`, "");
+  }
   for (const s of r.details.steps) {
-    out.push(`### Steps for ${s.title}`, "");
+    const a = r.actions.find((x) => x.itemId === s.itemId);
+    out.push(`### Steps for ${s.title} (step ${stepOf(r, s.itemId) ?? ""})`, "");
+    if (a) out.push(`- **What to watch:** ${a.watch}`, `- **Done when:** ${a.doneWhen}`, "");
     s.steps.forEach((st, i) => out.push(`${i + 1}. **${st.title}.** ${st.detail}`));
     out.push("");
   }
@@ -981,7 +1260,6 @@ export function renderMarkdown(r: ReportJson, rubric: Rubric): string {
     out.push(`| ${c.name} (\`${c.id}\`) | ${c.why}${src} | ${result} | ${c.evidence.slice(0, 6).map((e) => `\`${e}\``).join(", ")}${c.evidence.length > 6 ? ` and ${c.evidence.length - 6} more` : ""} |`);
   }
   out.push("", `Not assessed by this rubric version, which is different from unknown: ${list(r.details.notAssessed.map((n) => n.charAt(0).toLowerCase() + n.slice(1)))}.`, "");
-  const comps = r.components;
   const levelCell = (level: Level | null, couldBe: Level | null, unproven = false) => (level === null ? "not assessed" : unproven ? "Level 1 unproven on this machine (could be 1)" : `${levelWord(rubric, level)}${couldBe !== null ? ` (could be ${couldBe})` : ""}`);
   out.push("### Levels by component", "", `Repo shape: ${comps.shape === "sampled_monorepo" ? "monorepo, sampled (only the most active supported components are assessed)" : comps.shape}. Each component gets one standard level; scenarios someone added appear under the components they cover.`, "", "| Component | Path | Toolchain | Manifest | Lockfile | Share of changes | Level |", "|---|---|---|---|---|---|---|");
   const file = (f: string | null) => (f ? `\`${f}\`` : "none");
@@ -990,8 +1268,7 @@ export function renderMarkdown(r: ReportJson, rubric: Rubric): string {
     for (const s of c.scenarios) out.push(`| \`${c.id}\` › ${s.label} | | | | | | ${levelCell(s.level, s.couldBe, s.unproven)} |`);
   }
   for (const c of comps.excluded) out.push(`| \`${c.id}\` | \`${c.path}\` | ${c.toolchain} | ${file(c.manifest)} | ${file(c.lockfile)} | ${c.reason.startsWith("not a component") ? "n/a" : `${Math.round(c.changeShare * 100)}%`} | not assessed: ${c.reason} |`);
-  const noLevel = r.maturity.outcome === "not_assessed";
-  out.push("", `Repo level: ${noLevel ? "not assessed" : r.maturity.unproven ? "Level 1 unproven on this machine (could be 1)" : levelWord(rubric, r.maturity.level)}. ${r.maturity.rule}`, "");
+  out.push("", `Repo level: ${noResults ? "not assessed" : r.maturity.unproven ? "Level 1 unproven on this machine (could be 1)" : levelWord(rubric, r.maturity.level)}. ${r.maturity.rule}`, "");
   if (r.maturity.capReasons.length) {
     out.push(r.maturity.unproven ? "What keeps Level 1 unproven on this machine:" : `What holds the repo at Level ${r.maturity.level}:`, "");
     for (const c of r.maturity.capReasons) out.push(`- ${c.component === "*" ? "Repo" : `\`${c.component}\``}: ${c.label}, ${c.state === "blocked" ? "blocked on this machine" : c.state === "unknown" ? "not proven" : "not met"} (${c.reason}).`);
@@ -1025,11 +1302,18 @@ export function renderMarkdown(r: ReportJson, rubric: Rubric): string {
     for (const s of r.details.signals) out.push(`| ${s.label} | ${s.found === null ? "n/a" : s.found ? "yes" : "no"} | ${s.detail.replace(/\|/g, "\\|")} |`);
     out.push("", "These don't set a level or add a roadmap step.", "");
   }
-  out.push("### Evidence log", "", "<details><summary>All evidence</summary>", "", "| ID | Check | Component | What ran | Where | Result |", "|---|---|---|---|---|---|");
-  for (const e of r.details.evidence) out.push(`| \`${e.id}\` | \`${e.check}\` | ${e.component ?? "repo"} | ${e.ran.replace(/\|/g, "\\|").slice(0, 140)} | ${e.where} | ${e.result}: ${e.summary.replace(/\|/g, "\\|").slice(0, 160)} |`);
+  // Five columns: where a check ran goes with its result, and a check read from files names no command.
+  out.push("### Evidence log", "", "<details><summary>All evidence</summary>", "", "| ID | Check | Component | What ran | Result |", "|---|---|---|---|---|");
+  for (const e of r.details.evidence) {
+    const ran = e.ran === e.summary ? `(${e.where})` : `${e.ran.replace(/\|/g, "\\|").slice(0, 120)} (${e.where})`;
+    out.push(`| \`${e.id}\` | \`${e.check}\` | ${e.component ?? "repo"} | ${ran} | ${e.result}: ${e.summary.replace(/\|/g, "\\|").slice(0, 160)} |`);
+  }
   out.push("", "</details>", "", "Evidence strength, weakest to strongest: stated in docs, read from files, ran on host, ran in a clean container, confirmed by outcomes. A check passes only at its required strength.", "");
-  out.push("### Audit record", "");
+
+  out.push("## About this report", "", `Audited ${fmtDate(r.audit.date)} at ${r.audit.commit}. ${aboutLines(r).join(" ")}`, "");
   for (const x of r.details.record) out.push(`- **${x.label}:** ${x.value}`);
   out.push("");
+  const key = keyNote(r);
+  out.push("---", "", `Generated from \`report.json\` by the agent-readiness skill; \`report.html\` is the same report as a page.${key ? ` ${key}` : ""}`, "");
   return out.join("\n");
 }

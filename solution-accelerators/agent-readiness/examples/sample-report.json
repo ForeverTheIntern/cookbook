@@ -8,7 +8,7 @@
     "dirtyTree": false,
     "rubric": "2026-11-alpha",
     "tier": "local-exec",
-    "scriptsDigest": "75d6e5dc191faa0d55fdbb63d4406e7026fddce9529892336a0df30a375719e6",
+    "scriptsDigest": "e832a2321a324d1611b9f9b13336ba2944acea9ae80f867e36d4a0f214e9512f",
     "seedPinned": true,
     "sealStatus": "Scripts match the agent-readiness-v0.1.0 manifest bundled with this copy; the published release isn't checked here, and the seal is an unkeyed digest, which shows edits but not who sealed it",
     "staleCopy": null,
@@ -296,7 +296,7 @@
       {
         "id": "clean.test:api",
         "order": 2,
-        "title": "Set up Postgres on port 5432 for agents in api",
+        "title": "Set up the service the tests expect on port 5432 for agents in api",
         "status": "done",
         "statusText": "done Oct 30",
         "unlocks": "api to Level 1",
@@ -319,7 +319,7 @@
         "title": "Check api's tests with planted faults",
         "status": "done",
         "statusText": "done Oct 30",
-        "unlocks": "nothing on its own; first needs Set up Postgres on port 5432 for agents in api",
+        "unlocks": "nothing on its own; first needs Set up the service the tests expect on port 5432 for agents in api",
         "decision": "What the untested behavior in packages/api should be",
         "level": 2
       },
@@ -448,7 +448,7 @@
     ],
     "closed": [
       {
-        "title": "2. Set up Postgres on port 5432 for agents in api",
+        "title": "2. Set up the service the tests expect on port 5432 for agents in api",
         "closed": "2026-10-30",
         "expected": "Agents can run api's checks before they push, so fewer agent PRs fail CI the first time. Watch: Share of agent PRs touching api that pass CI the first time, 20% (1 of 5).",
         "observed": "20% (1 of 5) to 78% (7 of 9) (closed with step 3 and step 4)"
@@ -1113,7 +1113,7 @@
       },
       {
         "label": "Skill digest",
-        "value": "75d6e5dc191f"
+        "value": "e832a2321a32"
       },
       {
         "label": "Planted faults",

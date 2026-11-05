@@ -172,7 +172,7 @@ describe("part 1 rules", () => {
     withBuild.evidence.push({ ...withBuild.evidence[0], id: "ev-build", condition: "clean.build", component: "app", kind: "build", contractId: "cmd-app-build", command: "npm run build", summary: "build passed" });
     assert.match(reportFor(withBuild).executive.headline, /^Nothing blocks agents in app: from a clean checkout it installs, builds and passes its tests/);
     assert.equal(reportFor(makeAudit({ components: [{ id: "app", share: 1, test: "fail", faults: "not_run" }] })).executive.headline, "Agents can't pass the tests in app from a clean checkout.");
-    assert.equal(reportFor(makeAudit(mixed)).executive.headline, "Agents can't pass the tests in api from a clean checkout because its tests need Postgres running, which the setup doesn't start, and 56% of recent changes land there. shared is already at Level 2.");
+    assert.equal(reportFor(makeAudit(mixed)).executive.headline, "Agents can't pass the tests in api from a clean checkout because its tests need a service on port 5432 running, which the setup doesn't start, and 56% of recent changes land there. shared is already at Level 2.");
     const registry = makeAudit({ install: "fail", components: [{ id: "app", share: 1, test: "not_run", faults: "not_run" }] });
     for (const e of registry.evidence) if (e.condition === "clean.install") e.diagnosis = { cause: "registry", detail: "registry credentials not provided" };
     assert.equal(reportFor(registry).executive.headline, "app doesn't install from a clean checkout because private registry credentials weren't provided, so agents can't build or test it yet.");

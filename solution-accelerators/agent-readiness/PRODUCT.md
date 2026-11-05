@@ -43,4 +43,4 @@ No emoji anywhere: not in `report.html`, `report.md`, the agent's narration and 
 
 ## Accessibility & Inclusion
 
-WCAG 2.2 AA in both light and dark mode, with no signal carried by color alone. The report prints cleanly, respects reduced motion, and stays readable as a single offline HTML file that uses system fonts only.
+WCAG 2.2 AA in both light and dark mode, with no signal carried by color alone. The report opens in light mode whatever the OS setting; a small CSS-only switch in the header (no script) turns on dark mode, and the report always prints in light. It prints cleanly, respects reduced motion, and stays readable as a single offline HTML file that uses system fonts only.

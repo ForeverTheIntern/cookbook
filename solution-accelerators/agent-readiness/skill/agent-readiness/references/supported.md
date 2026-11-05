@@ -90,7 +90,7 @@ A first-party skill has none of these, and its commands are checked and replayed
 
 ## Services tests need
 
-When tests fail because nothing answers on a local port, the diagnosis names the service: Postgres (5432), MySQL (3306), Redis (6379), MongoDB, Elasticsearch, RabbitMQ, Kafka or Memcached. `readiness draft-env --remediate` drafts install and start scripts for Postgres and Redis. It takes them from the diagnosis and from the images in a root `compose.yml` or `docker-compose.yml`, and starts them without Docker, since an agent's machine may have none. When the repo has a `.env.example`, the install script copies it to `.env` if there is none. `--service postgres,redis` replaces both lists.
+When tests fail because nothing answers on a local port, the report names the port, and names the service only when the test output does. The diagnosis still records the service usually on that port, Postgres (5432), MySQL (3306), Redis (6379), MongoDB, Elasticsearch, RabbitMQ, Kafka or Memcached, for remediation. `readiness draft-env --remediate` drafts install and start scripts for Postgres and Redis. It takes them from that diagnosis and from the images in a root `compose.yml` or `docker-compose.yml`, and starts them without Docker, since an agent's machine may have none. When the repo has a `.env.example`, the install script copies it to `.env` if there is none. `--service postgres,redis` replaces both lists.
 
 | Service | Drafted by `draft-env` | Proven by |
 |---|---|---|

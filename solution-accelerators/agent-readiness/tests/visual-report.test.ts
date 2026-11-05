@@ -53,7 +53,7 @@ describe("the cascade in report.md", () => {
     const md = renderMarkdown(reportFor(makeAudit(mixed)), rubric);
     const idx = ["### Level 1, bootable (next)", "### Level 2, verifiable (later)", "### Level 3, delegable (later, experimental)", "### Level 4, scalable (later, experimental)"].map((h) => md.indexOf(h));
     assert.ok(idx.every((i, n) => i >= 0 && (n === 0 || i > idx[n - 1])), String(idx));
-    assert.match(md.slice(idx[0], idx[1]), /Set up Postgres on port 5432 for agents in api/);
+    assert.match(md.slice(idx[0], idx[1]), /Set up the service the tests expect on port 5432 for agents in api/);
   });
 });
 
@@ -85,11 +85,14 @@ describe("the sign-off fixes", () => {
     assert.doesNotMatch(env, /no container runtime/);
   });
 
-  test("the service step names the inferred service with its port", () => {
+  test("the service step names a service only when the output named it, and otherwise its port", () => {
     const r = reportFor(makeAudit(mixed));
     const fix = r.actions.find((a) => a.itemId === "clean.test:api")!;
-    assert.equal(fix.title, "Set up Postgres on port 5432 for agents in api");
-    assert.match(fix.why, /nothing starts Postgres on port 5432: the connection was refused\.$/);
+    assert.equal(fix.title, "Set up the service the tests expect on port 5432 for agents in api");
+    assert.match(fix.why, /nothing starts the service the tests expect on port 5432: the connection was refused\.$/);
+    assert.doesNotMatch(renderMarkdown(r, rubric), /Postgres/);
+    const named = reportFor(makeAudit({ components: [{ ...mixed.components[0], diagnosis: { cause: "service", detail: "connection refused on port 5432; the output names Postgres", service: "Postgres", serviceNamed: true } }, ...mixed.components.slice(1)] }));
+    assert.equal(named.actions.find((a) => a.itemId === "clean.test:api")!.title, "Set up Postgres on port 5432 for agents in api");
   });
 
   test("only one roadmap step says next, and part 1 says once that agent PRs weren't measured", () => {
@@ -113,8 +116,14 @@ describe("report.html", () => {
   test("is self-contained: inline CSS and SVG, no scripts or fetched assets, light, dark and print styles", () => {
     const html = renderHtml(reportFor(makeAudit(mixed)));
     assert.doesNotMatch(html, /<script|<link|<img|src=|@import|url\(/i);
-    assert.match(html, /prefers-color-scheme:dark/);
-    assert.match(html, /@media print/);
+    assert.doesNotMatch(html, /prefers-color-scheme/);
+    assert.match(html, /<meta name="color-scheme" content="light">/);
+    assert.match(html, /<body><input type="checkbox" id="theme" class="theme-switch"><div class="theme">/);
+    assert.match(html, /<label for="theme" class="toggle"><span class="knob" aria-hidden="true"><\/span>Dark mode<\/label>/);
+    assert.match(html, /\.theme\{color-scheme:light;--bg:#f4f5f7;/);
+    assert.match(html, /#theme:checked\+\.theme\{color-scheme:dark;--bg:#0e1117;/);
+    assert.match(html, /@media print\{\.theme,#theme:checked\+\.theme\{color-scheme:light;/);
+    assert.match(html, /@media print\{[^@]*\.toggle\{display:none\}/);
     assert.match(html, /<svg role="img" aria-label="Level 0 of 4, Not bootable"/);
     assert.match(html, /<p class="ladder-text small">Level ladder: <b>0 not bootable<\/b> → 1 bootable → 2 verifiable → 3 delegable \(experimental\) → 4 scalable \(experimental\)<\/p>/);
   });

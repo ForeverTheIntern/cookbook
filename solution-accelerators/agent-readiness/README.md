@@ -44,7 +44,7 @@ node --experimental-strip-types --no-warnings .cursor/skills/agent-readiness/scr
 
 ## Reading the report
 
-`.agent-readiness/latest/` holds the report three ways, all from the same sealed data: `report.json`, `report.md`, and `report.html`, a self-contained page (inline CSS and SVG, no scripts, nothing fetched) that opens offline, prints, and follows light or dark mode. Both views run in the same order, five parts and a closing note:
+`.agent-readiness/latest/` holds the report three ways, all from the same sealed data: `report.json`, `report.md`, and `report.html`, a self-contained page (inline CSS and SVG, no scripts, nothing fetched) that opens offline and in light mode, with a dark-mode switch in its header, and prints in light. Both views run in the same order, five parts and a closing note:
 
 1. **Where am I now.** Only what the reader acts on: a notice when something needs doing, the level and what changed, the agent's one-message headline, the next move with what it unlocks, the level ladder (Levels 3 and 4 marked experimental), three numbers compared with the next level, and for a monorepo each component with its level, change share, trend and what holds it.
 2. **Have I improved.** What changed since the last audit: level changes, conditions now met or now failing, checks that flipped, and the steps closed. A first audit says so.

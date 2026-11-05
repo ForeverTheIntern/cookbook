@@ -102,23 +102,43 @@ function causeProblems(texts: string[], corpus: { where: string; text: string }[
 }
 
 const pct = (share: number) => Math.round(share * 100);
+// A narrated percentage is a rounding of the exact share: 4.8% may read "5%" or "4.8%", not "6%".
+const near = (n: number, share: number) => Math.abs(n - share * 100) < 1;
+// What may sit between two components that a percentage covers together: "alpha and bravo", "a, b or c".
+const LIST_GAP = /^(?:,\s*|\s+(?:and|or)\s+|,\s+(?:and|or)\s+)$/i;
 
 function shareProblems(texts: string[], r: ReportJson): string[] {
   const comps = [...r.components.included, ...r.components.excluded];
   const sum = (xs: { changeShare: number }[]) => xs.reduce((s, c) => s + c.changeShare, 0);
   // Totals part 1 reports; action impacts only when no component is named, since an impact is
   // another component's share.
-  const totals = [sum(r.components.included.filter((c) => c.level !== null && c.level < 2)), sum(r.components.included.filter((c) => c.level !== null && c.level >= 2)), 1].map(pct);
-  const unnamed = [sum(r.components.included.filter((c) => r.maturity.setBy.includes(c.id))), sum(r.components.excluded), ...r.actions.map((a) => a.impact)].map(pct);
+  const totals = [sum(r.components.included.filter((c) => c.level !== null && c.level < 2)), sum(r.components.included.filter((c) => c.level !== null && c.level >= 2)), 1];
+  const unnamed = [sum(r.components.included.filter((c) => r.maturity.setBy.includes(c.id))), sum(r.components.excluded), ...r.actions.map((a) => a.impact)];
   const problems: string[] = [];
   for (const t of texts) {
     for (const sentence of t.split(/(?<=[.;!?])\s+/)) {
       if (!/\bchange/i.test(sentence)) continue;
-      const named = comps.filter((c) => new RegExp(`\\b${escape(c.id)}\\b`).test(sentence));
-      const allowed = new Set(named.length ? [...named.map((c) => pct(c.changeShare)), pct(sum(named)), ...totals] : [...comps.map((c) => pct(c.changeShare)), ...totals, ...unnamed]);
+      const mentions = comps
+        .flatMap((c) => [...sentence.matchAll(new RegExp(`\\b${escape(c.id)}\\b`, "gi"))].map((m) => ({ c, start: m.index!, end: m.index! + m[0].length })))
+        .sort((a, b) => a.start - b.start);
       for (const m of sentence.matchAll(/(\d+(?:\.\d+)?)%/g)) {
         const n = Number(m[1]);
-        if (![...allowed].some((a) => Math.abs(a - n) <= 1)) problems.push(`says ${m[0]} of changes, but ${named.length ? named.map((c) => `${c.id} has ${pct(c.changeShare)}%`).join(" and ") : `no component or total has ${m[0]}`}`);
+        const at = m.index!;
+        if (!mentions.length) {
+          if (![...comps.map((c) => c.changeShare), ...totals, ...unnamed].some((x) => near(n, x))) problems.push(`says ${m[0]} of changes, but no component or total has ${m[0]}`);
+          continue;
+        }
+        // The percentage belongs to the component written nearest it, the one before it on a tie.
+        const gap = (x: (typeof mentions)[number]) => (x.end <= at ? at - x.end : x.start - (at + m[0].length));
+        const bound = mentions.reduce((best, x) => (gap(x) < gap(best) || (gap(x) === gap(best) && x.end <= at && best.end > at) ? x : best));
+        // With a plain list of components next to it, the percentage may be their sum.
+        let k = mentions.indexOf(bound);
+        const group = [bound];
+        for (let i = k - 1; i >= 0 && LIST_GAP.test(sentence.slice(mentions[i].end, mentions[i + 1].start)); i--) group.unshift(mentions[i]);
+        for (k = mentions.indexOf(bound); k + 1 < mentions.length && LIST_GAP.test(sentence.slice(mentions[k].end, mentions[k + 1].start)); k++) group.push(mentions[k + 1]);
+        const ids = [...new Set(group.map((g) => g.c))];
+        const allowed = [bound.c.changeShare, ...(ids.length > 1 ? [sum(ids)] : []), ...totals];
+        if (!allowed.some((x) => near(n, x))) problems.push(`says ${m[0]} of changes next to ${ids.map((c) => c.id).join(" and ")}, but ${ids.map((c) => `${c.id} has ${pct(c.changeShare)}%`).join(" and ")}${ids.length > 1 ? ` (${pct(sum(ids))}% together)` : ""}`);
       }
     }
   }

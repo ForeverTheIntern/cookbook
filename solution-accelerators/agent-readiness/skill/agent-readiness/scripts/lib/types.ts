@@ -124,7 +124,10 @@ export interface Evidence {
 export interface Diagnosis {
   cause: "service" | "credential" | "registry" | "missing_tool" | "missing_module" | "network" | "permission" | "timeout" | "compile" | "unknown";
   detail: string;
+  // For a refused connection, the service usually on that port. It names the service in report text
+  // only when serviceNamed says the output named it; otherwise it only guides remediation drafts.
   service?: string;
+  serviceNamed?: boolean;
 }
 
 export interface InstructionItem {

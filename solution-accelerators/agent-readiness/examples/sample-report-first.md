@@ -4,9 +4,9 @@
 
 **Level 0 of 4, not bootable.**
 
-**Agents can't pass the tests in api from a clean checkout because its tests need Postgres running, which the setup doesn't start, and 56% of recent changes land there.**
+**Agents can't pass the tests in api from a clean checkout because its tests need a service on port 5432 running, which the setup doesn't start, and 56% of recent changes land there.**
 
-> **Next move, step 2:** Set up Postgres on port 5432 for agents in api. Takes api to Level 1, covering 56% of recent changes. Agents can run api's checks before they push, so fewer agent PRs fail CI the first time. Effort and owner: Small: setup scripts and environment config, no source changes. Repo maintainer. Decision: Approve committing the setup files.
+> **Next move, step 2:** Set up the service the tests expect on port 5432 for agents in api. Takes api to Level 1, covering 56% of recent changes. Agents can run api's checks before they push, so fewer agent PRs fail CI the first time. Effort and owner: Small: setup scripts and environment config, no source changes. Repo maintainer. Decision: Approve committing the setup files.
 
 Level ladder: **[0 Not bootable]** → 1 Bootable → 2 Verifiable → 3 Delegable → 4 Scalable
 
@@ -37,14 +37,14 @@ This is the first audit, so there is nothing to compare yet. Rerun the audit aft
 
 Next: Level 1, bootable. Met: installs from the lockfile in a clean container. Not yet: api passes every test in a clean container.
 
-1. **Set up Postgres on port 5432 for agents in api.** Blocks Level 1 for api.
+1. **Set up the service the tests expect on port 5432 for agents in api.** Blocks Level 1 for api.
 2. **Fix the stale agent instructions.** Blocks Level 2 for shared.
 3. **Make worker's tests catch wrong behavior.** Blocks Level 2 for worker.
 
-### Step 2: Set up Postgres on port 5432 for agents in api (do first)
+### Step 2: Set up the service the tests expect on port 5432 for agents in api (do first)
 
 - **How it moves the needle:** Takes api to Level 1, covering 56% of recent changes. Agents can run api's checks before they push, so fewer agent PRs fail CI the first time.
-- **Why it matters:** In a clean container, api's tests fail because nothing starts Postgres on port 5432: the connection was refused.
+- **Why it matters:** In a clean container, api's tests fail because nothing starts the service the tests expect on port 5432: the connection was refused.
 - **Effort and owner:** Small: setup scripts and environment config, no source changes. Repo maintainer.
 - **Decision needed:** Approve committing the setup files.
 - **Evidence:** `ev-011`
@@ -72,14 +72,14 @@ Next: Level 1, bootable. Met: installs from the lockfile in a clean container. N
 
 Level 1 needs: installs from the lockfile in a clean container, builds in a clean container and passes every test in a clean container.
 
-- [ ] Step 2: Set up Postgres on port 5432 for agents in api: unlocks api to Level 1 (next, alongside step 1)
+- [ ] Step 2: Set up the service the tests expect on port 5432 for agents in api: unlocks api to Level 1 (next, alongside step 1)
 
 ### Level 2, verifiable (later)
 
 Level 2 needs: build, lint, type-check and test commands pass, tests catch planted faults, agent instructions are accurate and normal work needs no production access.
 
 - [ ] Step 3: Fix the stale agent instructions: unlocks shared to Level 2 (next, alongside step 1)
-- [ ] Step 4: Check api's tests with planted faults: unlocks nothing on its own; first needs Set up Postgres on port 5432 for agents in api (waiting on step 2)
+- [ ] Step 4: Check api's tests with planted faults: unlocks nothing on its own; first needs Set up the service the tests expect on port 5432 for agents in api (waiting on step 2)
 - [ ] Step 5: Make worker's tests catch wrong behavior: unlocks shared to Level 2, worker to Level 2 together with Fix the stale agent instructions (next, alongside step 1)
 
 ### Level 3, delegable (later, experimental)
@@ -110,9 +110,9 @@ Confidence: high (every check that decides the level ran).
 
 The level covers 3 components and ignores infra (2% of changes, Terraform isn't supported yet). Agent PRs are matched by head branch starting with cursor/.
 
-Effort against impact (impact is the share of recent changes an action unblocks): 1. Set up Postgres on port 5432 for agents in api (Do first: effort small, 56%); 2. Fix the stale agent instructions (Quick fills: effort small, 15%); 3. Make worker's tests catch wrong behavior (Do first: effort medium, 0%).
+Effort against impact (impact is the share of recent changes an action unblocks): 1. Set up the service the tests expect on port 5432 for agents in api (Do first: effort small, 56%); 2. Fix the stale agent instructions (Quick fills: effort small, 15%); 3. Make worker's tests catch wrong behavior (Do first: effort medium, 0%).
 
-### Steps for Set up Postgres on port 5432 for agents in api (step 2)
+### Steps for Set up the service the tests expect on port 5432 for agents in api (step 2)
 
 - **What to watch:** Share of agent PRs touching api that pass CI the first time. Now: 20% (1 of 5), Sep 27 to Oct 27, 2026.
 - **Done when:** `readiness replay --component api` passes every test.
@@ -257,7 +257,7 @@ Audited Oct 27, 2026 at 7070f44. Eval run with a pinned seed; not a production r
 - **Rubric:** 2026-11-alpha
 - **Permission tier:** local-exec
 - **Seal:** Scripts match the agent-readiness-v0.1.0 manifest bundled with this copy; the published release isn't checked here, and the seal is an unkeyed digest, which shows edits but not who sealed it
-- **Skill digest:** 75d6e5dc191f
+- **Skill digest:** e832a2321a32
 - **Planted faults:** seed pinned (eval run; not a production result)
 - **Replay environment:** docker container, node:22-bookworm
 - **Stored in:** .agent-readiness/history/audits/aud-2026-10-27-7070f44-e101

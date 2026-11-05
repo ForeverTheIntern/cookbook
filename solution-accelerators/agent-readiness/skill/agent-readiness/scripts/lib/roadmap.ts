@@ -5,6 +5,7 @@ import type { CompStates } from "./score.ts";
 import { commandsFor } from "./score.ts";
 import type { Audit, CondId, CondState, Component, Effort, Fix, Level, OutcomeStats, OutcomesSnapshot, Roadmap, RoadmapItem, Watch } from "./types.ts";
 import { fill, nowIso } from "./util.ts";
+import { serviceLabel } from "./diagnose.ts";
 
 type StateMap = Partial<Record<CondId, CondState>>;
 
@@ -101,11 +102,9 @@ export function candidates(ctx: RoadmapContext): Candidate[] {
       const fixes: Fix[] = [{ condition: "clean.test", component: c.id }];
       if (failedKinds.filter((k) => k !== "test").length === 0) fixes.push({ condition: "commands", component: c.id });
       if (template === "clean.test:credential") credentialComps.push(c.id);
-      // The service name is inferred from the port, so the port stays next to it wherever the step is named.
       const port = d?.cause === "service" ? d.detail.match(/port (\d+)/)?.[1] : undefined;
-      const named = Boolean(port && d?.service && !d.service.includes(`port ${port}`));
-      const service = named ? `${d!.service} on port ${port}` : (d?.service ?? "");
-      const diagnosis = named ? "the connection was refused" : (d?.detail ?? s["clean.test"].reason);
+      const service = d?.cause === "service" ? serviceLabel(d, (p) => `the service the tests expect on port ${p}`) : (d?.service ?? "");
+      const diagnosis = port ? "the connection was refused" : (d?.detail ?? s["clean.test"].reason);
       out.push({ id: `clean.test:${c.id}`, template, kind: "fix", component: c.id, fixes, vars: { component: c.id, service, diagnosis }, evidence: ev ? [ev.id] : s["clean.test"].evidence });
     }
     // Repo-wide lint, type-check and build failures are the commands:repo item above.

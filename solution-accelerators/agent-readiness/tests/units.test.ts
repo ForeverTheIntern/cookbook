@@ -125,7 +125,11 @@ describe("evidence strength", () => {
 
 describe("diagnosis", () => {
   test("common failures map to causes", () => {
-    assert.equal(diagnose("Error: connect ECONNREFUSED 127.0.0.1:5432", false, "test").service, "Postgres");
+    const bare = diagnose("Error: connect ECONNREFUSED 127.0.0.1:5432", false, "test");
+    assert.deepEqual(bare, { cause: "service", detail: "connection refused on port 5432", service: "Postgres" });
+    const named = diagnose("error: password authentication for postgres failed\nError: connect ECONNREFUSED 127.0.0.1:5432", false, "test");
+    assert.equal(named.detail, "connection refused on port 5432; the output names Postgres");
+    assert.equal(named.serviceNamed, true);
     assert.equal(diagnose("Error: Missing PAYMENTS_LIVE_KEY", false, "test").cause, "credential");
     assert.equal(diagnose("npm error 401 Unauthorized", false, "install").cause, "registry");
     assert.equal(diagnose("bash: pnpm: command not found", false, "test").cause, "missing_tool");

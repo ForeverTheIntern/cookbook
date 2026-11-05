@@ -35,7 +35,7 @@ Since the audit on Oct 30, 2026:
 
 - **Repo level:** Level 1 to Level 1, no change.
 - No component level, condition or check changed.
-- **Steps closed:** 2. Set up Postgres on port 5432 for agents in api (Oct 30); 3. Fix the stale agent instructions (Oct 30); 4. Check api's tests with planted faults (Oct 30). Part 5 shows what moved after them.
+- **Steps closed:** 2. Set up the service the tests expect on port 5432 for agents in api (Oct 30); 3. Fix the stale agent instructions (Oct 30); 4. Check api's tests with planted faults (Oct 30). Part 5 shows what moved after them.
 
 ## 3. What moves the needle next
 
@@ -61,14 +61,14 @@ Next: Level 2, verifiable. Met: lint and test commands pass, agent instructions 
 
 Level 1 needs: installs from the lockfile in a clean container, builds in a clean container and passes every test in a clean container.
 
-- [x] Step 2: Set up Postgres on port 5432 for agents in api: unlocks api to Level 1 (done Oct 30)
+- [x] Step 2: Set up the service the tests expect on port 5432 for agents in api: unlocks api to Level 1 (done Oct 30)
 
 ### Level 2, verifiable (next)
 
 Level 2 needs: build, lint, type-check and test commands pass, tests catch planted faults, agent instructions are accurate and normal work needs no production access.
 
 - [x] Step 3: Fix the stale agent instructions: unlocks shared to Level 2 (done Oct 30)
-- [x] Step 4: Check api's tests with planted faults: unlocks nothing on its own; first needs Set up Postgres on port 5432 for agents in api (done Oct 30)
+- [x] Step 4: Check api's tests with planted faults: unlocks nothing on its own; first needs Set up the service the tests expect on port 5432 for agents in api (done Oct 30)
 - [ ] Step 5: Make worker's tests catch wrong behavior: unlocks worker to Level 2 (next)
 
 ### Level 3, delegable (later, experimental)
@@ -117,7 +117,7 @@ A failed recheck lowers a level and a later passing recheck restores it. Only an
 
 | Step | Closed | Expected | Observed after |
 |---|---|---|---|
-| 2. Set up Postgres on port 5432 for agents in api | Oct 30 | Agents can run api's checks before they push, so fewer agent PRs fail CI the first time. Watch: Share of agent PRs touching api that pass CI the first time, 20% (1 of 5). | 20% (1 of 5) to 78% (7 of 9) (closed with step 3 and step 4) |
+| 2. Set up the service the tests expect on port 5432 for agents in api | Oct 30 | Agents can run api's checks before they push, so fewer agent PRs fail CI the first time. Watch: Share of agent PRs touching api that pass CI the first time, 20% (1 of 5). | 20% (1 of 5) to 78% (7 of 9) (closed with step 3 and step 4) |
 | 3. Fix the stale agent instructions | Oct 30 | Agents stop following stale steps, such as running pnpm in a repo that doesn't use it. Watch: Agent PRs that add a stray pnpm-lock.yaml, 11% (1 of 9). | 11% (1 of 9) to 0% (0 of 17) (closed with step 2 and step 4) |
 | 4. Check api's tests with planted faults | Oct 30 | Changes in api get a real pass-or-fail signal, so reviewers catch less by hand. Watch: Share of agent PRs touching api where a reviewer requested changes, 40% (2 of 5). | 40% (2 of 5) to 11% (1 of 9) (closed with step 2 and step 3) |
 
@@ -260,7 +260,7 @@ Audited Nov 30, 2026 at 9a2c092. Eval run with a pinned seed; not a production r
 - **Rubric:** 2026-11-alpha
 - **Permission tier:** local-exec
 - **Seal:** Scripts match the agent-readiness-v0.1.0 manifest bundled with this copy; the published release isn't checked here, and the seal is an unkeyed digest, which shows edits but not who sealed it
-- **Skill digest:** 75d6e5dc191f
+- **Skill digest:** e832a2321a32
 - **Planted faults:** seed pinned (eval run; not a production result)
 - **Replay environment:** docker container, node:22-bookworm
 - **Stored in:** .agent-readiness/history/audits/aud-2026-11-30-9a2c092-ae7a

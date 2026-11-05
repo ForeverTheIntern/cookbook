@@ -12,7 +12,7 @@ The rules in [SKILL.md](SKILL.md) still hold. You don't decide that a fix worked
 
 ## The environment setup contract
 
-For an item about install, build or test setup in a clean checkout, such as "Set up Postgres for agents in api", produce committed setup files that a clean container can run:
+For an item about install, build or test setup in a clean checkout, such as "Set up the service the tests expect on port 5432 for agents in api", produce committed setup files that a clean container can run:
 
 1. `readiness draft-env --remediate` writes:
    - `scripts/agent-install.sh`: system packages, then the repo's frozen install. Safe to rerun.

@@ -92,7 +92,7 @@ For a private registry, ask for the variable names (never values) and pass `--re
      - Say where checks ran as status says it, "in a clean container" or "on this machine", not "offline", "a fresh copy" or "a clean checkout".
      - For a component that isn't assessed, give its reason. Don't list what wasn't installed, built or tested.
      - Take every share of changes from status, for the component the sentence names.
-   - **Ask:** the one decision that unblocks the top gap, naming the change to approve, for example "approve adding a Postgres service to the agent setup for api". The report adds "name an owner" when none is recorded, so leave it out.
+   - **Ask:** the one decision that unblocks the top gap, naming the change to approve, for example "approve adding the service the tests expect on port 5432 to the agent setup for api". Name the service itself only when a status line names it. The report adds "name an owner" when none is recorded, so leave it out.
    - **Gaps** (optional): one plain line per top item, keyed `<condition>:<component>` as in the example.
 
    Follow [references/report.md](references/report.md): no jargon, no code formatting, no emoji, and no number the audit didn't compute. Say a status in words ("passed", "blocked on this machine"), never with an emoji or check-mark symbol; the seal refuses narration that contains one.
@@ -103,7 +103,7 @@ For a private registry, ask for the variable names (never values) and pass `--re
 1. `readiness verify-seal`.
 2. Read `.agent-readiness/latest/report.md` and reply with part 1 and the top of part 3 in your own words: the level and what it means, the headline, the next move and the three numbers from part 1, and the gaps and the one ask from part 3. Give the confidence too, and its reasons, but never as part of the level. Link the report. Don't paste the whole report, and use no emoji in the reply.
 3. When the report finds no blocker, say so plainly and recommend starting to delegate. Don't invent work. When part 1 says something isn't supported yet, say so in those words and link [references/supported.md](references/supported.md); don't offer a fix for it or guess a level.
-4. Offer the next step in one line, for example: "Say 'fix the primary blocker' and I'll set up Postgres for agents and prove it with a new audit."
+4. Offer the next step in one line, for example: "Say 'fix the primary blocker' and I'll set up the service the tests expect on port 5432 and prove it with a new audit."
 5. Say what to commit: `.agent-readiness/roadmap.json` and `.agent-readiness/latest/` go on the main branch. The sealed audits and `history.jsonl` go to the `agent-readiness/history` branch with `readiness history push --push`, or to CI artifacts.
 
 ## Later runs

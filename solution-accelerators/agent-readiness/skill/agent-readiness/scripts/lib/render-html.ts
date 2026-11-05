@@ -25,23 +25,36 @@ function list(items: string[]): string {
 
 // Tokens. One accent carries links, reached levels and the next move; status hues appear only next to
 // a word that says the same thing. Every text pair meets WCAG AA and every mark 3:1, in both modes.
+const LIGHT = `color-scheme:light;--bg:#f4f5f7;--surface:#fff;--sunken:#f0f2f5;--ink:#1b2230;--muted:#545d6b;--rule:#dde2e9;--mark:#8a93a1;
+--accent:#1f5fd1;--accent-tint:#eef3fd;--ok:#17703e;--bad:#b3261e;--warn:#8a5300;--bad-tint:#fbefee;--warn-tint:#fbf4e9;--on-accent:#fff`;
+const DARK = `color-scheme:dark;--bg:#0e1117;--surface:#161b23;--sunken:#1c222c;--ink:#e7eaf0;--muted:#a3acba;--rule:#2a313d;--mark:#6f7a8b;
+--accent:#84b0ff;--accent-tint:#1a2435;--ok:#5fd08c;--bad:#ff8a80;--warn:#f2b44f;--bad-tint:#2a1a1b;--warn-tint:#2a2316;--on-accent:#0e1117`;
+
+// Light whatever the OS setting; the header's checkbox switches the wrapper to dark without script.
 const CSS = `
-:root{color-scheme:light dark;
---bg:#f4f5f7;--surface:#fff;--sunken:#f0f2f5;--ink:#1b2230;--muted:#545d6b;--rule:#dde2e9;--mark:#8a93a1;
---accent:#1f5fd1;--accent-tint:#eef3fd;--ok:#17703e;--bad:#b3261e;--warn:#8a5300;--bad-tint:#fbefee;--warn-tint:#fbf4e9;--on-accent:#fff;
---fs-1:12px;--fs-2:13px;--fs-3:15px;--fs-4:17px;--fs-5:20px;--fs-6:28px;--r:4px;
+:root{--fs-1:12px;--fs-2:13px;--fs-3:15px;--fs-4:17px;--fs-5:20px;--fs-6:28px;--r:4px;
 --s-1:4px;--s-2:8px;--s-3:12px;--s-4:16px;--s-5:24px;--s-6:40px}
-@media (prefers-color-scheme:dark){:root{--bg:#0e1117;--surface:#161b23;--sunken:#1c222c;--ink:#e7eaf0;--muted:#a3acba;--rule:#2a313d;--mark:#6f7a8b;
---accent:#84b0ff;--accent-tint:#1a2435;--ok:#5fd08c;--bad:#ff8a80;--warn:#f2b44f;--bad-tint:#2a1a1b;--warn-tint:#2a2316;--on-accent:#0e1117}}
+.theme{${LIGHT}}
+#theme:checked+.theme{${DARK}}
 *{box-sizing:border-box}
 html{-webkit-text-size-adjust:100%}
-body{margin:0;background:var(--bg);color:var(--ink);font:var(--fs-3)/1.55 system-ui,-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;font-variant-numeric:tabular-nums}
+body{margin:0}
+.theme{min-height:100vh;background:var(--bg);color:var(--ink);font:var(--fs-3)/1.55 system-ui,-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;font-variant-numeric:tabular-nums}
 .page{max-width:960px;margin:0 auto;padding:var(--s-6) var(--s-5) 64px}
 h1,h2,h3{text-wrap:balance;margin:0}
 p,li,dd{text-wrap:pretty}
 header{display:flex;flex-wrap:wrap;align-items:baseline;justify-content:space-between;gap:var(--s-2);padding-bottom:var(--s-3);border-bottom:1px solid var(--rule)}
 header h1{font-size:var(--fs-3);font-weight:600}
 header .when{font-size:var(--fs-2);color:var(--muted)}
+header .meta{display:flex;align-items:center;gap:var(--s-4)}
+.theme-switch{position:absolute;top:0;left:0;width:1px;height:1px;margin:0;opacity:0}
+.toggle{display:inline-flex;align-items:center;gap:var(--s-2);font-size:var(--fs-2);color:var(--muted);cursor:pointer;user-select:none}
+.toggle:hover{color:var(--ink)}
+.knob{position:relative;width:26px;height:14px;border:1px solid var(--mark);border-radius:7px;background:var(--surface)}
+.knob::after{content:"";position:absolute;top:2px;left:2px;width:8px;height:8px;border-radius:50%;background:var(--mark)}
+#theme:checked+.theme .knob{background:var(--accent);border-color:var(--accent)}
+#theme:checked+.theme .knob::after{left:14px;background:var(--on-accent)}
+#theme:focus-visible+.theme .toggle{outline:2px solid var(--accent);outline-offset:3px;border-radius:2px}
 .notice{margin:var(--s-4) 0 0;padding:var(--s-3) var(--s-4);background:var(--warn-tint);border:1px solid var(--warn);border-radius:var(--r);font-size:var(--fs-3)}
 .notice strong{color:var(--warn)}
 main>section{padding:var(--s-6) 0 0}
@@ -102,7 +115,7 @@ footer{margin-top:var(--s-6);padding-top:var(--s-3);border-top:1px solid var(--r
 .ladder-text{display:none;margin:0 0 var(--s-2)}
 @media (max-width:640px){.page{padding:var(--s-5) var(--s-4) 48px}.step,.lvl{grid-template-columns:1fr}.numbers>div+div{padding-left:0;border-left:0;border-top:1px solid var(--rule)}.hide-narrow{display:none}.ladder{display:none}.ladder-text{display:block}}
 @media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
-@media print{:root{--bg:#fff;--surface:#fff;--sunken:#f3f4f6}body{font-size:10.5pt}.page{max-width:none;padding:0}
+@media print{.theme,#theme:checked+.theme{${LIGHT};--bg:#fff;--sunken:#f3f4f6}.theme{min-height:0;font-size:10.5pt}.toggle{display:none}.page{max-width:none;padding:0}
 main>section{break-inside:auto}.step,.lvl,.move,.numbers,tr{break-inside:avoid}h2,h3{break-after:avoid}a{color:inherit;text-decoration:none}}
 `;
 
@@ -427,15 +440,15 @@ export function renderHtml(r: ReportJson): string {
   const keyed = !/unkeyed/.test(r.audit.sealStatus);
   return [
     "<!doctype html>",
-    `<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="color-scheme" content="light dark"><title>Agent readiness: ${esc(r.repo)}</title><style>${CSS}.sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}</style></head>`,
-    `<body><div class="page"><header><h1>Agent readiness: ${esc(r.repo)}</h1><span class="when">${esc(fmtDate(r.audit.date))}</span></header>${notices}<main>`,
+    `<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="color-scheme" content="light"><title>Agent readiness: ${esc(r.repo)}</title><style>${CSS}.sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}</style></head>`,
+    `<body><input type="checkbox" id="theme" class="theme-switch"><div class="theme"><div class="page"><header><h1>Agent readiness: ${esc(r.repo)}</h1><div class="meta"><span class="when">${esc(fmtDate(r.audit.date))}</span><label for="theme" class="toggle"><span class="knob" aria-hidden="true"></span>Dark mode</label></div></header>${notices}<main>`,
     summary(r),
     improved(r),
     needle(r),
     roadmap(r),
     details(r),
     about(r),
-    `</main><footer>Generated from <code>report.json</code> by the agent-readiness skill; <code>report.md</code> holds the same report.${keyed ? "" : " For signed reports, set <code>SA_READINESS_SEAL_KEY</code> from a CI secret where the audit runs."}</footer></div></body></html>`,
+    `</main><footer>Generated from <code>report.json</code> by the agent-readiness skill; <code>report.md</code> holds the same report.${keyed ? "" : " For signed reports, set <code>SA_READINESS_SEAL_KEY</code> from a CI secret where the audit runs."}</footer></div></div></body></html>`,
     "",
   ].join("\n");
 }

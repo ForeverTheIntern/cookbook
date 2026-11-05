@@ -9,6 +9,7 @@ import type { ComponentResult } from "./seal.ts";
 import { NOT_SUPPORTED, SUPPORTED_DOC } from "./support.ts";
 import type { Asset, Audit, CondId, Component, ComponentLevel, HistoryLine, Level, OutcomeStats, OutcomesSnapshot, ReportAction, ReportChanges, ReportJson, Roadmap, RoadmapItem, ScenarioId } from "./types.ts";
 import { EMOJI, fmtDate, fmtShortDate, pct, wordCount } from "./util.ts";
+import { serviceLabel } from "./diagnose.ts";
 
 export interface RenderInput {
   audit: Audit;
@@ -326,7 +327,7 @@ function because(input: RenderInput, cond: CondId, their: string): string {
   const fails = input.audit.evidence.filter((e) => e.condition === cond && e.result === "fail" && e.diagnosis);
   const d = (fails.filter((e) => input.rollup.setBy.includes(e.component ?? "")).at(-1) ?? fails.at(-1))?.diagnosis;
   if (!d) return "";
-  if (d.cause === "service") return ` because ${their} tests need ${d.service ?? "a service"} running, which the setup doesn't start`;
+  if (d.cause === "service") return ` because ${their} tests need ${serviceLabel(d, (p) => `a service on port ${p}`)} running, which the setup doesn't start`;
   if (d.cause === "registry") return " because private registry credentials weren't provided";
   if (d.cause === "credential") return ` because it ${d.detail}`;
   if (d.cause === "unknown") return "";

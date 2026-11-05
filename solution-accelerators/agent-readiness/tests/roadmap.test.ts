@@ -42,7 +42,7 @@ describe("roadmap", () => {
     assert.equal(waiting.impact, 0);
     assert.deepEqual(waiting.dependsOn, ["clean.test:api"]);
     assert.equal(waiting.status, "waiting");
-    assert.match(waiting.unlocks, /first needs Set up Postgres on port 5432 for agents in api/);
+    assert.match(waiting.unlocks, /first needs Set up the service the tests expect on port 5432 for agents in api/);
   });
 
   test("top items block a component's next standard level, at most three, ordered by impact then effort", () => {

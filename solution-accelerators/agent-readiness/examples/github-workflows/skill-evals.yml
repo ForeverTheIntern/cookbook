@@ -53,7 +53,8 @@ jobs:
   skill-evals:
     needs: check
     runs-on: ubuntu-latest
-    timeout-minutes: 120
+    # A full run with every arm is about 650 runs at 3 repeats, roughly 3 hours at concurrency 3.
+    timeout-minutes: 360
     env:
       CURSOR_API_KEY: ${{ secrets.CURSOR_API_KEY }}
       SA_READINESS_GRADER_SEED: ${{ secrets.SA_READINESS_GRADER_SEED }}
@@ -82,9 +83,10 @@ jobs:
           node-version-file: solution-accelerators/agent-readiness/.nvmrc
       - if: steps.set.outputs.tag != ''
         run: npm ci
+      # --max-runs covers the full suite with all three arms at 3 repeats; tests/workflow.test.ts checks it.
       - name: Skill evals
         if: steps.set.outputs.tag != ''
-        run: npm run evals -- --tag ${{ steps.set.outputs.tag }} --arm ${{ steps.set.outputs.arms }} --model "$SA_READINESS_EVAL_MODEL" --judge-model "$SA_READINESS_JUDGE_MODEL" --repeats 3 --concurrency 3 --max-runs 300 --json evals/runs/result.json --junit evals/runs/junit.xml --compare evals/baseline.json
+        run: npm run evals -- --tag ${{ steps.set.outputs.tag }} --arm ${{ steps.set.outputs.arms }} --model "$SA_READINESS_EVAL_MODEL" --judge-model "$SA_READINESS_JUDGE_MODEL" --repeats 3 --concurrency 3 --max-runs 800 --json evals/runs/result.json --junit evals/runs/junit.xml --compare evals/baseline.json
       - uses: actions/upload-artifact@v4
         if: always() && steps.set.outputs.tag != ''
         with:

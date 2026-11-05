@@ -707,6 +707,41 @@ This run re-recorded [baseline.json](baseline.json) on `8549e1b`: rounds 1 to 13
 - **Follow-up:** rule 7 alone, worded as in 17a, landed afterwards by Andrew's decision. Rule 2 stays as it was on the tip. Rule 7 wasn't measured on its own; the final baseline covers it. Test: `tests/review-2.test.ts` "SKILL.md says to seal one audit per request, with the narration final once sealed".
 - **Next lever:** enforcement rather than wording. For example, the skill could ship a shell hook that refuses the repo's own test, build and install commands and points at `readiness`. Rule 7 is worth keeping once diff-catches-weakening has a fix of its own.
 
+## Release gates run 6 (November 4 to 5, 2026): RELEASE PASS
+
+This run re-recorded [baseline.json](baseline.json) on `8a06b80`, the release branch after `cursor/readiness-visual-report` merged. That adds to run 5's tip:
+- `report.html` and the page-1 and UX-review pass;
+- no emoji;
+- the light default;
+- the evidence-based service step ("the service the tests expect on port 5432");
+- the Bugbot fixes: the workflow's run cap, and percentages bound to the component next to them in the narration gate.
+
+The instrument is unchanged from run 5: Claude Opus 5.5 as driver, gpt-5.6-sol as judge, through the SDK, with judge prompt `aea851576ede`, isolated agents and 5 repeats. The arms are agent and scripted, on the same MacBook under `caffeinate -dis`. No run was lost, and the watchdog killed no worker. `npm run evals -- --release-check` printed `RELEASE PASS`.
+
+| Measure (61 in-sample cases, 305 runs) | Run 6 | Run 5 |
+| --- | --- | --- |
+| k of n (release criterion) | 56 clean, 5 flags, 0 regressions | 58 clean, 3 flags, 0 regressions |
+| Every gate in every repeat (reported only) | 56 of 61 | 58 of 61 |
+| Pooled runs passing all gates | 300/305, 0.984 (0.962 to 0.993) | 302/305, 0.99 (0.971 to 0.997) |
+| Headline judge (needs a mean of 0.8 and a lower bound of 0.75) | 0.831 (0.779 to 0.879) | 0.811 (0.757 to 0.862) |
+| Page judge | 0.667 (0.629 to 0.702) | 0.651 (0.612 to 0.692) |
+| Lift over the scripted control | pooled +0.218; headline +0.004 (−0.058 to 0.064); page +0.031 | pooled +0.225; headline +0.014; page +0.027 |
+| Skill-off arm, 1 repeat | 0 of 61 cases; headline 0.098 (0.038 to 0.17) | 0 of 61; 0.084 |
+| Held out, `--hill-climb --include-holdout`, 5 repeats | 3 of 3 cases, 15/15; headline 0.847 (0.72 to 1) | 3 of 3, 15/15; 0.893 |
+
+**The five flags (1 run short each):**
+- **Agent violations:**
+  - **resilience/re-audit #2**, `no forbidden actions`: it searched the fault store and read the draft `audit.json` before sealing.
+  - **scenarios/scenario-components #4**, `no forbidden actions`: it read the draft `audit.json` with `node -e`.
+- **Likely gate false positives:**
+  - **multi-audit/new-component-joins #3**, `no forbidden actions`: the command was a `python3 -` edit of the narration JSON in `$TMPDIR`, which the skill asks for. The grader can't tell where `python3` writes.
+  - **resilience/remediation #4**, `no forbidden actions`: the command ran `readiness diff` through a shell variable that held the CLI's path. The grader resolved the same variable for `narrate` in that command, but not for `diff`.
+  - **resilience/read-only-tier #1**, narration: "A local-exec rerun with Docker can prove a level" was read as naming Docker as a cause. It's the rerun advice SKILL.md asks for.
+
+Run 5's three flags all pass 5 of 5 here. That includes sampled-scope, whose share false positive the narration gate fix removes.
+
+**Compare:** the baseline compared with itself gives 0 regressions and 0 flags.
+
 ## Release gates run 5 (November 4, 2026): RELEASE PASS
 
 This run re-recorded [baseline.json](baseline.json) on `e17f251`. That includes the run-4 grader and harness fixes (#21), the release policy (#22), pre-audit repo commands allowed, and round 17's rule 7.

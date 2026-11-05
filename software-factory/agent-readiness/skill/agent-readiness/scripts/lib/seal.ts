@@ -351,7 +351,7 @@ export function verifySeal(p: Paths, ref: string, opts: { releaseRepo?: string; 
   if (opts.releaseRepo && opts.tierExternal) {
     const refName = opts.releaseRef ?? m?.tag ?? "main";
     try {
-      const remote = ghJson<{ content: string }>(["api", `repos/${opts.releaseRepo}/contents/solution-accelerators/agent-readiness/skill/agent-readiness/RELEASE.json?ref=${refName}`]);
+      const remote = ghJson<{ content: string }>(["api", `repos/${opts.releaseRepo}/contents/software-factory/agent-readiness/skill/agent-readiness/RELEASE.json?ref=${refName}`]);
       const manifest = JSON.parse(Buffer.from(remote.content, "base64").toString("utf8")) as { scriptsDigest: string; tag: string };
       if (manifest.scriptsDigest === audit.skill.scriptsDigest) lines.push(`OK: scripts match the published release ${manifest.tag} in ${opts.releaseRepo}.`);
       else {

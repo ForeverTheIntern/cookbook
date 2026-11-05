@@ -29,7 +29,7 @@ An audit never claims Level 3 or 4 by itself. Those need team-set targets over a
 Copy the skill into the repository you want to audit:
 
 ```bash
-cp -R solution-accelerators/agent-readiness/skill/agent-readiness <repo>/.cursor/skills/agent-readiness
+cp -R software-factory/agent-readiness/skill/agent-readiness <repo>/.cursor/skills/agent-readiness
 ```
 
 Then ask the agent in that repo: "Run an agent readiness audit." To see one kind of work broken out, ask for it, for example "and break out bug fixes for web".

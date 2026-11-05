@@ -18,7 +18,7 @@ permissions:
 env:
   SA_ACCELERATOR_REPO: cursor/cookbook
   SA_ACCELERATOR_REF: agent-readiness-v0.1.0
-  SA_READINESS: node --experimental-strip-types --no-warnings .readiness-accelerator/solution-accelerators/agent-readiness/skill/agent-readiness/scripts/readiness.ts
+  SA_READINESS: node --experimental-strip-types --no-warnings .readiness-accelerator/software-factory/agent-readiness/skill/agent-readiness/scripts/readiness.ts
 jobs:
   static:
     runs-on: ubuntu-latest
@@ -35,7 +35,7 @@ jobs:
           repository: ${{ env.SA_ACCELERATOR_REPO }}
           ref: ${{ env.SA_ACCELERATOR_REF }}
           path: .readiness-accelerator
-          sparse-checkout: solution-accelerators/agent-readiness/skill
+          sparse-checkout: software-factory/agent-readiness/skill
       - name: Static checks
         run: |
           $SA_READINESS init --tier read-only

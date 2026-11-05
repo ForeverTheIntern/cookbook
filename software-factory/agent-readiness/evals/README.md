@@ -176,7 +176,7 @@ The default mode reports agreement with each label, good-versus-broken AUC and e
 
 ### How the repos were chosen
 
-The plan was to draw candidates from the readiness scanner's 51 pinned real-world repos. That list (`anysphere/solution-accelerators`, `softwarefactory/readiness/evals/realworld/labels.json`) isn't readable from this account, so the repos below are well-known public projects picked against the same bar:
+The goldens are well-known public projects picked against this bar:
 
 - a permissive license;
 - a clean-container install and test run in about 5 minutes, with no secrets needed to boot;

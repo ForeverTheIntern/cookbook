@@ -16,9 +16,11 @@ A guided project hook setup for audit logging, sensitive prompt guards, and foll
 
 Run Cursor Cloud Agent workers on customer-managed AWS infrastructure with examples for EC2 + Docker and ECS/Fargate.
 
-## Solution accelerators
+## Software Factory
 
-### [Agent readiness](solution-accelerators/agent-readiness)
+Tools and templates for preparing repos and teams to ship work with coding agents.
+
+### [Agent readiness](software-factory/agent-readiness)
 
 A copyable Cursor skill that audits whether coding agents can work in a repository. It scores only evidence its scripts produce by running install, build, test and planted-fault checks, then reports one level for the repo and each component, with the top gaps and a proveable fix for each.
 

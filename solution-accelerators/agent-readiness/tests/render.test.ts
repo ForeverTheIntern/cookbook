@@ -85,9 +85,9 @@ describe("report.json", () => {
     }
   });
 
-  test("the markdown has the four parts in order", () => {
+  test("the markdown has the five parts of the cascade in order", () => {
     const md = renderMarkdown(reportFor(makeAudit(mixed)), rubric);
-    const idx = ["## 1. Where you stand", "## 2. Next actions", "## 3. Where you are on the roadmap", "## 4. Details"].map((h) => md.indexOf(h));
+    const idx = ["## 1. Where am I now", "## 2. Have I improved", "## 3. What moves the needle next", "## 4. Roadmap to the max level", "## 5. Audit details"].map((h) => md.indexOf(h));
     assert.ok(idx.every((i, n) => i >= 0 && (n === 0 || i > idx[n - 1])), String(idx));
   });
 });
@@ -287,7 +287,7 @@ describe("part 1 rules", () => {
     const r = reportFor(makeAudit({ components: [{ id: "services", share: 1, assessed: false }] }));
     const ex = r.executive;
     assert.equal(r.maturity.assessedComponents, 0);
-    assert.equal(ex.heading, "Not assessed: no component could be assessed");
+    assert.equal(ex.heading, "Not assessed: none of the components found can be assessed yet");
     assert.equal(ex.headline, "No component could be assessed, so this audit can't give a level yet: it skipped services (100% of changes) because Terraform isn't supported yet.");
     assert.equal(ex.nextLine, "Next: Level 1, bootable, once a component can be assessed. No condition has been checked yet.");
     assert.deepEqual(ex.numbers.map((n) => n.value), ["none assessed", "not measured", "100%"]);

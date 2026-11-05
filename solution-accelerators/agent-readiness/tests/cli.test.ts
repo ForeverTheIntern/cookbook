@@ -243,7 +243,7 @@ describe("CLI", { concurrency: 4 }, () => {
     assert.match(status, /\.agent-readiness\//);
     execFileSync("git", ["add", ".agent-readiness"], { cwd: repo });
     const staged = execFileSync("git", ["diff", "--cached", "--name-only"], { cwd: repo, encoding: "utf8" }).split("\n").filter(Boolean).sort();
-    assert.deepEqual(staged, [".agent-readiness/.gitignore", ".agent-readiness/latest/report.json", ".agent-readiness/latest/report.md", ".agent-readiness/roadmap.json"]);
+    assert.deepEqual(staged, [".agent-readiness/.gitignore", ".agent-readiness/latest/report.html", ".agent-readiness/latest/report.json", ".agent-readiness/latest/report.md", ".agent-readiness/roadmap.json"]);
   });
 
   test("a run that starts from the history branch appends to it instead of replacing it", () => {

@@ -35,7 +35,7 @@ function edit(rel: string, fn: (s: string) => string): void {
 const read = (rel: string) => readFileSync(join(repo, rel), "utf8");
 
 at(T0, ["audit", "--tier", "local-exec", "--outcomes-input", materializePrs("monorepo-mixed", T0), ...imageArgs]);
-const first = { json: read(".agent-readiness/latest/report.json"), md: read(".agent-readiness/latest/report.md") };
+const first = { json: read(".agent-readiness/latest/report.json"), md: read(".agent-readiness/latest/report.md"), html: read(".agent-readiness/latest/report.html") };
 
 at("2026-10-28T15:00:00.000Z", ["roadmap", "owner", "Platform team"]);
 if (!skipPostgres) {
@@ -60,12 +60,21 @@ at("2026-11-20T13:00:00.000Z", ["recheck", ...imageArgs]);
 
 const T2 = "2026-11-30T15:00:00.000Z";
 at(T2, ["audit", "--tier", "local-exec", "--scenario", "bug_fixes", "--outcomes-input", materializePrs("monorepo-mixed", T2, "prs-later.template.json"), ...imageArgs]);
-const latest = { json: read(".agent-readiness/latest/report.json"), md: read(".agent-readiness/latest/report.md") };
+const latest = { json: read(".agent-readiness/latest/report.json"), md: read(".agent-readiness/latest/report.md"), html: read(".agent-readiness/latest/report.html") };
+
+// The reports link the skill's supported.md from .agent-readiness/latest/; from examples/ it is the skill folder next door.
+const relink = (s: string) =>
+  s
+    .replaceAll("../../.cursor/skills/agent-readiness/", "../skill/agent-readiness/")
+    .replaceAll("What the audit supports: references/supported.md in the agent-readiness skill.", "What the audit supports: [supported.md](../skill/agent-readiness/references/supported.md).")
+    .replaceAll("What the audit supports: <code>references/supported.md</code> in the agent-readiness skill.", 'What the audit supports: <a href="../skill/agent-readiness/references/supported.md">supported.md</a>.');
 
 const out = join(ACCELERATOR, "examples");
-writeFileSync(join(out, "sample-report-first.md"), first.md);
+writeFileSync(join(out, "sample-report-first.md"), relink(first.md));
+writeFileSync(join(out, "sample-report-first.html"), relink(first.html));
 writeFileSync(join(out, "sample-report-first.json"), first.json);
-writeFileSync(join(out, "sample-report.md"), latest.md);
+writeFileSync(join(out, "sample-report.md"), relink(latest.md));
+writeFileSync(join(out, "sample-report.html"), relink(latest.html));
 writeFileSync(join(out, "sample-report.json"), latest.json);
 writeFileSync(join(out, "sample-snapshots.json"), JSON.stringify({ generatedFrom: "fixtures/monorepo-mixed via npm run sample", snapshots: [JSON.parse(first.json), JSON.parse(latest.json)] }, null, 2) + "\n");
-process.stdout.write(`Wrote examples/sample-report.md, sample-report.json, sample-report-first.md, sample-report-first.json and sample-snapshots.json\n`);
+process.stdout.write(`Wrote examples/sample-report.md, sample-report.html, sample-report.json, sample-report-first.md, sample-report-first.html, sample-report-first.json and sample-snapshots.json\n`);

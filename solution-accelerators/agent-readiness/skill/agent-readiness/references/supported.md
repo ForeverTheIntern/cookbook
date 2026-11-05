@@ -6,7 +6,7 @@ A running list of the stacks and machines the audit has been checked on, and of 
 - **Not yet supported:** the scan recognises it and gives no level for it, because a specific piece is missing. The report says "isn't supported yet" with the reason, and links here.
 - **Not assessed:** the scan lists it by name with its share of recent changes, and gives no level. The audit has no install, test or planted-fault support for it. For a machine, nothing has proved how the audit behaves on it.
 
-A component outside the supported tier never sets the repo level. When it holds a share of recent changes, part 1 of the report says how much. The sections after the tiers say how supported tools, agent assets and services are handled: lint and format tools run check-only, vendored skills are skipped, and the environment draft starts Postgres and Redis. Anything not listed here hasn't been tried: the scan may not recognise it, so check part 4 of the report for what it found.
+A component outside the supported tier never sets the repo level. When it holds a share of recent changes, part 1 of the report says how much. The sections after the tiers say how supported tools, agent assets and services are handled: lint and format tools run check-only, vendored skills are skipped, and the environment draft starts Postgres and Redis. Anything not listed here hasn't been tried: the scan may not recognise it, so check part 5 of the report for what it found.
 
 ## Supported
 
@@ -59,7 +59,7 @@ A Python, PHP or Ruby app next to a root `package.json` is listed with its own s
 
 A .NET repo with several root solutions is named after the solution that matches the repo's name, or after the repo, never after whichever solution sorts first.
 
-Folders named `examples`, `samples`, `tests`, `bench`, `tooling` and the like, and packaging or platform folders such as `HomebrewFormula`, `pkg`, `packaging`, `android` and `ios`, are satellites: part 4 lists them, and they never become components while the repo has anything else to assess.
+Folders named `examples`, `samples`, `tests`, `bench`, `tooling` and the like, and packaging or platform folders such as `HomebrewFormula`, `pkg`, `packaging`, `android` and `ios`, are satellites: part 5 lists them, and they never become components while the repo has anything else to assess.
 
 ## Lint and format tools run check-only
 

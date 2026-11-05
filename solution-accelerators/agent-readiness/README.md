@@ -10,7 +10,7 @@ It is not a gate to pass before you start using agents. When it finds no blocker
 
 - **It scores only what it ran.** Scripts install, build and test the repo in a clean container, plant faults its tests should catch, and replay every command in AGENTS.md, rules, skills and the README. The presence of a file never passes a check.
 - **The agent can't grade its own work.** The skill's scripts create the evidence, choose the planted faults, compute every level and seal the audit with a digest of the scripts and rubric. The agent picks the scope, explains the result and stops. The seed and where faults were planted stay outside the repository until the seal, and a hand edit to the draft audit is refused at the next step. In CI, `SA_READINESS_SEAL_KEY` keys the seal, and wherever the key is set `verify-seal` accepts only keyed seals, so a seal from anywhere else doesn't verify there. The key never reaches the repo's code. These raise the bar; they don't make an audit on a machine the agent controls tamper-proof, so treat a keyed seal from CI as the production result.
-- **Levels follow the work, in three tiers.** The repo gets one rollup level. Each app or component the scan finds gets one standard level, and part 4 lists every component included or left out, with the reason. Scenarios, such as bug fixes or repo-wide changes, are optional breakdowns nested under the components they cover, present only when someone adds them. A monorepo can be at Level 2 in one package and not bootable in another.
+- **Levels follow the work, in three tiers.** The repo gets one rollup level. Each app or component the scan finds gets one standard level, and part 5 of the report lists every component included or left out, with the reason. Scenarios, such as bug fixes or repo-wide changes, are optional breakdowns nested under the components they cover, present only when someone adds them. A monorepo can be at Level 2 in one package and not bootable in another.
 - **The rollup rule is explicit.** The repo level is the lowest standard level among active components: the assessed ones with at least 10% of changes over 90 days, where a component joins or leaves that set only after two audits on the same side of the line. Components the audit can't assess never set it, and scenarios never change it. With no real check result there is no level at any tier. See [references/levels.md](skill/agent-readiness/references/levels.md).
 - **It keeps score over time.** A roadmap with stable item IDs, a weekly recheck, and agent PR outcomes against other PRs show whether fixes paid off.
 
@@ -44,14 +44,15 @@ node --experimental-strip-types --no-warnings .cursor/skills/agent-readiness/scr
 
 ## Reading the report
 
-`.agent-readiness/latest/report.md` has four parts:
+`.agent-readiness/latest/` holds the report three ways, all from the same sealed data: `report.json`, `report.md`, and `report.html`, a self-contained page (inline CSS and SVG, no scripts, nothing fetched) that opens offline, prints, and follows light or dark mode. Both views run in the same five parts:
 
-1. **Where you stand.** One screen: the level and what it means, a one-message headline that names the component setting the level, three numbers each with a comparison, the scale, at most three gaps and one ask.
-2. **Next actions and how they move the needle.** Effort against impact, where impact is the share of recent changes in components whose level rises when only that action's checks flip to passing. Each action names the metric to watch and its baseline.
-3. **Where you are on the roadmap.** Every step and its status, and from the second audit on, levels over time and what each closed step delivered against what it was expected to.
-4. **Details.** Exact steps, every check with why it matters and its evidence, levels by component with any scenarios nested under each, the repo level and its rule, agent PR outcomes, agent assets and their authors, and the evidence log.
+1. **Where am I now.** The level and what it means, the agent's one-message headline, the level ladder with the repo marked on it, the trend over past audits, three numbers each with a comparison, what isn't assessed and why, and for a monorepo each component with its level, change share and trend.
+2. **Have I improved.** What changed since the last audit: level changes, conditions now met or now failing, checks that flipped, and the steps closed. A first audit says so.
+3. **What moves the needle next.** What the next level still needs, at most three gaps, and each action with the level it unlocks and the share of recent changes that covers, its effort, the evidence behind it and the metric to watch, then the one ask.
+4. **Roadmap to the max level.** The steps for each level up to Level 4, and the ones that serve every level.
+5. **Audit details.** Exact steps, every check with why it matters and its evidence, levels by component with any scenarios nested under each, the repo level and its rule, agent PR outcomes, agent assets and their authors, and the evidence log.
 
-`report.json` (schema `agent-readiness/report@1`) is the view model. The markdown and any other renderer are views of it. See [references/report.md](skill/agent-readiness/references/report.md).
+`report.json` (schema `agent-readiness/report@1`) is the view model. The markdown, the HTML page and any other renderer are views of it. See [references/report.md](skill/agent-readiness/references/report.md).
 
 The outcome numbers are a baseline and then a trend, not attribution. Every rate shows its n and window, below 5 the report shows counts only, and agent PRs always sit next to other PRs from the same window.
 

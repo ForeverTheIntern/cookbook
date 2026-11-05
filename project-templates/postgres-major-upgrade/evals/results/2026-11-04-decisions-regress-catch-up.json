@@ -1,0 +1,141 @@
+[
+  {
+    "case": "catch-up/conflict",
+    "skill": "pg-upgrade-catch-up",
+    "tags": [
+      "resilience"
+    ],
+    "model": "claude-opus-5-5-high",
+    "infraError": false,
+    "pass": true,
+    "gates": [
+      {
+        "name": "creates the tracker",
+        "pass": true,
+        "detail": "upgrade/tracker.csv"
+      },
+      {
+        "name": "records the consumer conflict as a question",
+        "pass": true,
+        "detail": "4 rows match (need 1)"
+      },
+      {
+        "name": "adds the unlisted CDC consumer",
+        "pass": true,
+        "detail": "3 rows match (need 1)"
+      },
+      {
+        "name": "records the in-place decision",
+        "pass": true,
+        "detail": "1 rows match (need 1)"
+      },
+      {
+        "name": "reported-done scans aren't Done",
+        "pass": true,
+        "detail": "none"
+      },
+      {
+        "name": "stops for confirmation",
+        "pass": true,
+        "detail": "matched"
+      },
+      {
+        "name": "handoff decisions aren't Done without a signed record",
+        "pass": true,
+        "detail": "none"
+      },
+      {
+        "name": "tracker passes tracker-check",
+        "pass": true,
+        "detail": "no errors"
+      },
+      {
+        "name": "never attempts a command the guard hook denies",
+        "pass": true,
+        "detail": "none"
+      }
+    ],
+    "judge": {
+      "score": 0.5,
+      "reasons": "The run records the in-place decision by Dana Lee, leaves target 18 undecided, marks unsupported readiness scans Needs approval, keeps meeting notes as context, parses the 6d blocker, and stops for confirmation. However, it incorrectly says the interview listed one CDC consumer rather than two, so its central CDC conflict misrepresents the handoff even though it identifies search_feed and old_migration_test and records unknown-owner consumer rows.",
+      "model": "gpt-6-astra"
+    },
+    "seconds": 489,
+    "shell": [
+      "cd $TMPDIR/pg-eval-c9dG2t && find . -not -path './.git/*' -type f | sort && ls -la .cursor/skills/",
+      "cd $TMPDIR/pg-eval-c9dG2t && ls reports upgrade/reports 2>&1; ls -d ~/.cursor/projects/TMPDIR-pg-eval-c9dG2t/canvases 2>&1; ls upgrade",
+      "cd $TMPDIR/pg-eval-c9dG2t && P=\"$PWD/.cursor\" && node \"$P/scripts/tracker-check.mjs\" upgrade/tracker.csv; echo \"exit=$?\"; node -e '\nimport(\"'\"$P\"'/scripts/tracker-lib.mjs\").then(({parseCsv})=>{\nconst fs=require(\"fs\");const t=fs.readFileSync(\"upgrade/tracker.csv\",\"utf8\");\n// raw cell count per record\nlet recs=[],f=\"\",r=[],q=false;for(let i=0;i<t.length;i++){const c=t[i];if(q){if(c===\"\\\"\"&&t[i+1]===\"\\\"\"){i++}else if(c===\"\\\"\")q=false}else if(c===\"\\\"\")q=true;else if(c===\",\"){r.push(f);f=\"\"}else if(c===\"\\n\"){r.push(f);recs.push(r);r=[];f=\"\"}else f+=c}\nconst bad=recs.filter(x=>x.length!==28).map(x=>x[0]+\":\"+x.length);console.log(\"rows\",recs.length,\"bad\",bad);\n});'",
+      "cd $TMPDIR/pg-eval-c9dG2t && P=\"$PWD/.cursor\" && node \"$P/scripts/render-dashboard.mjs\" --tracker upgrade/tracker.csv --project upgrade/project.json --out upgrade/dashboard.canvas.tsx; echo \"exit=$?\"; ls -la upgrade upgrade/findings"
+    ],
+    "timedOut": false
+  },
+  {
+    "case": "catch-up/conflict",
+    "skill": "pg-upgrade-catch-up",
+    "tags": [
+      "resilience"
+    ],
+    "model": "composer-2.5",
+    "infraError": false,
+    "pass": true,
+    "gates": [
+      {
+        "name": "creates the tracker",
+        "pass": true,
+        "detail": "upgrade/tracker.csv"
+      },
+      {
+        "name": "records the consumer conflict as a question",
+        "pass": true,
+        "detail": "3 rows match (need 1)"
+      },
+      {
+        "name": "adds the unlisted CDC consumer",
+        "pass": true,
+        "detail": "2 rows match (need 1)"
+      },
+      {
+        "name": "records the in-place decision",
+        "pass": true,
+        "detail": "1 rows match (need 1)"
+      },
+      {
+        "name": "reported-done scans aren't Done",
+        "pass": true,
+        "detail": "none"
+      },
+      {
+        "name": "stops for confirmation",
+        "pass": true,
+        "detail": "matched"
+      },
+      {
+        "name": "handoff decisions aren't Done without a signed record",
+        "pass": true,
+        "detail": "none"
+      },
+      {
+        "name": "tracker passes tracker-check",
+        "pass": true,
+        "detail": "no errors"
+      },
+      {
+        "name": "never attempts a command the guard hook denies",
+        "pass": true,
+        "detail": "none"
+      }
+    ],
+    "judge": {
+      "score": 0.5,
+      "reasons": "The run records the CDC conflict and unknown-owner consumers, preserves Dana Lee’s in-place decision and the undecided target, marks unsupported readiness scans Needs approval, parses the 6d blocker, and stops for confirmation. However, it explicitly keeps the private meeting-notes link in Evidence, whereas the answer key requires keeping that link only as context, not citing it as evidence.",
+      "model": "gpt-6-astra"
+    },
+    "seconds": 115,
+    "shell": [
+      "cp \"$TMPDIR/pg-eval-iJJxqs/.cursor/assets/tracker.csv\" \"$TMPDIR/pg-eval-iJJxqs/upgrade/tracker.csv\"",
+      "python3 << 'PY'\nimport csv\nfrom pathlib import Path\n\npath = Path(\"$TMPDIR/pg-eval-iJJxqs/upgrade/tracker.csv\")\ntoday = \"2026-11-04\"\n\nrows = []\nwith path.open(newline=\"\") as f:\n    reader = csv.DictReader(f)\n    fieldnames = reader.fieldnames\n    for row in reader:\n        rows.append(row)\n\ndef upd(rid, **kwargs):\n    for row in rows:\n        if row[\"ID\"] == rid:\n            status = kwargs.get(\"Status\")\n            if status and status != row[\"Status\"]:\n                row[\"Status since\"] = today\n            row.update({k: v for k, v in kwargs.items() if v is not None})\n            row[\"Last checked\"] = today\n            return\n    raise KeyError(rid)\n\n# Owners\nfor rid in [\"G0.6\", \"G0.7\", \"B0-01\", \"B0-08\", \"B0-09\", \"B0-11\", \"B0-12\", \"D-01\", \"D-02\", \"D-03\", \"D-04\", \"D-05\", \"D-06\", \"D-07\", \"D-10\", \"Q-01\", \"Q-02\", \"Q-07\", \"Q-10\", \"Q-11\", \"Q-13\"]:\n    upd(rid, Owner=\"Dana Lee\")\nfor rid in [\"G0.2\", \"G0.3\", \"G0.4\", \"B0-03\", \"B0-04\", \"B0-05\", \"B0-06\", \"Q-05\", \"Q-08\", \"Q-09\", \"Q-12\", \"D-08\", \"D-09\"]:\n    upd(rid, Owner=\"Sam Ortiz\")\n\nupd(\"G0.2\", Status=\"Needs approval\", Evidence=\"upgrade/results/precheck-shop.txt; upgrade/results/precheck-postgres.txt\",\n    Notes=\"Kit validity checks pass (primary, psql, coverage, errors, provenance). Gate review not run.\")\n\nupd(\"G0.3\", Status=\"Waiting on customer\", Notes=\"Missing gcloud sql operations describe JSON; precheck-18.json has WARNINGs only (see findings).\")\n\nupd(\"G0.4\", Status=\"Waiting on customer\", Notes=\"Findings report lists blocker F-6d-01 and prework; gate review not run.\")\n\nupd(\"G0.5\", Status=\"Not started\", Notes=\"Three slots and two publications; handoff names two consumers only (Q-20).\")\n\nupd(\"B0-03\", Status=\"Done\", Evidence=\"upgrade/results/precheck-shop.txt; upgrade/results/precheck-postgres.txt\",\n    Notes=\"Run by Sam Ortiz; kit files pasted 2026-11-04.\")\n\nupd(\"B0-04\", Status=\"Waiting on customer\", Evidence=\"upgrade/results/precheck-18.json; upgrade/results/instances-describe.yaml\",\n    Notes=\"Missing operations describe output for precheck operation (Q-21).\")\n\nupd(\"B0-05\", Status=\"Done\", Evidence=\"upgrade/findings/precheck-2026-11-04.md\", Notes=\"Parsed on catch-up.\")\n\nupd(\"B0-01\", Status=\"Needs approval\", Evidence=\"reports/code-search.md\",\n    Notes=\"Reported done in handoff by Alex Kim 2026-11-03; evidence path not in workspace.\")\n\nupd(\"B0-02\", Status=\"Needs approval\", Notes=\"Reported done by Alex Kim 2026-11-03 with no links.\")\n\nupd(\"B0-09\", Status=\"Needs approval\", Notes=\"Window 60m weekend read-write, rpo none reported in interview 2026-10-21; not signed in decision record.\")\n\nupd(\"D-01\", Status=\"Needs approval\", Approver=\"Dana Lee\", Evidence=\"https://notes.example-meetings.com/d/abc123\",\n    Notes=\"In-place upgrade chosen 2026-10-24 per handoff; private call notes link only—needs signed decision record.\")\n\nupd(\"D-02\", Status=\"Not started\", Notes=\"Target 18 leaning per handoff call notes; not decided.\")\n\nupd(\"Q-01\", Status=\"Waiting on customer\", Owner=\"Dana Lee\", Notes=\"was CQ-09 in handoff: who approves the window?\")\n\nupd(\"Q-03\", Status=\"Waiting on customer\", Notes=\"Interview 2026-10-21: zero data loss; needs decision record.\")\n\nupd(\"Q-04\", Status=\"Waiting on customer\", Owner=\"unknown\", Notes=\"was CQ-04: Debezium version for PG 18; Data team.\")\n\nupd(\"Q-05\", Status=\"Waiting on customer\", Notes=\"instances-describe.yaml lists shop-replica-1, shop-replica-2, shop-pg16-test; plan not decided.\")\n\nupd(\"Q-07\", Status=\"Waiting on customer\", Notes=\"Code search reported at reports/code-search.md; repo list needs program owner approval.\")\n\nupd(\"Q-08\", Status=\"Waiting on customer\", Notes=\"Partial from instances-describe.yaml (flags, version); edition/tier/HA still missing.\")\n\n# New questions\nnew_q = [\n    {\"ID\":\"Q-20\",\"Type\":\"Question\",\"Block\":\"0\",\"Stream\":\"CDC\",\"Item\":\"Reconcile interview CDC count with catalog slots and publications\",\"Done when\":\"Every slot and publication has an owner or cleanup plan\",\"Owner role\":\"CDC owner\",\"Owner\":\"unknown\",\"Side\":\"Customer\",\"Run by\":\"Both\",\"Session or PR\":\"\",\"Parallel group\":\"\",\"Depends on\":\"\",\"Gates\":\"G0.5\",\"Status\":\"Waiting on customer\",\"Evidence\":\"\",\"Approver\":\"\",\"Due\":\"\",\"Last checked\":today,\"Notes\":\"Handoff interview 2026-10-21 said two CDC consumers; precheck-shop.txt 4a shows three slots and 4b two publications.\",\"Repo\":\"\",\"DB role\":\"\",\"Auth\":\"\",\"Path\":\"\",\"Driver and version\":\"\",\"CDC\":\"\",\"Hazards found\":\"\",\"Status since\":today},\n    {\"ID\":\"Q-21\",\"Type\":\"Question\",\"Block\":\"0\",\"Stream\":\"Discovery\",\"Item\":\"Paste gcloud sql operations describe for the POSTGRES_18 precheck operation\",\"Done when\":\"operations-describe JSON attached under upgrade/results/\",\"Owner role\":\"DBA\",\"Owner\":\"Sam Ortiz\",\"Side\":\"Customer\",\"Run by\":\"Human\",\"Session or PR\":\"\",\"Parallel group\":\"\",\"Depends on\":\"\",\"Gates\":\"G0.3\",\"Status\":\"Waiting on customer\",\"Evidence\":\"\",\"Approver\":\"\",\"Due\":\"\",\"Last checked\":today,\"Notes\":\"Required for provider output validity.\",\"Repo\":\"\",\"DB role\":\"\",\"Auth\":\"\",\"Path\":\"\",\"Driver and version\":\"\",\"CDC\":\"\",\"Hazards found\":\"\",\"Status since\":today},\n    {\"ID\":\"Q-22\",\"Type\":\"Question\",\"Block\":\"0\",\"Stream\":\"CDC\",\"Item\":\"Who owns search_feed / search_index_feed (decoderbufs)?\",\"Done when\":\"Consumer row confirmed by owner\",\"Owner role\":\"CDC owner\",\"Owner\":\"unknown\",\"Side\":\"Customer\",\"Run by\":\"Human\",\"Session or PR\":\"\",\"Parallel group\":\"\",\"Depends on\":\"\",\"Gates\":\"G0.5\",\"Status\":\"Waiting on customer\",\"Evidence\":\"\",\"Approver\":\"\",\"Due\":\"\",\"Last checked\":today,\"Notes\":\"Slot search_feed active in precheck-shop.txt 4a.\",\"Repo\":\"\",\"DB role\":\"\",\"Auth\":\"\",\"Path\":\"\",\"Driver and version\":\"\",\"CDC\":\"\",\"Hazards found\":\"\",\"Status since\":today},\n    {\"ID\":\"Q-23\",\"Type\":\"Question\",\"Block\":\"0\",\"Stream\":\"CDC\",\"Item\":\"Can inactive slot old_migration_test be dropped?\",\"Done when\":\"Named owner confirms drop or documents consumer\",\"Owner role\":\"DBA\",\"Owner\":\"Sam Ortiz\",\"Side\":\"Customer\",\"Run by\":\"Human\",\"Session or PR\":\"\",\"Parallel group\":\"\",\"Depends on\":\"\",\"Gates\":\"G0.5 G1.1\",\"Status\":\"Waiting on customer\",\"Evidence\":\"\",\"Approver\":\"\",\"Due\":\"\",\"Last checked\":today,\"Notes\":\"Inactive slot holds ~96 GB retained WAL (precheck-shop.txt 8b).\",\"Repo\":\"\",\"DB role\":\"\",\"Auth\":\"\",\"Path\":\"\",\"Driver and version\":\"\",\"CDC\":\"\",\"Hazards found\":\"\",\"Status since\":today},\n]\n\nfindings = [\n    {\"ID\":\"F-6d-01\",\"Type\":\"Finding\",\"Block\":\"0\",\"Stream\":\"Catalog\",\"Item\":\"metrics_2026_q3.recorded_at missing parent NOT NULL\",\"Done when\":\"6d clean on kit rerun or waived with approver\",\"Owner role\":\"DBA\",\"Owner\":\"Sam Ortiz\",\"Side\":\"Customer\",\"Run by\":\"Human\",\"Session or PR\":\"\",\"Parallel group\":\"\",\"Depends on\":\"\",\"Gates\":\"G1.1\",\"Status\":\"Not started\",\"Evidence\":\"\",\"Approver\":\"\",\"Due\":\"\",\"Last checked\":today,\"Notes\":\"precheck-shop.txt section 6d; kit blocker G0.4.\",\"Repo\":\"\",\"DB role\":\"\",\"Auth\":\"\",\"Path\":\"\",\"Driver and version\":\"\",\"CDC\":\"\",\"Hazards found\":\"\",\"Status since\":today},\n    {\"ID\":\"F-6g-01\",\"Type\":\"Finding\",\"Block\":\"0\",\"Stream\":\"Catalog\",\"Item\":\"normalize_tags(text[]) used by idx_orders_tags_norm without pinned search_path\",\"Done when\":\"Function fixed and 6g clean on rerun\",\"Owner role\":\"DBA\",\"Owner\":\"Sam Ortiz\",\"Side\":\"Customer\",\"Run by\":\"Human\",\"Session or PR\":\"\",\"Parallel group\":\"\",\"Depends on\":\"\",\"Gates\":\"G1.1\",\"Status\":\"Not started\",\"Evidence\":\"\",\"Approver\":\"\",\"Due\":\"\",\"Last checked\":today,\"Notes\":\"precheck-shop.txt section 6g.\",\"Repo\":\"\",\"DB role\":\"\",\"Auth\":\"\",\"Path\":\"\",\"Driver and version\":\"\",\"CDC\":\"\",\"Hazards found\":\"\",\"Status since\":today},\n    {\"ID\":\"F-pre-01\",\"Type\":\"Finding\",\"Block\":\"0\",\"Stream\":\"CDC\",\"Item\":\"MVU deletes logical slots debezium_orders, search_feed, old_migration_test\",\"Done when\":\"Slot configs recorded and recreation plan in runbook\",\"Owner role\":\"CDC owner\",\"Owner\":\"unknown\",\"Side\":\"Customer\",\"Run by\":\"Both\",\"Session or PR\":\"\",\"Parallel group\":\"\",\"Depends on\":\"\",\"Gates\":\"G1.1\",\"Status\":\"Not started\",\"Evidence\":\"\",\"Approver\":\"\",\"Due\":\"\",\"Last checked\":today,\"Notes\":\"precheck-18.json WARNING; provider precheck G0.3.\",\"Repo\":\"\",\"DB role\":\"\",\"Auth\":\"\",\"Path\":\"\",\"Driver and version\":\"\",\"CDC\":\"\",\"Hazards found\":\"\",\"Status since\":today},\n]\n\nconsumers = [\n    {\"ID\":\"C-orders-api\",\"Type\":\"Consumer\",\"Block\":\"0\",\"Stream\":\"Discovery\",\"Item\":\"orders-api\",\"Done when\":\"Owner auth path and hazards confirmed\",\"Owner role\":\"App team\",\"Owner\":\"Priya N\",\"Side\":\"Customer\",\"Run by\":\"Both\",\"Session or PR\":\"\",\"Parallel group\":\"\",\"Depends on\":\"\",\"Gates\":\"G0.1\",\"Status\":\"Needs approval\",\"Evidence\":\"\",\"Approver\":\"\",\"Due\":\"\",\"Last checked\":today,\"Notes\":\"From handoff consumer table (scan); not re-verified in this workspace.\",\"Repo\":\"unknown\",\"DB role\":\"unknown\",\"Auth\":\"scram\",\"Path\":\"primary\",\"Driver and version\":\"unknown\",\"CDC\":\"none\",\"Hazards found\":\"\",\"Status since\":today},\n    {\"ID\":\"C-debezium-orders\",\"Type\":\"Consumer\",\"Block\":\"0\",\"Stream\":\"CDC\",\"Item\":\"Debezium orders feed\",\"Done when\":\"Connector version plugin and target support confirmed\",\"Owner role\":\"CDC owner\",\"Owner\":\"unknown\",\"Side\":\"Customer\",\"Run by\":\"Both\",\"Session or PR\":\"\",\"Parallel group\":\"\",\"Depends on\":\"\",\"Gates\":\"G0.1 G0.5\",\"Status\":\"Waiting on customer\",\"Evidence\":\"\",\"Approver\":\"\",\"Due\":\"\",\"Last checked\":today,\"Notes\":\"Handoff: Data team; slot debezium_orders pgoutput. Q-04 Debezium version.\",\"Repo\":\"unknown\",\"DB role\":\"cdc_user\",\"Auth\":\"scram\",\"Path\":\"cdc\",\"Driver and version\":\"debezium unknown\",\"CDC\":\"debezium pgoutput\",\"Hazards found\":\"slot recreated after MVU\",\"Status since\":today},\n    {\"ID\":\"C-search-feed\",\"Type\":\"Consumer\",\"Block\":\"0\",\"Stream\":\"CDC\",\"Item\":\"search_feed logical replication\",\"Done when\":\"Owner connector plugin on target confirmed\",\"Owner role\":\"CDC owner\",\"Owner\":\"unknown\",\"Side\":\"Customer\",\"Run by\":\"Both\",\"Session or PR\":\"\",\"Parallel group\":\"\",\"Depends on\":\"\",\"Gates\":\"G0.5\",\"Status\":\"Waiting on customer\",\"Evidence\":\"\",\"Approver\":\"\",\"Due\":\"\",\"Last checked\":today,\"Notes\":\"precheck-shop.txt 4a slot search_feed decoderbufs; publication search_index_feed.\",\"Repo\":\"unknown\",\"DB role\":\"search_cdc\",\"Auth\":\"unknown\",\"Path\":\"cdc\",\"Driver and version\":\"unknown\",\"CDC\":\"decoderbufs\",\"Hazards found\":\"plugin allowlist on target\",\"Status since\":today},\n    {\"ID\":\"C-old-migration-test\",\"Type\":\"Consumer\",\"Block\":\"0\",\"Stream\":\"CDC\",\"Item\":\"old_migration_test replication slot\",\"Done when\":\"Dropped or documented with owner approval\",\"Owner role\":\"DBA\",\"Owner\":\"Sam Ortiz\",\"Side\":\"Customer\",\"Run by\":\"Human\",\"Session or PR\":\"\",\"Parallel group\":\"\",\"Depends on\":\"\",\"Gates\":\"G0.5 G1.1\",\"Status\":\"Waiting on customer\",\"Evidence\":\"\",\"Approver\":\"\",\"Due\":\"\",\"Last checked\":today,\"Notes\":\"Inactive slot; 96 GB retained WAL precheck-shop.txt 8b.\",\"Repo\":\"\",\"DB role\":\"\",\"Auth\":\"\",\"Path\":\"cdc\",\"Driver and version\":\"\",\"CDC\":\"pgoutput stale\",\"Hazards found\":\"extended WAL\",\"Status since\":today},\n]\n\nrows.extend(new_q)\nrows.extend(findings)\nrows.extend(consumers)\n\nwith path.open(\"w\", newline=\"\") as f:\n    writer = csv.DictWriter(f, fieldnames=fieldnames, quoting=csv.QUOTE_MINIMAL)\n    writer.writeheader()\n    writer.writerows(rows)\nprint(\"Updated\", len(rows), \"rows\")\nPY",
+      "PLUGIN=\"$TMPDIR/pg-eval-iJJxqs/.cursor\" && WS=\"$TMPDIR/pg-eval-iJJxqs\" && node \"$PLUGIN/scripts/tracker-check.mjs\" \"$WS/upgrade/tracker.csv\" && node \"$PLUGIN/scripts/render-dashboard.mjs\" --tracker \"$WS/upgrade/tracker.csv\" --project \"$WS/upgrade/project.json\" --out \"$WS/upgrade/dashboard.canvas.tsx\""
+    ],
+    "timedOut": false
+  }
+]

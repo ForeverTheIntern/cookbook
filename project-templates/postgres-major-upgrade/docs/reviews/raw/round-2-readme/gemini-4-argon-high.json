@@ -1,0 +1,116 @@
+{
+  "reviewer": "gemini-4-argon-high via cursor-agent",
+  "rubric": "readme",
+  "summary": "The README clearly explains the four-block upgrade model and its human-in-the-loop philosophy, but it makes a false citation claim about Cursor Cloud Agent MCP hook support, overstates eval and source-verification status relative to the hill-climb log and sources.json, and gives a Block 1 PR-merging instruction that conflicts with the SOP's IaC sequencing rule. Fixing the Cloud Agent hook claim, aligning the stage and quick-start instructions with the SOP and Cursor documentation, and completing the Round 2 eval and source verification runs are needed before shipping.",
+  "overall": "ship-with-fixes",
+  "findings": [
+    {
+      "id": "R-01",
+      "file": "review/README.md",
+      "line": 144,
+      "severity": "major",
+      "category": "links-and-citations",
+      "claim": "The README claims that Cursor documents `beforeMCPExecution` as supported in Cloud Agents under [S-47] and relies on hooks in the Guardrails table to block database MCP tools. In reality, [S-47] explicitly lists `beforeMCPExecution` as unsupported in Cloud Agents and states that hooks do not run during Cloud Agents' initial read-only turns.",
+      "evidence": "review/README.md:144 states: \"- [ ] The hooks fire in Cloud Agents. Cursor documents `beforeShellExecution` and `beforeMCPExecution` as supported ([S-47](plugins/pg-major-upgrade/reference/sources.md)).\" and review/README.md:75 states: \"Hooks deny database clients without an explicit local host, provider commands that change state, database MCP tools, and IaC applies\". However, https://cursor.com/docs/hooks (S-47) lists `beforeMCPExecution / afterMCPExecution` under \"Hooks not available in cloud agents\" with reason \"Deferred while cloud agents can still start in a read-only environment, where hooks don't load and MCP hook timing is unclear\" (noting that for HTTP MCP servers `preToolUse` fires with `MCP:<tool_name>`), and states \"Cloud agents sometimes begin in a read-only environment for early exploratory turns. Hooks do not run during those turns.\" Additionally, review/reference/sources.json:574-578 (`S-47`) only quotes \"beforeShellExecution / afterShellExecution - Control shell commands\".",
+      "source_id": "S-47",
+      "verifiable": "verified",
+      "suggested_fix": "Update `review/README.md` (lines 75 and 144) and the hook configuration to note that `beforeMCPExecution` is not available in Cloud Agents per [S-47] (use `preToolUse` matching `MCP:<tool_name>` for HTTP MCP servers instead) and that hooks do not run during Cloud Agents' initial read-only exploratory turns."
+    },
+    {
+      "id": "R-02",
+      "file": "review/README.md",
+      "line": 63,
+      "severity": "major",
+      "category": "overstatement",
+      "claim": "The README presents skill evals as a verification layer covering each skill and resilience scenarios such as a down tracker backend, without disclosing that multiple eval cases failed in the last recorded run and that Round 2 changes and regenerated fixtures have no recorded test results.",
+      "evidence": "review/README.md:63 states: \"4. **Skill evals.** [evals/](evals/) runs each skill headless on synthetic fixtures, across more than one model... The cases are mostly resilience cases: a precheck run on a replica, ORM output instead of psql, a prompt injection in pasted output, a tracker backend that's down, a request to connect to production. Results and the hill-climb log are in [evals/results/](evals/results/) and [evals/HILLCLIMB.md](evals/HILLCLIMB.md).\" However, review/evals/HILLCLIMB.md:60-71 shows the latest recorded run (Round 1) passed only 13/16 on Opus 5.5 and 12/16 on composer 2.5 (failing `precheck/primary-blocker` on both models, `tracker/done-without-evidence`, `tracker/render`, `guardrails/merge-request`, and `tracker/backend-down`), review/evals/HILLCLIMB.md:73-86 records no Round 2 results at all after changing skills and fixtures, and two of the seven skills in review/README.md:114-116 (`pg-upgrade-runbook` and `pg-upgrade-model-review`) do not appear in `HILLCLIMB.md`.",
+      "source_id": null,
+      "verifiable": "verified",
+      "suggested_fix": "Run and record the Round 2 eval results in `evals/HILLCLIMB.md`, and update `review/README.md` line 63 to accurately state which skills are covered by evals and their current pass rates."
+    },
+    {
+      "id": "R-03",
+      "file": "review/README.md",
+      "line": 38,
+      "severity": "major",
+      "category": "stages-and-process",
+      "claim": "The Block 1 summary tells people to \"review and merge every PR, and apply the IaC after the upgrade,\" which contradicts the SOP's rules on when IaC PRs are merged versus applied and could trigger an premature upgrade if a team merges the target-version IaC PR in Block 1.",
+      "evidence": "review/README.md:38 states under **Block 1: prepare in parallel**: \"- **People:** review and merge every PR, and apply the IaC after the upgrade.\" By contrast, review/plugins/pg-major-upgrade/reference/sop.md:136 (`B1-11`) states: \"On Cloud SQL, changing `database_version` in Terraform starts an MVU of its own. So the version change merges after the runbook's upgrade step, as a reconcile\", sop.md:289 puts \"Merge the IaC version change as a reconcile\" in Block 3 at `T+1 hour`, and sop.md:115,129 (`G1.1`, `B1-03`) requires flag-removal and catalog fixes to be applied in production during Block 1 before Block 1 can exit.",
+      "source_id": null,
+      "verifiable": "verified",
+      "suggested_fix": "Clarify in `review/README.md` line 38 that compatibility, catalog, and flag-fix PRs are merged and deployed in Block 1 so `G1.1` passes in production, while the target-version IaC PR (`B1-11`) is only reviewed and planned in Block 1 (`G1.7`) and must not be merged or applied until after cutover in Block 3."
+    },
+    {
+      "id": "R-04",
+      "file": "review/README.md",
+      "line": 81,
+      "severity": "major",
+      "category": "quick-start",
+      "claim": "Quick-start step 1 instructs users to \"Import this folder into your team marketplace\" or \"install `plugins/pg-major-upgrade` for the project\" before creating the Project, omitting how Cursor team marketplaces and Cloud Agents actually load plugins and omitting prerequisite GitHub, Slack, and MCP connections.",
+      "evidence": "review/README.md:81-83 states: \"1. **Install the plugin.** Import this folder into your team marketplace (it's a marketplace repo with one plugin), or install `plugins/pg-major-upgrade` for the project. 2. **Create a team Project.** Its workspace should be the repo that will hold `upgrade/`... 3. **Paste the bootstrap prompt**\". Per https://cursor.com/docs/plugins (S-45), \"Import from Repo accepts GitHub, GitLab, Bitbucket, and Azure DevOps URLs\" (not a local folder), importing into a marketplace still requires installing the plugin from `Customize` or setting it to `Default On`/`Required`, and local plugin directories (`~/.cursor/plugins/local`) reside in the user's home directory, which https://cursor.com/docs/hooks (S-47) notes Cloud Agent VMs cannot access.",
+      "source_id": "S-45",
+      "verifiable": "verified",
+      "suggested_fix": "Update the Quick start in `review/README.md` so users first push/import the marketplace repository URL into their team marketplace and install or set the plugin to `Default On`/`Required` in `Customize`, connect GitHub, Slack, and any external `trackerBackend` MCP server, and then create the Project on the target workspace repository."
+    },
+    {
+      "id": "R-05",
+      "file": "review/docs/bootstrap-prompt.md",
+      "line": 26,
+      "severity": "major",
+      "category": "quick-start",
+      "claim": "The bootstrap prompt's ordered steps conflict with the SOP's Block 0 workflow and omit the SOP's secret-redaction rule during code search, the day-one 1-week live consumer census (`B0-06`), and version research (`B0-10`).",
+      "evidence": "review/docs/bootstrap-prompt.md:26-30 runs org-wide code search in step 2 (\"2. Search every listed org for code that connects to this database, and add one Consumer row per repo with its evidence\") before waiting for repo-list approval in step 4, and in step 5 only runs readiness scans, drafts the DBA precheck request, drafts the daily status subscription, and renders the dashboard. By contrast, review/plugins/pg-major-upgrade/reference/sop.md:49 (`B0-01`) mandates \"Record only the file path and line of each hit, never the value. A secret found in code is reported to its owner for rotation, not copied anywhere\", sop.md:63 says \"1. Start B0-01, B0-02 and B0-10 together as soon as the repo list is approved\", and sop.md:70 says \"4. Start the census (B0-06) the same day. A week of samples catches weekly batch jobs.\"",
+      "source_id": null,
+      "verifiable": "verified",
+      "suggested_fix": "Align `review/docs/bootstrap-prompt.md` lines 26-30 and `review/plugins/pg-major-upgrade/reference/sop.md` line 63 on whether `B0-01` runs before or after approval, include the secret-redaction rule in step 2, and include starting `B0-10` (version research) and requesting `B0-06` (the 1-week `pg_stat_activity` census) plus `B0-04` (provider precheck) in step 5."
+    },
+    {
+      "id": "R-06",
+      "file": "review/README.md",
+      "line": 34,
+      "severity": "minor",
+      "category": "stages-and-process",
+      "claim": "The stage exit summaries in the README cite the full gate ranges (`G0.1 to G0.7`, `G1.1 to G1.7`, `G2.1 to G2.9`) while omitting major gates required by the SOP, preventing a team lead from explaining all stage exit criteria from the README alone.",
+      "evidence": "review/README.md:34 summarizes `G0.1 to G0.7` as \"every consumer has an owner, the precheck ran validly on the primary for every database, every blocker has an owner, and the decision record is signed\", omitting `G0.3` (provider precheck), `G0.5` (CDC slot/publication/subscription/pglogical inventory and target-version support plan), and `G0.7` (provider questions sent with an owner) from review/plugins/pg-major-upgrade/reference/sop.md:39-43. Similarly, review/README.md:39 (`G1.1 to G1.7`) omits `G1.4` (SCRAM password resets), `G1.5` (target-version monitoring verification), and `G1.7` (IaC PR plan verification) from sop.md:118-121, and review/README.md:44 (`G2.1 to G2.9`) omits `G2.2` (clone provider precheck), `G2.3` (planner stats coverage), `G2.4` (cross-version statement set within 2x), `G2.7` (pooler/replica routing), and `G2.9` (go/no-go owner sign-off) from sop.md:166-173.",
+      "source_id": null,
+      "verifiable": "verified",
+      "suggested_fix": "Expand the `Exits when` bullets in `review/README.md` lines 34, 39, and 44 so every gate in `G0.1-G0.7`, `G1.1-G1.7`, and `G2.1-G2.9` is represented in the summary."
+    },
+    {
+      "id": "R-07",
+      "file": "review/README.md",
+      "line": 61,
+      "severity": "minor",
+      "category": "overstatement",
+      "claim": "The README claims all 48 sources are verified against exact quotes by `check-sources.mjs` and instructs users adapting the template to edit `sources.json` and run `check-sources.mjs`, but `reference/sources.json` contains unverified and changed entries and requires `--write` to regenerate `reference/sources.md`.",
+      "evidence": "review/README.md:61 states: \"[reference/sources.md](plugins/pg-major-upgrade/reference/sources.md) lists 48 sources ... each with the exact quotes it was checked against... [`check-sources.mjs`](plugins/pg-major-upgrade/scripts/check-sources.mjs) re-fetches every page and fails when a quote is gone\", and review/README.md:121,132 says \"Add the provider's docs to `sources.json`, with quotes, and run `check-sources.mjs`\" (`node plugins/pg-major-upgrade/scripts/check-sources.mjs`). However, in review/reference/sources.json, `S-10` (line 155) has `\"status\": \"changed\"`, `S-34` through `S-37` (lines 620-655) lack `lastChecked`, `status`, and `verified` fields entirely, and review/reference/sources.json:2 states that `--write` is required to update ` status` and regenerate `reference/sources.md`.",
+      "source_id": "S-10",
+      "verifiable": "verified",
+      "suggested_fix": "Re-verify `S-10` and `S-34` through `S-37` with `node plugins/pg-major-upgrade/scripts/check-sources.mjs --write`, and update `review/README.md` lines 121 and 132 to give the full path `plugins/pg-major-upgrade/reference/sources.json` and the `--write` flag when adding or updating sources."
+    },
+    {
+      "id": "R-08",
+      "file": "review/README.md",
+      "line": 87,
+      "severity": "minor",
+      "category": "quick-start",
+      "claim": "The \"Already under way?\" instructions tell the user to paste the bootstrap prompt and then run `/pg-catch-up`, without specifying how to handle the bootstrap prompt's step 4 approval gate so step 5 does not launch duplicate scans and precheck requests.",
+      "evidence": "review/README.md:87 states: \"**Already under way?** Write a handoff in the shape of [catch-up-handoff-template.md](plugins/pg-major-upgrade/reference/catch-up-handoff-template.md), paste the bootstrap prompt, then run `/pg-catch-up`.\" In review/docs/bootstrap-prompt.md:24-30, the bootstrap prompt instructs the agent to stop for approval after step 4 and, upon approval in step 5, \"start one read-only readiness scan per approved repo, draft the precheck request for the DBA (don't send it), draft the daily status subscription... and render the dashboard.\"",
+      "source_id": null,
+      "verifiable": "judgment",
+      "suggested_fix": "Specify in `review/README.md` line 87 and `review/docs/bootstrap-prompt.md` line 37 that when a migration is already under way, the user should run `/pg-catch-up` when the bootstrap prompt stops at step 4 rather than approving step 5's initial scans and precheck request."
+    },
+    {
+      "id": "R-09",
+      "file": "review/README.md",
+      "line": 52,
+      "severity": "minor",
+      "category": "links-and-citations",
+      "claim": "The README and bootstrap prompt place the tracker CSV under `upgrade/` (`upgrade/tracker.csv`), whereas the linked tracker schema document specifies the path as `tracker.csv` at the root alongside `upgrade/project.json` and `upgrade/tracker-pending.csv`.",
+      "evidence": "review/README.md:82,141 refers to `upgrade/` holding the Project's shared state and review/docs/bootstrap-prompt.md:25 states \"1. Write upgrade/project.json and create upgrade/tracker.csv from the plugin's seed.\" However, the schema linked at review/README.md:52 (review/plugins/pg-major-upgrade/reference/tracker-schema.md:4,69,75) states \"By default the table lives in the Project as `tracker.csv`\" and \"the tracker skill applies the update to `tracker.csv`, appends the row to `upgrade/tracker-pending.csv`\".",
+      "source_id": null,
+      "verifiable": "verified",
+      "suggested_fix": "Update `review/plugins/pg-major-upgrade/reference/tracker-schema.md` (lines 4, 69, and 75) and `review/README.md` to consistently use `upgrade/tracker.csv`."
+    }
+  ]
+}

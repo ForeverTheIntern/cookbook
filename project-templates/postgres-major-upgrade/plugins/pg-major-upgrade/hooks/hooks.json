@@ -1,0 +1,27 @@
+{
+  "version": 1,
+  "hooks": {
+    "beforeShellExecution": [
+      {
+        "command": "node ./hooks/block-prod-db.mjs",
+        "timeout": 5,
+        "failClosed": true
+      }
+    ],
+    "beforeMCPExecution": [
+      {
+        "command": "node ./hooks/block-db-mcp.mjs",
+        "timeout": 5,
+        "failClosed": true
+      }
+    ],
+    "preToolUse": [
+      {
+        "command": "node ./hooks/block-db-mcp.mjs",
+        "matcher": "^MCP:",
+        "timeout": 5,
+        "failClosed": true
+      }
+    ]
+  }
+}

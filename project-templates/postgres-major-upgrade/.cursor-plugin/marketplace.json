@@ -1,0 +1,17 @@
+{
+  "name": "postgres-major-upgrade",
+  "owner": {
+    "name": "Cursor Cookbook"
+  },
+  "metadata": {
+    "description": "Cursor Project template for running a Postgres major version upgrade with guided stages, gates, and tracking",
+    "version": "0.1.0"
+  },
+  "plugins": [
+    {
+      "name": "pg-major-upgrade",
+      "source": "./plugins/pg-major-upgrade",
+      "description": "Rules, skills, commands, a guardrail hook, and a tracker dashboard for a staged Postgres major version upgrade"
+    }
+  ]
+}

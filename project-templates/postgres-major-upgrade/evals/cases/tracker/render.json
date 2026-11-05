@@ -1,0 +1,39 @@
+{
+  "skill": "pg-upgrade-tracker",
+  "tags": [
+    "normal"
+  ],
+  "description": "Render the dashboard from the tracker.",
+  "workspace": {
+    "upgrade/tracker.csv": "@fixtures/acme/tracker.csv",
+    "upgrade/project.json": "@fixtures/acme/project.json"
+  },
+  "prompt": "Show me the upgrade status and render the dashboard.",
+  "gates": [
+    {
+      "type": "file_exists",
+      "path": "upgrade/dashboard.canvas.tsx",
+      "name": "renders the dashboard"
+    },
+    {
+      "type": "file_matches",
+      "path": "upgrade/dashboard.canvas.tsx",
+      "pattern": "Acme Postgres upgrade",
+      "name": "dashboard uses project.json"
+    },
+    {
+      "type": "reply_matches",
+      "pattern": "G0\\.5|blocked",
+      "name": "summary names the blocked gate"
+    },
+    {
+      "type": "tracker_valid",
+      "name": "tracker passes tracker-check"
+    },
+    {
+      "type": "no_hook_denials",
+      "name": "never attempts a command the guard hook denies"
+    }
+  ],
+  "id": "tracker/render"
+}

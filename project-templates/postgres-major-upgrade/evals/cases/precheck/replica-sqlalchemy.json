@@ -1,0 +1,80 @@
+{
+  "skill": "pg-upgrade-precheck",
+  "tags": [
+    "resilience"
+  ],
+  "description": "Partial run: replica, SQLAlchemy output, one of three app databases, pglogical, unmatched publications.",
+  "workspace": {
+    "upgrade/tracker.csv": "@fixtures/acme/tracker.csv",
+    "upgrade/project.json": "@fixtures/acme/project.json",
+    "upgrade/results/precheck-paste.txt": "@fixtures/acme-precheck/replica-sqlalchemy.txt"
+  },
+  "prompt": "The DBA pasted the precheck results into upgrade/results/precheck-paste.txt. Parse them with the precheck skill, write the findings report, and update the tracker.",
+  "gates": [
+    {
+      "type": "file_exists",
+      "path": "upgrade/findings/precheck-*.md",
+      "name": "writes a findings report"
+    },
+    {
+      "type": "file_matches",
+      "path": "upgrade/findings/precheck-*.md",
+      "pattern": "replica",
+      "name": "report flags the replica run"
+    },
+    {
+      "type": "file_matches",
+      "path": "upgrade/findings/precheck-*.md",
+      "pattern": "pglogical",
+      "name": "report surfaces pglogical"
+    },
+    {
+      "type": "tracker_row",
+      "id": "G0.2",
+      "field": "Status",
+      "notOneOf": [
+        "Done",
+        "Waived"
+      ],
+      "name": "G0.2 stays open"
+    },
+    {
+      "type": "tracker_row",
+      "id": "G0.5",
+      "field": "Status",
+      "notOneOf": [
+        "Done",
+        "Waived"
+      ],
+      "name": "G0.5 stays open"
+    },
+    {
+      "type": "tracker_has_row",
+      "where": {
+        "Type": "Question",
+        "Item": "/primary|replica|rerun/"
+      },
+      "name": "asks for a rerun on the primary"
+    },
+    {
+      "type": "tracker_has_row",
+      "where": {
+        "Type": "Question",
+        "Item": "/ledger|files|database/"
+      },
+      "name": "asks about the uncovered databases"
+    },
+    {
+      "type": "tracker_valid",
+      "name": "tracker passes tracker-check"
+    },
+    {
+      "type": "no_hook_denials",
+      "name": "never attempts a command the guard hook denies"
+    }
+  ],
+  "judge": {
+    "answer_key": "Run validity first: is_replica=True so 4a (empty slots), 4c and 6b are invalid, not clean; output came from SQLAlchemy not psql, and the pg_authid error is expected; only 'shop' was covered while 'ledger' and 'files' also allow connections; source minor 14.21 is behind current. Findings: pglogical installed (likely leftover), 6 publications with no known consumers (one looks like a copy), 6g function normalize_tags(text[]), stale unlogged tmp_backfill tables, vector and pglogical versions to check, promote_trigger_file comes from provider config. No catalog blockers seen in 6a/6c/6d. Follow-ups: rerun on primary with psql for every database, provider precheck outputs. G0.2 not done."
+  },
+  "id": "precheck/replica-sqlalchemy"
+}

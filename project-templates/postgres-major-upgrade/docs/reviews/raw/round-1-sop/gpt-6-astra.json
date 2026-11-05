@@ -1,0 +1,104 @@
+{
+  "reviewer": "gpt-6-astra via codex",
+  "rubric": "sop",
+  "summary": "The SOP leaves important gates satisfiable with evidence that does not establish their stated conditions. The logical migration branch and rollback rehearsal also need operational detail before teams can safely execute them.",
+  "overall": "rework",
+  "findings": [
+    {
+      "id": "R-01",
+      "file": "review/docs/sop.md",
+      "line": 115,
+      "severity": "blocker",
+      "category": "Gate testability",
+      "claim": "G1.1 can clear provider and extension blockers using evidence that never checks them. Sections 6a–6g cannot establish that every blocker from G0.3 and G0.4 is fixed in production.",
+      "evidence": "G1.1 requires 'Every blocker from G0.3 and G0.4 is fixed in production' but specifies only 'Rerun of kit sections 6a to 6g'. The artifact places extensions in section 3, unlogged tables in 5b, scale checks in 2a/2d/2e, and provider findings in a separate precheck.",
+      "source_id": null,
+      "verifiable": "judgment",
+      "suggested_fix": "Require a successful production provider precheck and blocker-specific evidence for every original finding, including all relevant kit sections. Reconcile the results against the original blocker inventory."
+    },
+    {
+      "id": "R-02",
+      "file": "review/docs/sop.md",
+      "line": 268,
+      "severity": "blocker",
+      "category": "Safety and completeness",
+      "claim": "The logical branch replaces the rehearsal's write stop, CDC drain, upgrade, statistics, validation and routing steps with a short list that does not supply equivalent procedures. Block 3 still instructs operators to start an in-place upgrade, leaving the selected fallback without an executable production cutover.",
+      "evidence": "'It replaces Block 2 steps 4 to 12' and 'Cutover becomes a connection-string switch' are the only branch-routing instructions. The replacement contains no final synchronization checkpoint or promotion procedure, while Block 3 says 'Start the upgrade with the rehearsed command'.",
+      "source_id": null,
+      "verifiable": "judgment",
+      "suggested_fix": "Define a separate logical rehearsal and production runbook covering initial copy, source write fencing, final apply confirmation, promotion, validation, consumer migration, routing and rollback. Map each existing gate to branch-specific evidence."
+    },
+    {
+      "id": "R-03",
+      "file": "review/docs/sop.md",
+      "line": 272,
+      "severity": "major",
+      "category": "Completeness",
+      "claim": "The DMS branch omits destination materialized-view population and recovery configuration after promotion. A team following this branch can reopen with empty materialized views and without the intended PITR protection.",
+      "evidence": "The branch lists 'Unlogged tables and large objects don't replicate, and sequences sync only at promotion' but has no materialized-view or post-promotion recovery step. The cited [DMS limitations](https://docs.cloud.google.com/database-migration/docs/postgres/known-limitations) document that materialized-view data is not migrated, PITR must be enabled after promotion, and customized backup settings must be restored.",
+      "source_id": "S-13",
+      "verifiable": "verified",
+      "suggested_fix": "Inventory and time materialized-view refreshes, and require evidence that destination PITR and backup settings match the approved recovery policy before closing the migration."
+    },
+    {
+      "id": "R-04",
+      "file": "review/docs/sop.md",
+      "line": 167,
+      "severity": "major",
+      "category": "Rollback",
+      "claim": "Rollback is only required to be timed, with no recovery-time acceptance criterion or deadline derived from that timing. The rehearsal also stops at restoring the database instead of proving recovery of the application and replica routes.",
+      "evidence": "G2.6 says 'A restore from the pre-upgrade backup was timed'; step 14 likewise only times a restore. The cutover instead uses 'Past the rehearsed time plus 25%' as its decision trigger. The cited [Cloud SQL recovery procedure](https://docs.cloud.google.com/sql/docs/postgres/upgrade-major-db-version-inplace) also requires matching instance settings, adding read replicas and updating application connections.",
+      "source_id": "S-01",
+      "verifiable": "verified",
+      "suggested_fix": "Rehearse end-to-end recovery through application validation, including replicas and routing. Establish an approved recovery-time limit and calculate the latest rollback decision time from the measured recovery duration."
+    },
+    {
+      "id": "R-05",
+      "file": "review/docs/sop.md",
+      "line": 209,
+      "severity": "major",
+      "category": "Gate testability",
+      "claim": "Timing a re-snapshot of only the largest table does not prove that the required consumer re-snapshot fits the window. G2.5 allows that fallback, but the procedure does not measure its full scope.",
+      "evidence": "G2.5 permits 'a re-snapshot was timed and fits', whereas step 10 says 'time a re-snapshot of the largest table as the fallback'. No requirement accounts for the remaining tables, consumer initialization, downstream ingestion or concurrent consumers.",
+      "source_id": null,
+      "verifiable": "judgment",
+      "suggested_fix": "Measure the complete required re-snapshot and downstream catch-up for every affected consumer, or require a validated conservative bound covering that full workload."
+    },
+    {
+      "id": "R-06",
+      "file": "review/docs/sop.md",
+      "line": 119,
+      "severity": "major",
+      "category": "Gate testability",
+      "claim": "Merged exporter PRs do not demonstrate that monitoring queries and dashboards work against the target. G1.5 can pass without any runtime monitoring evidence.",
+      "evidence": "G1.5 states 'Monitoring queries and dashboards work on the target version' but its evidence is only 'Exporter PRs merged'. The rehearsal does not explicitly require checking metric collection, dashboards or alerts.",
+      "source_id": null,
+      "verifiable": "judgment",
+      "suggested_fix": "Require a target-version monitoring test with evidence of successful scrapes, expected metrics, functioning dashboards and relevant alert evaluations."
+    },
+    {
+      "id": "R-07",
+      "file": "review/plugins/pg-major-upgrade/skills/pg-upgrade-precheck/references/precheck-reading-guide.md",
+      "line": 43,
+      "severity": "major",
+      "category": "Accuracy",
+      "claim": "The guide marks keyless tables with FULL or INDEX replica identity as green without distinguishing the selected migration mechanism. This incorrectly clears them for a standard DMS migration.",
+      "evidence": "The green condition for section 5a is 'Empty, or `full` or `index` identity'. The cited [DMS limitations](https://docs.cloud.google.com/database-migration/docs/postgres/known-limitations) distinguish standard migrations, which do not migrate keyless UPDATE/DELETE operations, from quick-start migrations, which support them with FULL or INDEX identity.",
+      "source_id": "S-13",
+      "verifiable": "verified",
+      "suggested_fix": "Make the green condition depend on the selected migration mechanism. For standard DMS, require primary keys or an explicitly validated alternative for UPDATE and DELETE changes."
+    },
+    {
+      "id": "R-08",
+      "file": "review/docs/sop.md",
+      "line": 307,
+      "severity": "major",
+      "category": "Completeness",
+      "claim": "Required index rebuild work is listed as an appendix concern but is not incorporated into the runbook or a completion gate. Operators can reopen before identifying and completing applicable post-upgrade rebuilds.",
+      "evidence": "The appendix says 'Full-text search and pg_trgm indexes need a reindex on non-libc clusters', while the cutover proceeds from extensions and analyze directly to consumers and validation. The cited [pg_upgrade documentation](https://www.postgresql.org/docs/18/pgupgrade.html) warns that accessing tables referenced in rebuild scripts before completion can produce incorrect results or poor performance.",
+      "source_id": "S-14",
+      "verifiable": "verified",
+      "suggested_fix": "Inventory applicable rebuilds during preparation, include their timings in rehearsal, and require completion evidence before affected tables are exposed to application traffic."
+    }
+  ]
+}

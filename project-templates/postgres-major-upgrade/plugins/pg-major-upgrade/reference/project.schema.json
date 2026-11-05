@@ -1,0 +1,52 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "upgrade/project.json",
+  "description": "Project facts for a Postgres major version upgrade. Any value not known yet is the string \"unknown\" (or a list containing only \"unknown\").",
+  "type": "object",
+  "required": ["name", "provider", "source", "target", "window", "trackerBackend"],
+  "properties": {
+    "name": { "type": "string", "description": "Display name, e.g. \"Acme Postgres upgrade\"" },
+    "customer": { "type": "string" },
+    "provider": { "type": "string", "description": "cloud-sql, alloydb, rds, azure, self-managed, or unknown" },
+    "instance": { "type": "string" },
+    "source": { "type": "string", "description": "Source version as major.minor when known, e.g. \"14.24\", or \"14\"" },
+    "target": { "type": "string", "description": "Target major version, \"undecided\", or \"unknown\"" },
+    "size": { "type": "string", "description": "Human-readable total size, e.g. \"3 TB\", or \"unknown\"" },
+    "databases": { "type": ["integer", "string"] },
+    "replicas": { "type": ["integer", "string"] },
+    "window": {
+      "oneOf": [
+        { "const": "unknown" },
+        {
+          "type": "object",
+          "required": ["minutes", "mode"],
+          "properties": {
+            "minutes": { "type": "integer", "minimum": 1 },
+            "mode": { "enum": ["read-write", "write-only", "unknown"], "description": "read-write: reads and writes both stop; write-only: reads continue" },
+            "when": { "type": "string", "description": "e.g. \"Sunday 22:00-23:00 America/New_York\"" }
+          }
+        }
+      ]
+    },
+    "rpo": { "type": "string", "description": "Data loss allowed, e.g. \"none\"" },
+    "deadline": { "type": "string", "description": "YYYY-MM-DD or unknown, with the reason in deadlineReason" },
+    "deadlineReason": { "type": "string" },
+    "targetDate": { "type": "string", "description": "YYYY-MM-DD or unknown" },
+    "programOwners": { "type": "array", "items": { "type": "string" } },
+    "goNoGoOwner": { "type": "string" },
+    "orgs": { "type": "array", "items": { "type": "string" } },
+    "primaryRepo": { "type": "string" },
+    "compliance": { "type": "string", "description": "Data-handling rules, e.g. \"regulated data; agents never see production data\"" },
+    "concurrency": { "type": ["integer", "string"] },
+    "trackerBackend": { "enum": ["project", "sheets", "notion", "linear", "jira"] },
+    "trackerLink": { "type": "string" },
+    "slackChannel": { "type": "string" },
+    "statusTime": { "type": "string" },
+    "reviewers": { "type": "array", "items": { "type": "string" }, "description": "backend:model pairs for /pg-review, e.g. cursor:gemini-4-argon-high" },
+    "approvedReviewBackends": {
+      "type": "array",
+      "items": { "enum": ["subagent", "cursor", "codex"] },
+      "description": "Review backends the program owner approved for this customer's data. Defaults to [\"subagent\"]."
+    }
+  }
+}

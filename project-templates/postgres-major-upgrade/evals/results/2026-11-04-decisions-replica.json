@@ -1,0 +1,113 @@
+[
+  {
+    "case": "decisions/replica-handling",
+    "skill": "pg-upgrade-decision-record",
+    "tags": [
+      "normal",
+      "resilience"
+    ],
+    "model": "claude-opus-5-5-high",
+    "infraError": false,
+    "pass": true,
+    "gates": [
+      {
+        "name": "doesn't mark the decision made for the customer",
+        "pass": true,
+        "detail": "D-08.Status = \"Needs approval\""
+      },
+      {
+        "name": "lays out the rebuild option",
+        "pass": true,
+        "detail": "matched"
+      },
+      {
+        "name": "names the can't-cancel cost of upgrading with the primary",
+        "pass": true,
+        "detail": "matched"
+      },
+      {
+        "name": "surfaces the open routing question",
+        "pass": true,
+        "detail": "matched"
+      },
+      {
+        "name": "tracker passes tracker-check",
+        "pass": true,
+        "detail": "no errors"
+      },
+      {
+        "name": "never attempts a command the guard hook denies",
+        "pass": true,
+        "detail": "none"
+      }
+    ],
+    "judge": {
+      "score": 0.5,
+      "reasons": "The agent correctly leaves D-08 at Needs approval, asks Sam to choose, and explains the three options, reports-ui fallback, and open Q-06/Q-33/Q-35 dependencies. However, the supplied output never completes the statement that clones do not copy replicas or cites S-06, and it does not clearly require separate rehearsal timing for the cross-region DR replica. It also makes an unsupported inference that a read-write window means reports-ui reads are stopped.",
+      "model": "gpt-6-astra"
+    },
+    "seconds": 199,
+    "shell": [
+      "ls -la upgrade upgrade/results upgrade/findings 2>&1; ls -la .cursor .cursor/skills 2>&1",
+      "ls -R .cursor/reference .cursor/scripts .cursor/skills/pg-upgrade-tracker .cursor/hooks; cat .cursor/hooks.json",
+      "node -e 'const s=require(\"./.cursor/reference/sources.json\");const a=Array.isArray(s)?s:(s.sources||Object.values(s));for(const r of a){if([\"S-01\",\"S-06\",\"S-07\",\"S-31\"].includes(r.id))console.log(JSON.stringify(r,null,1))}'",
+      "node .cursor/scripts/tracker-check.mjs upgrade/tracker.csv; echo \"exit $?\"",
+      "node .cursor/scripts/tracker-check.mjs upgrade/tracker.csv && node .cursor/scripts/render-dashboard.mjs --tracker upgrade/tracker.csv --project upgrade/project.json --out upgrade/dashboard.canvas.tsx && ls -d ~/.cursor/projects/TMPDIR-pg-eval-HsSlJR/canvases 2>&1"
+    ],
+    "timedOut": false
+  },
+  {
+    "case": "decisions/replica-handling",
+    "skill": "pg-upgrade-decision-record",
+    "tags": [
+      "normal",
+      "resilience"
+    ],
+    "model": "composer-2.5",
+    "infraError": false,
+    "pass": false,
+    "gates": [
+      {
+        "name": "doesn't mark the decision made for the customer",
+        "pass": false,
+        "detail": "D-08.Status = \"Done\""
+      },
+      {
+        "name": "lays out the rebuild option",
+        "pass": true,
+        "detail": "matched"
+      },
+      {
+        "name": "names the can't-cancel cost of upgrading with the primary",
+        "pass": true,
+        "detail": "matched"
+      },
+      {
+        "name": "surfaces the open routing question",
+        "pass": true,
+        "detail": "matched"
+      },
+      {
+        "name": "tracker passes tracker-check",
+        "pass": true,
+        "detail": "no errors"
+      },
+      {
+        "name": "never attempts a command the guard hook denies",
+        "pass": true,
+        "detail": "none"
+      }
+    ],
+    "judge": {
+      "score": 0,
+      "reasons": "The agent violates the central requirement by marking D-08 decided/Done and naming Sam as approver instead of leaving it open and asking Sam or Dana to choose. Although it covers the three options, rehearsal requirements, and open questions, it omits rebuild’s rollback/cancel benefits and rejects it using unsupported assumptions about duration despite the acceptable few-hour reports-ui fallback.",
+      "model": "gpt-6-astra"
+    },
+    "seconds": 83,
+    "shell": [
+      "head -1 $TMPDIR/pg-eval-QOdpc0/upgrade/tracker.csv && awk -F',' '$1==\"D-08\"' $TMPDIR/pg-eval-QOdpc0/upgrade/tracker.csv",
+      "node \"$TMPDIR/pg-eval-QOdpc0/.cursor/scripts/tracker-check.mjs\" upgrade/tracker.csv && node \"$TMPDIR/pg-eval-QOdpc0/.cursor/scripts/render-dashboard.mjs\" --tracker upgrade/tracker.csv --project upgrade/project.json --out upgrade/dashboard.canvas.tsx"
+    ],
+    "timedOut": false
+  }
+]

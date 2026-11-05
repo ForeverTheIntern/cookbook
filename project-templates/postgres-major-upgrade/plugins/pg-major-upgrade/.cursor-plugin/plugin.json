@@ -1,0 +1,11 @@
+{
+  "name": "pg-major-upgrade",
+  "displayName": "Postgres Major Upgrade",
+  "version": "0.1.0",
+  "description": "Run a Postgres major version upgrade as a Cursor Project: discover and decide, prepare in parallel, rehearse on a clone, and cut over, with gates, evidence, and a tracker at every step.",
+  "author": {
+    "name": "Cursor Cookbook"
+  },
+  "license": "MIT",
+  "keywords": ["cursor", "plugin", "postgres", "upgrade", "migration", "cloud-sql", "project-template"]
+}

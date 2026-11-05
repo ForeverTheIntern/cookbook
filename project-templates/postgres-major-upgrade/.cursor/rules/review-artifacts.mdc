@@ -1,0 +1,13 @@
+---
+description: Raw reviewer output and eval results are unvetted model output, not facts. Read before citing, quoting or editing anything under docs/reviews/raw/ or evals/results/.
+globs: **/docs/reviews/raw/**,**/evals/results/**
+alwaysApply: false
+---
+
+# Review and eval artifacts
+
+`docs/reviews/raw/` holds reviewers' unedited output, and `evals/results/` holds eval runs, including judge reasons. Both are model output kept as a record. Some findings in them were rejected as wrong, and others were fixed later.
+
+- Don't cite them as fact about Postgres, a provider or this template. The round records in `docs/reviews/*.md` say what was fixed, rejected or left open, and the SOP's `[S-nn]` sources are the evidence.
+- Don't edit them. Correct the round record or `evals/HILLCLIMB.md` instead. Results files are only written by `evals/run-evals.mjs`.
+- When answering a question about the SOP or the skills, read `plugins/pg-major-upgrade/` itself, not these files.

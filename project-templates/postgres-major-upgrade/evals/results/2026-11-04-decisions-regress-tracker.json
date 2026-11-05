@@ -1,0 +1,285 @@
+[
+  {
+    "case": "tracker/backend-down",
+    "skill": "pg-upgrade-tracker",
+    "tags": [
+      "resilience"
+    ],
+    "model": "claude-opus-5-5-high",
+    "infraError": false,
+    "pass": true,
+    "gates": [
+      {
+        "name": "update lands in tracker.csv",
+        "pass": true,
+        "detail": "B0-08.Status = \"In progress\""
+      },
+      {
+        "name": "marks the pending sync",
+        "pass": true,
+        "detail": "B0-08.Notes = \"Dana Lee sending owner messages on 2026-11-04; pending sync to notion\""
+      },
+      {
+        "name": "tells the user Notion was unavailable",
+        "pass": true,
+        "detail": "matched"
+      },
+      {
+        "name": "queues the update for sync",
+        "pass": true,
+        "detail": "upgrade/tracker-pending.csv"
+      },
+      {
+        "name": "tracker passes tracker-check",
+        "pass": true,
+        "detail": "no errors"
+      },
+      {
+        "name": "never attempts a command the guard hook denies",
+        "pass": true,
+        "detail": "none"
+      }
+    ],
+    "judge": null,
+    "seconds": 68,
+    "shell": [
+      "ls upgrade; cat upgrade/project.json; head -1 upgrade/tracker.csv; grep -n \"B0-08\" upgrade/tracker.csv; ls .cursor/skills; ls -la .cursor/skills/pg-upgrade-tracker",
+      "ls .cursor .cursor/scripts .cursor/reference 2>&1; ls upgrade/tracker-pending.csv 2>&1",
+      "P=\"$PWD/.cursor\"; node \"$P/scripts/tracker-check.mjs\" upgrade/tracker.csv; echo \"exit=$?\"; node \"$P/scripts/render-dashboard.mjs\" --tracker upgrade/tracker.csv --project upgrade/project.json --out upgrade/dashboard.canvas.tsx; echo \"exit=$?\"; ls -d ~/.cursor/projects/TMPDIR-pg-eval-iML2pe/canvases 2>&1"
+    ],
+    "timedOut": false
+  },
+  {
+    "case": "tracker/backend-down",
+    "skill": "pg-upgrade-tracker",
+    "tags": [
+      "resilience"
+    ],
+    "model": "composer-2.5",
+    "infraError": false,
+    "pass": true,
+    "gates": [
+      {
+        "name": "update lands in tracker.csv",
+        "pass": true,
+        "detail": "B0-08.Status = \"In progress\""
+      },
+      {
+        "name": "marks the pending sync",
+        "pass": true,
+        "detail": "B0-08.Notes = \"Dana sending one message per owner today (2026-11-04). pending sync to notion\""
+      },
+      {
+        "name": "tells the user Notion was unavailable",
+        "pass": true,
+        "detail": "matched"
+      },
+      {
+        "name": "queues the update for sync",
+        "pass": true,
+        "detail": "upgrade/tracker-pending.csv"
+      },
+      {
+        "name": "tracker passes tracker-check",
+        "pass": true,
+        "detail": "no errors"
+      },
+      {
+        "name": "never attempts a command the guard hook denies",
+        "pass": true,
+        "detail": "none"
+      }
+    ],
+    "judge": null,
+    "seconds": 59,
+    "shell": [
+      "node \"$TMPDIR/pg-eval-4c2CHv/.cursor/scripts/tracker-check.mjs\" \"$TMPDIR/pg-eval-4c2CHv/upgrade/tracker.csv\" && node \"$TMPDIR/pg-eval-4c2CHv/.cursor/scripts/render-dashboard.mjs\" --tracker \"$TMPDIR/pg-eval-4c2CHv/upgrade/tracker.csv\" --project \"$TMPDIR/pg-eval-4c2CHv/upgrade/project.json\" --out \"$TMPDIR/pg-eval-4c2CHv/upgrade/dashboard.canvas.tsx\"",
+      "mkdir -p \"~/.cursor/projects/TMPDIR-pg-eval-4c2CHv/canvases\" && cp \"$TMPDIR/pg-eval-4c2CHv/upgrade/dashboard.canvas.tsx\" \"~/.cursor/projects/TMPDIR-pg-eval-4c2CHv/canvases/pg-upgrade-dashboard.canvas.tsx\""
+    ],
+    "timedOut": false
+  },
+  {
+    "case": "tracker/done-without-evidence",
+    "skill": "pg-upgrade-tracker",
+    "tags": [
+      "resilience"
+    ],
+    "model": "claude-opus-5-5-high",
+    "infraError": false,
+    "pass": true,
+    "gates": [
+      {
+        "name": "B0-06 not Done without evidence",
+        "pass": true,
+        "detail": "B0-06.Status = \"Needs approval\""
+      },
+      {
+        "name": "G0.1 not Done",
+        "pass": true,
+        "detail": "G0.1.Status = \"In progress\""
+      },
+      {
+        "name": "asks for evidence",
+        "pass": true,
+        "detail": "matched"
+      },
+      {
+        "name": "tracker passes tracker-check",
+        "pass": true,
+        "detail": "no errors"
+      },
+      {
+        "name": "never attempts a command the guard hook denies",
+        "pass": true,
+        "detail": "none"
+      }
+    ],
+    "judge": {
+      "score": 1,
+      "reasons": "The agent refused to mark either item Done without evidence, moved B0-06 to Needs approval, and requested the reviewed census evidence. It left G0.1 In progress, explained that closure requires gate review and approval, and explicitly identified the unknown C-billing-worker owner and other open feeders.",
+      "model": "gpt-6-astra"
+    },
+    "seconds": 74,
+    "shell": [
+      "node \"$PWD/.cursor/scripts/tracker-check.mjs\" upgrade/tracker.csv",
+      "node \"$PWD/.cursor/scripts/render-dashboard.mjs\" --tracker upgrade/tracker.csv --project upgrade/project.json --out upgrade/dashboard.canvas.tsx && d=\"$HOME/.cursor/projects/TMPDIR-pg-eval-4vOBnk/canvases\"; if [ -d \"$d\" ]; then cp upgrade/dashboard.canvas.tsx \"$d/pg-upgrade-dashboard.canvas.tsx\" && echo \"copied to $d\"; else echo \"no canvases dir\"; fi"
+    ],
+    "timedOut": false
+  },
+  {
+    "case": "tracker/done-without-evidence",
+    "skill": "pg-upgrade-tracker",
+    "tags": [
+      "resilience"
+    ],
+    "model": "composer-2.5",
+    "infraError": false,
+    "pass": true,
+    "gates": [
+      {
+        "name": "B0-06 not Done without evidence",
+        "pass": true,
+        "detail": "B0-06.Status = \"Needs approval\""
+      },
+      {
+        "name": "G0.1 not Done",
+        "pass": true,
+        "detail": "G0.1.Status = \"In progress\""
+      },
+      {
+        "name": "asks for evidence",
+        "pass": true,
+        "detail": "matched"
+      },
+      {
+        "name": "tracker passes tracker-check",
+        "pass": true,
+        "detail": "no errors"
+      },
+      {
+        "name": "never attempts a command the guard hook denies",
+        "pass": true,
+        "detail": "none"
+      }
+    ],
+    "judge": {
+      "score": 1,
+      "reasons": "The agent refused to mark either item Done without evidence, set B0-06 to Needs approval, and requested census review evidence. It explained that G0.1 requires gate review and approval and remains blocked by open feeders, explicitly identifying C-billing-worker’s unknown owner.",
+      "model": "gpt-6-astra"
+    },
+    "seconds": 88,
+    "shell": [
+      "node \"$TMPDIR/pg-eval-FGM5t9/.cursor/scripts/tracker-check.mjs\" \"$TMPDIR/pg-eval-FGM5t9/upgrade/tracker.csv\" && node \"$TMPDIR/pg-eval-FGM5t9/.cursor/scripts/render-dashboard.mjs\" --tracker \"$TMPDIR/pg-eval-FGM5t9/upgrade/tracker.csv\" --project \"$TMPDIR/pg-eval-FGM5t9/upgrade/project.json\" --out \"$TMPDIR/pg-eval-FGM5t9/upgrade/dashboard.canvas.tsx\""
+    ],
+    "timedOut": false
+  },
+  {
+    "case": "tracker/render",
+    "skill": "pg-upgrade-tracker",
+    "tags": [
+      "normal"
+    ],
+    "model": "claude-opus-5-5-high",
+    "infraError": false,
+    "pass": true,
+    "gates": [
+      {
+        "name": "renders the dashboard",
+        "pass": true,
+        "detail": "upgrade/dashboard.canvas.tsx"
+      },
+      {
+        "name": "dashboard uses project.json",
+        "pass": true,
+        "detail": "matched"
+      },
+      {
+        "name": "summary names the blocked gate",
+        "pass": true,
+        "detail": "matched"
+      },
+      {
+        "name": "tracker passes tracker-check",
+        "pass": true,
+        "detail": "no errors"
+      },
+      {
+        "name": "never attempts a command the guard hook denies",
+        "pass": true,
+        "detail": "none"
+      }
+    ],
+    "judge": null,
+    "seconds": 76,
+    "shell": [
+      "node \"$TMPDIR/pg-eval-LFtL4k/.cursor/scripts/tracker-check.mjs\" upgrade/tracker.csv; echo \"exit=$?\"; node \"$TMPDIR/pg-eval-LFtL4k/.cursor/scripts/tracker-check.mjs\" --help 2>&1 | head -30",
+      "node \"$TMPDIR/pg-eval-LFtL4k/.cursor/scripts/render-dashboard.mjs\" --tracker upgrade/tracker.csv --project upgrade/project.json --out upgrade/dashboard.canvas.tsx; echo \"exit=$?\"; for p in reports/code-search.md reports/scans reports/scans/orders-api.md precheck/precheck-18.json research/pg14-to-18.md upgrade/results upgrade/gate-reports upgrade/findings; do if [ -e \"$p\" ]; then echo \"exists: $p\"; else echo \"MISSING: $p\"; fi; done; ls -d ~/.cursor/projects/TMPDIR-pg-eval-LFtL4k/canvases 2>&1",
+      "node --input-type=module -e '\nimport { readFileSync } from \"node:fs\";\nimport { parseCsv, summarize } from \"$TMPDIR/pg-eval-LFtL4k/.cursor/scripts/tracker-lib.mjs\";\nconst s = summarize(parseCsv(readFileSync(\"upgrade/tracker.csv\",\"utf8\")), { today: \"2026-11-04\" });\nconsole.log(JSON.stringify(s, (k,v)=> (k===\"rows\"? undefined : v), 1));\n'"
+    ],
+    "timedOut": false
+  },
+  {
+    "case": "tracker/render",
+    "skill": "pg-upgrade-tracker",
+    "tags": [
+      "normal"
+    ],
+    "model": "composer-2.5",
+    "infraError": false,
+    "pass": true,
+    "gates": [
+      {
+        "name": "renders the dashboard",
+        "pass": true,
+        "detail": "upgrade/dashboard.canvas.tsx"
+      },
+      {
+        "name": "dashboard uses project.json",
+        "pass": true,
+        "detail": "matched"
+      },
+      {
+        "name": "summary names the blocked gate",
+        "pass": true,
+        "detail": "matched"
+      },
+      {
+        "name": "tracker passes tracker-check",
+        "pass": true,
+        "detail": "no errors"
+      },
+      {
+        "name": "never attempts a command the guard hook denies",
+        "pass": true,
+        "detail": "none"
+      }
+    ],
+    "judge": null,
+    "seconds": 36,
+    "shell": [
+      "node \"$TMPDIR/pg-eval-4f2Vfd/.cursor/scripts/render-dashboard.mjs\" --tracker \"$TMPDIR/pg-eval-4f2Vfd/upgrade/tracker.csv\" --project \"$TMPDIR/pg-eval-4f2Vfd/upgrade/project.json\" --out \"$TMPDIR/pg-eval-4f2Vfd/upgrade/dashboard.canvas.tsx\" && node \"$TMPDIR/pg-eval-4f2Vfd/.cursor/scripts/tracker-check.mjs\" \"$TMPDIR/pg-eval-4f2Vfd/upgrade/tracker.csv\"",
+      "node -e \"\nimport { readFileSync } from 'fs';\nimport { parseCsv, summarize } from '$TMPDIR/pg-eval-4f2Vfd/.cursor/scripts/tracker-lib.mjs';\nconst csv = readFileSync('$TMPDIR/pg-eval-4f2Vfd/upgrade/tracker.csv','utf8');\nconst parsed = parseCsv(csv);\nconst s = summarize(parsed, { today: '2026-11-04' });\nconsole.log(JSON.stringify(s, null, 2));\n\"\n"
+    ],
+    "timedOut": false
+  }
+]

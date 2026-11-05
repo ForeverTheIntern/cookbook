@@ -1,0 +1,17 @@
+name: shop-primary
+databaseVersion: POSTGRES_14
+upgradableDatabaseVersions:
+- majorVersion: POSTGRES_15
+- majorVersion: POSTGRES_16
+- majorVersion: POSTGRES_17
+- majorVersion: POSTGRES_18
+replicaNames:
+- shop-replica-1
+- shop-replica-2
+- shop-pg16-test
+settings:
+  databaseFlags:
+  - name: cloudsql.logical_decoding
+    value: 'on'
+  - name: max_connections
+    value: '800'

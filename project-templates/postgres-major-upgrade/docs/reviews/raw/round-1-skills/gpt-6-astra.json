@@ -1,0 +1,92 @@
+{
+  "reviewer": "gpt-6-astra via codex",
+  "rubric": "skills",
+  "summary": "The skills contain conflicting approval instructions and incomplete handling of sensitive inputs and tracker synchronization. Missing dependencies and ambiguous execution paths also prevent reliable use of the supplied package.",
+  "overall": "rework",
+  "findings": [
+    {
+      "id": "R-01",
+      "file": "review/plugins/pg-major-upgrade/skills/pg-upgrade-precheck/SKILL.md",
+      "line": 24,
+      "severity": "blocker",
+      "category": "Guardrails",
+      "claim": "The first parsing step persists uninspected input unchanged, before checking whether it contains prohibited data. Following that order can write secrets or regulated row data into the workspace.",
+      "evidence": "The skill says, \"Save the input to upgrade/results/ unchanged,\" while its line 50 says to stop if the paste contains row data or query text. review/plugins/pg-major-upgrade/rules/guardrails.mdc:13 prohibits putting row data or secrets into files. The catch-up skill similarly saves pasted results before invoking precheck.",
+      "source_id": null,
+      "verifiable": "judgment",
+      "suggested_fix": "Check input for prohibited content before any persistence or forwarding. If found, stop and request a sanitized replacement without saving the original."
+    },
+    {
+      "id": "R-02",
+      "file": "review/plugins/pg-major-upgrade/skills/pg-upgrade-precheck/SKILL.md",
+      "line": 38,
+      "severity": "major",
+      "category": "Instructions",
+      "claim": "Precheck explicitly closes G0.2 automatically, conflicting with the rule that gates require owner approval. The skills also leave the eventual recording of approved gate closure contradictory.",
+      "evidence": "Precheck says, \"Set G0.2 to Done only if every part-1 check passed.\" review/plugins/pg-major-upgrade/skills/pg-upgrade-gate-review/SKILL.md:31 says, \"Never set a gate to Done yourself. The named owner or approver does that, and the tracker skill records who.\" However, review/plugins/pg-major-upgrade/skills/pg-upgrade-tracker/SKILL.md:54 says, \"Don't ... close gates.\"",
+      "source_id": null,
+      "verifiable": "judgment",
+      "suggested_fix": "Use Needs approval for valid precheck evidence, or explicitly document an approved G0.2 exception. Define one consistent procedure for recording a named person's gate approval, including the approval evidence and timestamp."
+    },
+    {
+      "id": "R-03",
+      "file": "review/plugins/pg-major-upgrade/skills/pg-upgrade-bootstrap/SKILL.md",
+      "line": 18,
+      "severity": "major",
+      "category": "References and environment assumptions",
+      "claim": "Required dependencies do not resolve within the supplied artifacts, leaving core skill workflows impossible to follow as packaged.",
+      "evidence": "Bootstrap requires \"Copy ../../assets/tracker.csv\" and \"node ../../scripts/tracker-check.mjs\"; neither target is supplied. Other skills require the absent assets/precheck.sql, reference/sop.md, reference/sources.md, scripts/render-dashboard.mjs, review wrapper scripts, and agents/findings.schema.json. The supplied sources.json is instead at review/reference/sources.json.",
+      "source_id": null,
+      "verifiable": "judgment",
+      "suggested_fix": "Include the required assets, references, scripts, and schema at their documented locations. Add a dependency preflight that stops with an actionable missing-file report before creating or modifying project state."
+    },
+    {
+      "id": "R-04",
+      "file": "review/plugins/pg-major-upgrade/skills/pg-upgrade-model-review/SKILL.md",
+      "line": 34,
+      "severity": "major",
+      "category": "Environment assumptions",
+      "claim": "The command examples mix paths relative to the skill with project paths relative to the workspace, without establishing a working directory. No single documented working directory makes both sets resolve correctly.",
+      "evidence": "The model-review skill states, \"Paths are relative to this skill,\" but its command passes both ../../scripts/run-review-round.sh and upgrade/decision-record.md. review/plugins/pg-major-upgrade/rules/workspace-layout.mdc:8 places upgrade/ at the workspace root. Bootstrap, precheck, and tracker use the same mixed pattern.",
+      "source_id": null,
+      "verifiable": "judgment",
+      "suggested_fix": "Resolve an absolute plugin root and workspace root explicitly. Run from the workspace root and invoke scripts through the absolute plugin path."
+    },
+    {
+      "id": "R-05",
+      "file": "review/plugins/pg-major-upgrade/skills/pg-upgrade-tracker/SKILL.md",
+      "line": 49,
+      "severity": "major",
+      "category": "Inputs and failure handling",
+      "claim": "The backend recovery procedure can overwrite pending local updates before synchronizing them, and it provides no conflict handling for remote changes made during an outage.",
+      "evidence": "Step 2 says, \"Before writing, export the current rows to upgrade/tracker.csv.\" Step 3 stores failed updates in that same file and says, \"Sync the pending rows on the next run.\" Exporting the recovered backend first can erase the only pending copy.",
+      "source_id": null,
+      "verifiable": "judgment",
+      "suggested_fix": "Store pending updates separately from backend snapshots. On recovery, reconcile pending changes against current remote rows, report conflicting edits, and clear pending entries only after confirmed writes."
+    },
+    {
+      "id": "R-06",
+      "file": "review/plugins/pg-major-upgrade/skills/pg-upgrade-tracker/SKILL.md",
+      "line": 29,
+      "severity": "major",
+      "category": "Output correctness",
+      "claim": "The requested two-day approval escalation cannot be computed reliably from the defined tracker fields. Routine checking resets the timestamp that the supplied implementation uses to measure approval age.",
+      "evidence": "The skill requests \"Rows in Needs approval for two days or more,\" but line 19 says to set Last checked to today on every verified row. review/plugins/pg-major-upgrade/scripts/tracker-lib.mjs computes stale using daysBetween(r[\"Last checked\"], today), and review/plugins/pg-major-upgrade/reference/tracker-schema.md defines no status-transition timestamp.",
+      "source_id": null,
+      "verifiable": "judgment",
+      "suggested_fix": "Add a statusSince or approvalRequestedAt timestamp that changes only when the status changes. Calculate approval age from that field and retain Last checked solely for verification freshness."
+    },
+    {
+      "id": "R-07",
+      "file": "review/plugins/pg-major-upgrade/skills/pg-upgrade-precheck/references/precheck-reading-guide.md",
+      "line": 9,
+      "severity": "major",
+      "category": "Input validation",
+      "claim": "Run-validity checks do not establish that the supplied outputs belong to the intended instance, target version, and current precheck run. Stale or unrelated outputs could satisfy all listed checks and be recorded as valid evidence.",
+      "evidence": "The validity table checks primary status, psql formatting, database coverage, errors, role visibility, minor version, and provider-output presence. It does not require matching instance identity, target version, operation identity, or collection time. The precheck skill then permits G0.2 to become Done when \"every part-1 check passed.\"",
+      "source_id": null,
+      "verifiable": "judgment",
+      "suggested_fix": "Require provenance for each file and correlate provider operation, instance, source and target versions, database, and collection time with project.json. Treat absent or inconsistent provenance as invalid evidence requiring clarification or a rerun."
+    }
+  ]
+}

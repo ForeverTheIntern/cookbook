@@ -1,0 +1,92 @@
+SELECT version(), current_database(), current_user, pg_is_in_recovery() AS is_replica
+('PostgreSQL 14.21 on x86_64-pc-linux-gnu, compiled by Debian clang version 12.0.1, 64-bit', 'shop', 'sam.ortiz@acme.example', True)
+
+SELECT datname, CASE WHEN has_database_privilege(oid, 'CONNECT') THEN pg_size_pretty(pg_database_size(oid)) END AS size, datallowconn FROM pg_database ORDER BY ...
+('shop', '3120 GB', True)
+('ledger', '41 MB', True)
+('files', '12 MB', True)
+('cloudsqladmin', '9800 kB', True)
+('postgres', '9400 kB', True)
+('template0', '8700 kB', False)
+('template1', '8700 kB', True)
+
+SELECT n.nspname, c.relname, c.relkind, pg_size_pretty(pg_total_relation_size(c.oid)) AS total_size ... LIMIT 20
+('public', 'order_events', 'r', '612 GB')
+('public', 'invoice_lines', 'r', '498 GB')
+('public', 'audit_log', 'r', '301 GB')
+('public', 'shipments', 'r', '188 GB')
+
+SELECT c.oid::regclass AS partitioned_table, count(*) - 1 AS partitions ...
+
+SELECT relkind, count(*) FROM pg_class GROUP BY relkind ORDER BY 2 DESC
+('i', 2210)
+('r', 640)
+('t', 512)
+('S', 433)
+('v', 51)
+('m', 9)
+
+SELECT (SELECT count(*) FROM pg_proc ...) AS user_functions, (SELECT count(*) FROM pg_namespace) AS schemas, (SELECT count(*) FROM pg_largeobject_metadata) AS large_objects, (SELECT count(*) FROM pg_roles) AS roles
+(212, 2406, 0, 140)
+
+SELECT extname, extversion, extnamespace::regnamespace AS schema FROM pg_extension ORDER BY 1
+('btree_gist', '1.6', 'public')
+('pg_stat_statements', '1.9', 'public')
+('pg_trgm', '1.6', 'public')
+('pgcrypto', '1.3', 'public')
+('pglogical', '2.4.5', 'pglogical')
+('plpgsql', '1.0', 'pg_catalog')
+('vector', '0.5.1', 'public')
+
+SELECT slot_name, plugin, slot_type, database, active, wal_status, confirmed_flush_lsn FROM pg_replication_slots
+
+SELECT pubname, puballtables, pubinsert, pubupdate, pubdelete, pubtruncate FROM pg_publication
+('orders_to_warehouse', False, True, True, True, True)
+('ledger_events_stream', False, True, True, True, True)
+('search_index_feed', False, True, True, True, True)
+('warehouse_staging', False, True, True, True, True)
+('warehouse_staging_copy_3f2a', False, True, True, True, True)
+('all_tables_feed', False, True, True, True, True)
+
+SELECT subname, subenabled FROM pg_subscription
+
+SELECT pid, usename, datname, state, now() - xact_start AS xact_age, backend_xmin IS NOT NULL AS holds_xmin FROM pg_stat_activity WHERE xact_start < now() - interval '5 minutes' ORDER BY xact_start
+
+SELECT n.nspname, c.relname, c.relkind, CASE c.relreplident ... END AS replica_identity ... (tables without a primary key)
+('pglogical', 'depend', 'r', 'default (none without a PK)')
+('pglogical', 'queue', 'r', 'default (none without a PK)')
+('public', 'tmp_backfill_orders_1784500001', 'r', 'default (none without a PK)')
+('public', 'tmp_backfill_orders_1784500002', 'r', 'default (none without a PK)')
+('public', 'vendor_settings', 'r', 'default (none without a PK)')
+
+SELECT n.nspname, c.relname FROM pg_class c ... WHERE c.relpersistence = 'u' AND c.relkind IN ('r','p')
+('public', 'tmp_backfill_orders_1784500001')
+('public', 'tmp_backfill_orders_1784500002')
+
+WITH RECURSIVE base(oid, problem) AS (...) SELECT DISTINCT o.problem, n.nspname, c.relname, a.attname, format_type(...) ...
+
+SELECT gid, prepared, owner, database FROM pg_prepared_xacts
+
+SELECT datname, datallowconn, datconnlimit FROM pg_database WHERE ...
+
+SELECT nc.nspname, cc.relname, ac.attname FROM pg_inherits i, ... (NOT NULL inheritance)
+
+SELECT name, setting, source FROM pg_settings WHERE name IN (...) AND source NOT IN ('default','override')
+('promote_trigger_file', '/pgsql/data/promotion_trigger_file', 'configuration file')
+
+SELECT datname, age(datfrozenxid) AS xid_age, mxid_age(datminmxid) AS mxid_age FROM pg_database ORDER BY 2 DESC
+('shop', 187220114, 21002113)
+('ledger', 186900120, 20100422)
+('postgres', 160101442, 19800211)
+
+SELECT DISTINCT d.classid::regclass AS used_by_catalog, ... AS used_by, p.oid::regprocedure AS function ... (search_path functions)
+('pg_class', 'idx_orders_tags_norm', 'normalize_tags(text[])')
+
+SHOW password_encryption
+('scram-sha-256',)
+
+SELECT has_table_privilege('pg_catalog.pg_authid', 'SELECT') AS can_read_authid
+(False,)
+
+SELECT rolname FROM pg_authid WHERE rolcanlogin AND rolpassword LIKE 'md5%' ORDER BY 1
+sqlalchemy.exc.ProgrammingError: (psycopg2.errors.InsufficientPrivilege) permission denied for table pg_authid

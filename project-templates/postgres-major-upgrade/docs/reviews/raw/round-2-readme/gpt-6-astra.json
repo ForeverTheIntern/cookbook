@@ -1,0 +1,44 @@
+{
+  "reviewer": "gpt-6-astra via codex",
+  "rubric": "readme",
+  "summary": "The README explains the stages, ownership and evidence model clearly, but overstates Cloud Agent hook support and obscures IaC sequencing. The supplied artifact set also lacks files needed to follow its installation and verification instructions.",
+  "overall": "rework",
+  "findings": [
+    {
+      "id": "R-01",
+      "file": "review/README.md",
+      "line": 144,
+      "severity": "major",
+      "category": "overstated-guardrails",
+      "claim": "The claim that Cursor documents beforeMCPExecution as supported in Cloud Agents contradicts the cited documentation. This could lead a team to rely on an unavailable database-access guard.",
+      "evidence": "The README says: \"Cursor documents `beforeShellExecution` and `beforeMCPExecution` as supported ([S-47]).\" The Cloud Agent section of https://cursor.com/docs/hooks explicitly lists beforeMCPExecution under hooks not available in cloud agents; HTTP MCP calls instead support denial through preToolUse. The S-47 quote list in review/reference/sources.json establishes only shell-command hooks.",
+      "source_id": "S-47",
+      "verifiable": "verified",
+      "suggested_fix": "Correct the Cloud Agent support statement and identify the supported preToolUse mechanism for MCP denial. Require a pilot test of that mechanism before describing database MCP blocking as operational."
+    },
+    {
+      "id": "R-02",
+      "file": "review/README.md",
+      "line": 81,
+      "severity": "major",
+      "category": "links-and-deliverable-completeness",
+      "claim": "The supplied review tree cannot support the documented quick start or checks: the installation manifest, plugin implementation and most linked verification artifacts are absent. This finding concerns the supplied package, not an unseen repository.",
+      "evidence": "The README instructs readers to \"Import this folder into your team marketplace (it's a marketplace repo with one plugin)\" and lists commands such as `node tests/check-template.mjs`. The supplied review/ tree contains only six files; it lacks review/.cursor-plugin/marketplace.json, plugin skills and scripts, tests, review/evals/results/, and the linked review/plugins/pg-major-upgrade/reference/sources.md. The available source registry is instead review/reference/sources.json.",
+      "source_id": null,
+      "verifiable": "verified",
+      "suggested_fix": "Include the installable plugin and linked evidence files in the deliverable, or clearly identify this as a documentation excerpt and link to the complete package. Validate all README links against the actual distributed tree."
+    },
+    {
+      "id": "R-03",
+      "file": "review/README.md",
+      "line": 38,
+      "severity": "major",
+      "category": "stage-sequencing",
+      "claim": "The blanket instruction to merge every PR and apply IaC after the upgrade conflates prerequisite infrastructure fixes with the target-version reconciliation. A reader could defer blocking-flag fixes until too late or merge the version-changing PR prematurely.",
+      "evidence": "The README says: \"People: review and merge every PR, and apply the IaC after the upgrade.\" In review/plugins/pg-major-upgrade/reference/sop.md, B1-03 requires removing blocking flags through an IaC PR that the DBA applies, while G1.1 requires blockers fixed in production before rehearsal. B1-11 separately says the target-version change \"merges after the runbook's upgrade step, as a reconcile.\"",
+      "source_id": null,
+      "verifiable": "verified",
+      "suggested_fix": "Distinguish source-compatible prerequisite changes, which must be merged and applied before rehearsal, from the target-version IaC PR, which remains unmerged until the upgrade is complete."
+    }
+  ]
+}
